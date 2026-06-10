@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SaaS Admin Dashboard</title>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    input, textarea, select { margin: 4px; padding: 7px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }
+    th { background-color: #f2f2f2; }
+    button { padding: 6px 12px; cursor: pointer; }
+    section { margin-bottom: 26px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 12px 0; }
+    .card { border: 1px solid #ddd; border-radius: 6px; padding: 12px; background: #fafafa; }
+    .card strong { display: block; font-size: 20px; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <h2>SaaS Admin Dashboard</h2>
+
+  <section>
+    <h3>Create Restaurant</h3>
+    <input id="restaurantName" placeholder="Restaurant Name">
+    <input id="expiryDate" type="date">
+    <button onclick="createRestaurant()">Create</button>
+    <p id="createMsg"></p>
+  </section>
+
+  <hr>
+
+  <section>
+    <h3>Releases</h3>
+    <input id="releaseVersion" placeholder="Version e.g. 1.0.1">
+    <label><input id="releaseMandatory" type="checkbox"> Mandatory update</label>
+    <br>
+    <textarea id="releaseNotes" placeholder="Release notes" rows="4" style="width:100%;max-width:720px"></textarea>
+    <br>
+    <input id="releaseFileName" placeholder="File name e.g. pos-update.zip">
+    <input id="releaseFileUrl" placeholder="File URL" style="width:420px">
+    <input id="releaseChecksum" placeholder="SHA256 checksum optional" style="width:280px">
+    <button onclick="createRelease()">Create Release</button>
+    <p id="releaseMsg"></p>
+
+    <table id="releaseTable">
+      <thead>
+        <tr>
+          <th>Version</th>
+          <th>Status</th>
+          <th>Mandatory</th>
+          <th>Files</th>
+          <th>Notes</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <hr>
+
+  <section>
+    <h3>Restaurants</h3>
+    <table id="tenantTable">
+      <thead>
+        <tr>
+          <th>Restaurant Name</th>
+          <th>Restaurant ID</th>
+          <th>License Key</th>
+          <th>Expiry Date</th>
+          <th>Status</th>
+          <th>Last Sync</th>
+          <th>Today Revenue</th>
+          <th>Update</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <hr>
+
+  <section>
+    <h3>Owner Cloud Reports</h3>
+    <select id="reportRestaurant"></select>
+    <input id="reportFromDate" type="date">
+    <input id="reportToDate" type="date">
+    <button onclick="loadOwnerReports()">Load Reports</button>
+    <button onclick="requestCloudSync()">Request Sync</button>
+    <p id="reportMsg"></p>
+
+    <div class="cards">
+      <div class="card">Today Sales<strong id="todaySales">0</strong></div>
+      <div class="card">Yesterday Sales<strong id="yesterdaySales">0</strong></div>
+      <div class="card">Month-to-Date<strong id="mtdSales">0</strong></div>
+      <div class="card">Orders<strong id="reportOrders">0</strong></div>
+      <div class="card">Payment Modes<strong id="paymentSummary">Cash 0 | Card 0 | UPI 0</strong></div>
+      <div class="card">Last Sync<strong id="syncStatus">Not synced</strong></div>
+    </div>
+
+    <table id="topItemsTable">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Qty Sold</th>
+          <th>Total Sales</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <script src="/js/admin.js"></script>
+</body>
+</html>

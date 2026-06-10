@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Restaurant Admin</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="admin-shell">
+  <aside class="admin-sidebar">
+    <div class="brand-block">
+      <span class="brand-mark">POS</span>
+      <strong>Admin</strong>
+    </div>
+    <button class="nav-btn active" data-view="kitchens">Kitchens</button>
+    <button class="nav-btn" data-view="categories">Categories</button>
+    <button class="nav-btn" data-view="items">Menu Items</button>
+    <button class="nav-btn" data-view="users">Users</button>
+    <button class="nav-btn" data-view="tables">Tables</button>
+    <button class="nav-btn" data-view="inventory">Inventory</button>
+    <button class="nav-btn" data-view="modifiers">Modifiers & Combos</button>
+    <button class="nav-btn" data-view="reports">Reports</button>
+    <button class="nav-btn" data-view="staff-cash">Staff & Cash</button>
+    <button class="nav-btn" data-view="devices">Devices</button>
+    <button class="nav-btn" data-view="settings">Settings</button>
+    <button class="nav-btn" data-view="permissions">Permissions</button>
+    <button class="nav-btn" data-view="backup">Backup</button>
+    <button class="nav-btn" data-view="updates">Updates</button>
+    <button class="nav-btn" data-view="audit">Audit</button>
+    <a class="nav-link" href="/pos-live.html">Open POS</a>
+    <a class="nav-link" href="/kds.html">Open KDS</a>
+    <a class="nav-link" href="/orders.html">Orders</a>
+    <a class="nav-link" href="/customer.html">Customers</a>
+  </aside>
+
+  <main class="admin-main">
+    <header class="topbar">
+      <div>
+        <h1>Restaurant Admin</h1>
+        <p id="adminStatus">Loading workspace...</p>
+      </div>
+      <button id="refreshBtn" class="secondary-btn">Refresh</button>
+    </header>
+
+    <section class="admin-view active" id="view-kitchens">
+      <form class="editor-panel" id="kitchenForm">
+        <input type="hidden" id="kitchenId">
+        <label>Kitchen name<input id="kitchenName" required></label>
+        <label>Printer name<input id="kitchenPrinter"></label>
+        <label class="check-row"><input id="kitchenActive" type="checkbox" checked> Active</label>
+        <button>Save Kitchen</button>
+      </form>
+      <div class="table-panel"><table><thead><tr><th>Name</th><th>Printer</th><th>Status</th><th></th></tr></thead><tbody id="kitchensTable"></tbody></table></div>
+    </section>
+
+    <section class="admin-view" id="view-categories">
+      <form class="editor-panel" id="categoryForm">
+        <input type="hidden" id="categoryId">
+        <label>Category name<input id="categoryName" required></label>
+        <label>Kitchen<select id="categoryKitchen" required></select></label>
+        <label class="check-row"><input id="categoryActive" type="checkbox" checked> Active</label>
+        <button>Save Category</button>
+      </form>
+      <div class="table-panel"><table><thead><tr><th>Name</th><th>Kitchen</th><th>Status</th><th></th></tr></thead><tbody id="categoriesTable"></tbody></table></div>
+    </section>
+
+    <section class="admin-view" id="view-items">
+      <form class="editor-panel" id="itemForm">
+        <input type="hidden" id="itemId">
+        <label>Item name<input id="itemName" required></label>
+        <label>Category<select id="itemCategory" required></select></label>
+        <label>Price<input id="itemPrice" type="number" step="0.01" min="0" required></label>
+        <label class="check-row"><input id="itemVeg" type="checkbox" checked> Veg</label>
+        <label class="check-row"><input id="itemParcel" type="checkbox" checked> Parcel</label>
+        <label class="check-row"><input id="itemActive" type="checkbox" checked> Active</label>
+        <button>Save Item</button>
+      </form>
+      <div class="toolbar"><input id="itemSearch" placeholder="Search menu items"></div>
+      <div class="table-panel"><table><thead><tr><th>Name</th><th>Category</th><th>Kitchen</th><th>Price</th><th>Status</th><th></th></tr></thead><tbody id="itemsTable"></tbody></table></div>
+    </section>
+
+    <section class="admin-view" id="view-users">
+      <form class="editor-panel" id="userForm">
+        <input type="hidden" id="userId">
+        <label>Name<input id="userName" required></label>
+        <label>Username<input id="userUsername" required></label>
+        <label>PIN<input id="userPin" maxlength="4" inputmode="numeric"></label>
+        <label>Role<select id="userRole"><option>OWNER</option><option>MANAGER</option><option>MANAGER_2</option><option>CASHIER</option><option>WAITER</option><option>KITCHEN</option></select></label>
+        <label class="check-row"><input id="userActive" type="checkbox" checked> Active</label>
+        <button>Save User</button>
+      </form>
+      <div class="table-panel"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody id="usersTable"></tbody></table></div>
+    </section>
+
+    <section class="admin-view" id="view-tables">
+      <form class="editor-panel" id="tableForm">
+        <input type="hidden" id="tableId">
+        <label>Table name<input id="tableName" placeholder="Table 1" required></label>
+        <label>Status<select id="tableStatus"><option>AVAILABLE</option><option>OCCUPIED</option><option>RESERVED</option></select></label>
+        <button>Save Table</button>
+      </form>
+      <div class="quick-row">
+        <button class="secondary-btn" data-table-example="Table 1">Table 1</button>
+        <button class="secondary-btn" data-table-example="Table 2">Table 2</button>
+        <button class="secondary-btn" data-table-example="Table 3">Table 3</button>
+        <button class="secondary-btn" data-table-example="Parcel">Parcel</button>
+        <button class="secondary-btn" data-table-example="Delivery">Delivery</button>
+      </div>
+      <div class="table-panel"><table><thead><tr><th>Name</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody id="tablesTable"></tbody></table></div>
+    </section>
+
+    <section class="admin-view" id="view-inventory">
+      <div class="toolbar">
+        <button class="secondary-btn inventory-tab active" data-inventory-tab="suppliers">Suppliers</button>
+        <button class="secondary-btn inventory-tab" data-inventory-tab="ingredients">Ingredients</button>
+        <button class="secondary-btn inventory-tab" data-inventory-tab="purchases">Purchase Orders</button>
+        <button class="secondary-btn inventory-tab" data-inventory-tab="stock">Stock In / Adjustment</button>
+        <button class="secondary-btn inventory-tab" data-inventory-tab="recipes">Recipe Mapping</button>
+        <button class="secondary-btn inventory-tab" data-inventory-tab="inventoryReports">Low Stock & Reports</button>
+      </div>
+
+      <div class="inventory-panel active" id="inventory-suppliers">
+        <form class="editor-panel" id="supplierForm">
+          <input type="hidden" id="supplierId">
+          <label>Supplier name<input id="supplierName" required></label>
+          <label>Phone<input id="supplierPhone"></label>
+          <label>Email<input id="supplierEmail"></label>
+          <label>Address<input id="supplierAddress"></label>
+          <label>GSTIN<input id="supplierGstin"></label>
+          <button>Save Supplier</button>
+        </form>
+        <div class="table-panel"><table><thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>GSTIN</th><th></th></tr></thead><tbody id="suppliersTable"></tbody></table></div>
+      </div>
+
+      <div class="inventory-panel" id="inventory-ingredients">
+        <form class="editor-panel" id="ingredientForm">
+          <input type="hidden" id="ingredientId">
+          <label>Ingredient<input id="ingredientName" required></label>
+          <label>Unit<input id="ingredientUnit" placeholder="kg, ltr, pcs" required></label>
+          <label>Low stock<input id="ingredientLowStock" type="number" step="0.001" min="0"></label>
+          <button>Save Ingredient</button>
+        </form>
+        <div class="table-panel"><table><thead><tr><th>Name</th><th>Unit</th><th>Stock</th><th>Low Alert</th><th></th></tr></thead><tbody id="ingredientsTable"></tbody></table></div>
+      </div>
+
+      <div class="inventory-panel" id="inventory-purchases">
+        <form class="editor-panel" id="purchaseOrderForm">
+          <input type="hidden" id="purchaseOrderId">
+          <label>Supplier<select id="purchaseSupplier" required></select></label>
+          <label>Date<input id="purchaseDate" type="date"></label>
+          <label>Status<select id="purchaseStatus"><option>DRAFT</option><option>ORDERED</option><option>RECEIVED</option><option>CANCELLED</option></select></label>
+          <label>Ingredient<select id="purchaseIngredient"></select></label>
+          <label>Qty<input id="purchaseQty" type="number" step="0.001" min="0"></label>
+          <label>Unit Cost<input id="purchaseUnitCost" type="number" step="0.01" min="0"></label>
+          <label>Tax %<input id="purchaseTaxRate" type="number" step="0.01" min="0" max="100" value="0"></label>
+          <label>Notes<input id="purchaseNotes"></label>
+          <button>Save Purchase Order</button>
+        </form>
+        <div class="table-panel"><table><thead><tr><th>PO No</th><th>Supplier</th><th>Status</th><th>Total</th><th>Paid</th><th>Outstanding</th><th>Date</th><th></th></tr></thead><tbody id="purchaseOrdersTable"></tbody></table></div>
+        <form class="editor-panel" id="supplierPaymentForm">
+          <label>Supplier<select id="paymentSupplier" required></select></label>
+          <label>Purchase Order<select id="paymentPurchaseOrder"></select></label>
+          <label>Amount<input id="supplierPaymentAmount" type="number" min="0.01" step="0.01" required></label>
+          <label>Mode<select id="supplierPaymentMode"><option>CASH</option><option>UPI</option><option>BANK</option><option>CARD</option></select></label>
+          <label>Reference<input id="supplierPaymentReference"></label>
+          <button>Record Supplier Payment</button>
+        </form>
+        <div class="report-grid">
+          <article><h3>Outstanding Supplier Balance</h3><div id="supplierBalancePanel"></div></article>
+          <article><h3>Supplier Payments</h3><div id="supplierPaymentsPanel"></div></article>
+        </div>
+      </div>
+
+      <div class="inventory-panel" id="inventory-stock">
+        <form class="editor-panel" id="stockForm">
+          <label>Ingredient<select id="stockIngredient" required></select></label>
+          <label>Movement<select id="stockMovement"><option value="PURCHASE">Stock In</option><option value="WASTAGE">Wastage</option><option value="ADJUSTMENT">Adjustment Out</option></select></label>
+          <label>Qty<input id="stockQty" type="number" step="0.001" min="0" required></label>
+          <label>Unit Cost<input id="stockUnitCost" type="number" step="0.01" min="0"></label>
+          <label>Reason / Notes<input id="stockNotes"></label>
+          <button>Save Movement</button>
+        </form>
+      </div>
+
+      <div class="inventory-panel" id="inventory-recipes">
+        <form class="editor-panel" id="recipeForm">
+          <label>Menu Item<select id="recipeMenuItem" required></select></label>
+          <label>Ingredient<select id="recipeIngredient" required></select></label>
+          <label>Qty per sale<input id="recipeQty" type="number" step="0.001" min="0" required></label>
+          <button>Save Recipe Mapping</button>
+        </form>
+        <div class="table-panel"><table><thead><tr><th>Menu Item</th><th>Ingredient</th><th>Qty</th><th>Unit</th><th></th></tr></thead><tbody id="recipesTable"></tbody></table></div>
+      </div>
+
+      <div class="inventory-panel" id="inventory-inventoryReports">
+        <div class="toolbar">
+          <input id="inventoryReportFrom" type="date">
+          <input id="inventoryReportTo" type="date">
+          <button id="loadInventoryReports">Load Inventory Reports</button>
+        </div>
+        <div class="report-grid">
+          <article><h3>Low Stock Alerts</h3><div id="inventoryLowStock"></div></article>
+          <article><h3>Movement Summary</h3><div id="inventoryMovementSummary"></div></article>
+          <article><h3>Ingredient Usage</h3><div id="inventoryUsageReport"></div></article>
+          <article><h3>Wastage</h3><div id="inventoryWastageReport"></div></article>
+          <article><h3>Purchase Report</h3><div id="purchaseReportPanel"></div></article>
+          <article><h3>Payment Modes</h3><div id="purchasePaymentModeReport"></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-modifiers">
+      <div class="toolbar">
+        <button class="secondary-btn modifier-tab active" data-modifier-tab="groups">Groups</button>
+        <button class="secondary-btn modifier-tab" data-modifier-tab="options">Modifiers</button>
+        <button class="secondary-btn modifier-tab" data-modifier-tab="assignments">Assign to Items</button>
+        <button class="secondary-btn modifier-tab" data-modifier-tab="combos">Combos</button>
+      </div>
+
+      <div class="modifier-panel active" id="modifier-groups">
+        <form class="editor-panel" id="modifierGroupForm">
+          <input type="hidden" id="modifierGroupId">
+          <label>Group name<input id="modifierGroupName" required></label>
+          <label>Min select<input id="modifierGroupMin" type="number" min="0" value="0"></label>
+          <label>Max select<input id="modifierGroupMax" type="number" min="0" value="1"></label>
+          <label class="check-row"><input id="modifierGroupRequired" type="checkbox"> Required</label>
+          <button>Save Group</button>
+        </form>
+        <div class="table-panel"><table><thead><tr><th>Name</th><th>Min</th><th>Max</th><th>Required</th><th></th></tr></thead><tbody id="modifierGroupsTable"></tbody></table></div>
+      </div>
+
+      <div class="modifier-panel" id="modifier-options">
+        <form class="editor-panel" id="modifierOptionForm">
+          <input type="hidden" id="modifierOptionId">
+          <label>Group<select id="modifierOptionGroup" required></select></label>
+          <label>Modifier<input id="modifierOptionName" required></label>
+          <label>Price delta<input id="modifierOptionPrice" type="number" step="0.01" min="0" value="0"></label>
+          <button>Save Modifier</button>
+        </form>
+        <div class="table-panel"><table><thead><tr><th>Group</th><th>Name</th><th>Delta</th><th></th></tr></thead><tbody id="modifierOptionsTable"></tbody></table></div>
+      </div>
+
+      <div class="modifier-panel" id="modifier-assignments">
+        <form class="editor-panel" id="modifierAssignForm">
+          <label>Menu Item<select id="modifierAssignItem" required></select></label>
+          <label>Group<select id="modifierAssignGroup" required></select></label>
+          <button>Assign Group</button>
+        </form>
+        <div class="table-panel"><table><thead><tr><th>Item</th><th>Group</th><th></th></tr></thead><tbody id="modifierAssignmentsTable"></tbody></table></div>
+      </div>
+
+      <div class="modifier-panel" id="modifier-combos">
+        <form class="editor-panel" id="comboForm">
+          <input type="hidden" id="comboId">
+          <label>Combo name<input id="comboName" required></label>
+          <label>Combo price<input id="comboPrice" type="number" step="0.01" min="0" required></label>
+          <label>Included item<select id="comboItem" required></select></label>
+          <label>Qty<input id="comboItemQty" type="number" min="1" value="1"></label>
+          <button>Save Combo</button>
+        </form>
+        <div class="table-panel"><table><thead><tr><th>Name</th><th>Price</th><th>Items</th><th></th></tr></thead><tbody id="combosTable"></tbody></table></div>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-reports">
+      <div class="toolbar">
+        <input id="reportFrom" type="date">
+        <input id="reportTo" type="date">
+        <button id="loadReports">Load Reports</button>
+      </div>
+      <div class="report-grid">
+        <article><h3>Daily Sales</h3><div id="dailySales"></div></article>
+        <article><h3>Top Selling Items</h3><div id="topItems"></div></article>
+        <article><h3>Order Summary</h3><div id="orderSummary"></div></article>
+        <article><h3>Tax Summary</h3><div id="taxSummary"></div></article>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-settings">
+      <form class="editor-panel" id="settingsForm">
+        <h2>Restaurant Settings</h2>
+        <p id="settingsStatus"></p>
+
+        <div class="dashboard-grid">
+          <article>
+            <h3>Restaurant Profile</h3>
+            <label>Display name<input id="settingRestaurantDisplayName"></label>
+            <label>Legal name<input id="settingLegalName"></label>
+            <label>GSTIN<input id="settingGstin"></label>
+            <label>Address line 1<input id="settingAddressLine1"></label>
+            <label>Address line 2<input id="settingAddressLine2"></label>
+            <label>City<input id="settingCity"></label>
+            <label>State<input id="settingState"></label>
+            <label>Country<input id="settingCountry"></label>
+            <label>Phone<input id="settingPhone"></label>
+            <label>Email<input id="settingEmail" type="email"></label>
+            <label>Currency<input id="settingCurrency" required></label>
+            <label>Timezone<input id="settingTimezone" required></label>
+            <label>Logo path<input id="settingLogoPath"></label>
+          </article>
+
+          <article>
+            <h3>POS Behaviour</h3>
+            <label>Default order type
+              <select id="settingDefaultOrderType">
+                <option value="DINE_IN">Dine In</option>
+                <option value="TAKEAWAY">Takeaway</option>
+                <option value="DELIVERY">Delivery</option>
+                <option value="PARCEL">Parcel</option>
+                <option value="PHONE_ORDER">Phone Order</option>
+                <option value="ONLINE_ORDER">Online Order</option>
+              </select>
+            </label>
+            <label class="check-row"><input id="settingAllowNonInvoiceOrders" type="checkbox"> Allow non-invoice orders</label>
+            <label class="check-row"><input id="settingAllowDiscount" type="checkbox"> Allow discount</label>
+            <label class="check-row"><input id="settingAllowManualPriceOverride" type="checkbox"> Allow manual price override</label>
+            <label class="check-row"><input id="settingAllowRefund" type="checkbox"> Allow refund</label>
+            <label class="check-row"><input id="settingAllowOrderCancel" type="checkbox"> Allow order cancel</label>
+            <label class="check-row"><input id="settingRequireManagerPinForDiscount" type="checkbox"> Manager PIN for discount</label>
+            <label class="check-row"><input id="settingRequireManagerPinForRefund" type="checkbox"> Manager PIN for refund</label>
+            <label class="check-row"><input id="settingRequireManagerPinForVoid" type="checkbox"> Manager PIN for void</label>
+            <label class="check-row"><input id="settingRequireClockInBeforeOrder" type="checkbox"> Require clock-in before order</label>
+          </article>
+
+          <article>
+            <h3>Billing</h3>
+            <label>Invoice prefix<input id="settingInvoicePrefix" required></label>
+            <label>Invoice reset
+              <select id="settingInvoiceResetFrequency">
+                <option value="DAILY">Daily</option>
+                <option value="MONTHLY">Monthly</option>
+                <option value="YEARLY">Yearly</option>
+                <option value="NEVER">Never</option>
+              </select>
+            </label>
+            <label class="check-row"><input id="settingShowTaxOnBill" type="checkbox"> Show tax on bill</label>
+            <label class="check-row"><input id="settingShowQrOnBill" type="checkbox"> Show QR on bill</label>
+            <label>UPI ID<input id="settingUpiId"></label>
+            <label class="check-row"><input id="settingServiceChargeEnabled" type="checkbox"> Enable service charge</label>
+            <label>Service charge %<input id="settingServiceChargePercent" type="number" min="0" max="100" step="0.01"></label>
+            <label class="check-row"><input id="settingRoundOffEnabled" type="checkbox"> Round off bill</label>
+          </article>
+
+          <article>
+            <h3>Kitchen / KOT</h3>
+            <label class="check-row"><input id="settingAutoPrintKot" type="checkbox"> Auto print KOT</label>
+            <label class="check-row"><input id="settingPrintKotOnSave" type="checkbox"> Print KOT on save</label>
+            <label class="check-row"><input id="settingPrintKotOnSubmit" type="checkbox"> Print KOT on submit</label>
+            <label class="check-row"><input id="settingAllowKotReprint" type="checkbox"> Allow KOT reprint</label>
+            <label>KOT header text<input id="settingKotHeaderText"></label>
+            <label>KOT footer text<input id="settingKotFooterText"></label>
+          </article>
+
+          <article>
+            <h3>Backup</h3>
+            <label class="check-row"><input id="settingBackupEnabled" type="checkbox"> Enable automatic backup</label>
+            <label>Backup folder path<input id="settingBackupFolderPath"></label>
+            <label>OneDrive folder path<input id="settingOnedriveFolderPath"></label>
+            <label>Backup interval minutes<input id="settingBackupIntervalMinutes" type="number" min="1" step="1"></label>
+            <label class="check-row"><input id="settingRequireOpenRegisterForCashPayment" type="checkbox"> Require open register for cash payment</label>
+            <label class="check-row"><input id="settingAllowCashierRegisterClose" type="checkbox"> Allow cashier register close without discrepancy</label>
+            <label>Cash discrepancy threshold<input id="settingCashDiscrepancyThreshold" type="number" min="0" step="0.01"></label>
+          </article>
+        </div>
+
+        <div class="toolbar">
+          <button>Save Settings</button>
+          <button id="resetSettingsDefaults" class="secondary-btn" type="button">Reset Defaults</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="admin-view" id="view-staff-cash">
+      <div class="editor-panel">
+        <h2>Staff Attendance & Cash Register Reports</h2>
+        <div class="toolbar">
+          <input id="staffCashFrom" type="date">
+          <input id="staffCashTo" type="date">
+          <input id="staffCashUserId" type="number" min="1" placeholder="User ID">
+          <button id="loadStaffCashReports" type="button">Load Reports</button>
+        </div>
+        <p id="staffCashStatus"></p>
+      </div>
+      <div class="table-panel">
+        <h3>Attendance</h3>
+        <table>
+          <thead><tr><th>User</th><th>Role</th><th>Clock In</th><th>Clock Out</th><th>Status</th><th>Minutes</th></tr></thead>
+          <tbody id="attendanceReportTable"></tbody>
+        </table>
+      </div>
+      <div class="table-panel">
+        <h3>Cash Register Sessions</h3>
+        <table>
+          <thead><tr><th>Opened</th><th>Opened By</th><th>Closed</th><th>Opening</th><th>Expected</th><th>Closing</th><th>Difference</th><th>Status</th></tr></thead>
+          <tbody id="cashRegisterReportTable"></tbody>
+        </table>
+      </div>
+      <div class="table-panel">
+        <h3>Cash Movements</h3>
+        <table>
+          <thead><tr><th>Time</th><th>Type</th><th>Amount</th><th>Reason</th><th>User</th></tr></thead>
+          <tbody id="cashMovementReportTable"></tbody>
+        </table>
+      </div>
+      <div class="table-panel">
+        <h3>Discrepancies</h3>
+        <table>
+          <thead><tr><th>Session</th><th>Expected</th><th>Closing</th><th>Difference</th></tr></thead>
+          <tbody id="cashDiscrepancyReportTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-devices">
+      <div class="editor-panel">
+        <h2>Waiter Devices</h2>
+        <button id="loadDevices" type="button">Refresh Devices</button>
+        <p id="deviceStatus"></p>
+      </div>
+      <div class="table-panel">
+        <table>
+          <thead><tr><th>User</th><th>Role</th><th>Device</th><th>IP Address</th><th>Login</th><th>Last Seen</th><th></th></tr></thead>
+          <tbody id="deviceSessionsTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-permissions">
+      <div class="editor-panel">
+        <h2>Permission Matrix</h2>
+        <p id="permissionsStatus"></p>
+      </div>
+      <div class="table-panel">
+        <table>
+          <thead id="permissionsMatrixHead"></thead>
+          <tbody id="permissionsMatrixBody"></tbody>
+        </table>
+      </div>
+      <div class="toolbar">
+        <button id="savePermissionsMatrix" type="button">Save Permissions</button>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-backup">
+      <form class="editor-panel" id="backupSettingsForm">
+        <label class="check-row"><input id="backupEnabled" type="checkbox"> Enable automatic backup</label>
+        <label>Interval minutes<input id="backupInterval" type="number" min="1" step="1" value="60"></label>
+        <label>Local backup folder<input id="backupFolderPath" placeholder="C:\POS_BACKUP" required></label>
+        <label>OneDrive folder path<input id="onedriveFolderPath" placeholder="C:\Users\User\OneDrive\POS_BACKUP"></label>
+        <button>Save Backup Settings</button>
+      </form>
+      <div class="toolbar">
+        <button id="runBackupNow">Run Backup Now</button>
+        <button id="runOneDriveSync" class="secondary-btn">Sync to OneDrive Folder</button>
+        <button id="refreshBackups" class="secondary-btn">Refresh Backups</button>
+      </div>
+      <div class="report-grid">
+        <article><h3>Backup Status</h3><div id="backupStatusPanel"></div></article>
+        <article><h3>Recent Logs</h3><div id="backupLogsPanel"></div></article>
+      </div>
+      <div class="table-panel">
+        <table>
+          <thead><tr><th>Filename</th><th>Size</th><th>Created</th><th></th></tr></thead>
+          <tbody id="backupListTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-updates">
+      <div class="editor-panel">
+        <h2>POS Updates</h2>
+        <p id="updateCurrentVersion">Current version: Loading...</p>
+        <button id="checkUpdateNow" type="button">Check for Update</button>
+        <button id="downloadUpdateNow" type="button" class="secondary-btn" disabled>Download to Staging</button>
+        <p id="updateStatus"></p>
+      </div>
+      <div class="dashboard-grid">
+        <article>
+          <h3>Latest Release</h3>
+          <div id="updateLatestPanel"></div>
+        </article>
+        <article>
+          <h3>Update Logs</h3>
+          <div id="updateLogsPanel"></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-audit">
+      <div class="editor-panel">
+        <h2>Audit & Compliance</h2>
+        <div class="toolbar">
+          <input id="auditFromDate" type="date">
+          <input id="auditToDate" type="date">
+          <input id="auditUser" placeholder="User or role">
+          <input id="auditAction" placeholder="Action">
+          <input id="auditEntityType" placeholder="Entity type">
+          <select id="auditSeverity">
+            <option value="">Any severity</option>
+            <option value="INFO">Info</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="HIGH">High</option>
+          </select>
+          <button id="loadAuditLogs" type="button">Load Audit</button>
+          <button id="exportAuditCsv" type="button" class="secondary-btn">Export CSV</button>
+        </div>
+        <p id="auditStatus"></p>
+      </div>
+      <div class="report-grid" id="complianceCards"></div>
+      <div class="table-panel">
+        <h3>Audit Logs</h3>
+        <table>
+          <thead><tr><th>Timestamp</th><th>User</th><th>Action</th><th>Entity</th><th>Old Value</th><th>New Value</th></tr></thead>
+          <tbody id="auditLogsTable"></tbody>
+        </table>
+      </div>
+      <div class="table-panel">
+        <h3>Compliance Events</h3>
+        <table>
+          <thead><tr><th>Timestamp</th><th>Severity</th><th>Event</th><th>Message</th><th>Entity</th></tr></thead>
+          <tbody id="complianceEventsTable"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/js/admin-dashboard.js"></script>
+</body>
+</html>

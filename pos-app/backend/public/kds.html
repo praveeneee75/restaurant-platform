@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kitchen Display</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="kds-shell">
+  <header class="kds-topbar">
+    <div>
+      <h1>Kitchen Display</h1>
+      <p id="kdsStatus">Loading orders...</p>
+    </div>
+    <div class="kds-controls">
+      <select id="kitchenSelect"></select>
+      <button id="refreshKds" class="secondary-btn">Refresh</button>
+    </div>
+  </header>
+
+  <main class="kds-board">
+    <section class="kds-column" data-status="PENDING">
+      <h2>New Orders</h2>
+      <div id="kdsPending" class="kds-list"></div>
+    </section>
+    <section class="kds-column" data-status="PREPARING">
+      <h2>Preparing</h2>
+      <div id="kdsPreparing" class="kds-list"></div>
+    </section>
+    <section class="kds-column" data-status="READY">
+      <h2>Ready</h2>
+      <div id="kdsReady" class="kds-list"></div>
+    </section>
+  </main>
+
+  <script src="/js/kds.js"></script>
+</body>
+</html>

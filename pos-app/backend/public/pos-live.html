@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Table POS</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="pos-shell">
+  <aside class="pos-tables">
+    <header><h2>Tables</h2><a href="/admin.html">Admin</a></header>
+    <div id="tablesList" class="table-list"></div>
+  </aside>
+
+  <main class="pos-menu">
+    <div class="category-strip" id="categories"></div>
+    <div class="item-grid" id="items"></div>
+  </main>
+
+  <aside class="pos-cart">
+    <header>
+      <div>
+        <h2 id="cartTitle">Select a table</h2>
+        <p id="orderMeta">No open order</p>
+      </div>
+      <button id="cancelOrder" class="danger-btn">Cancel</button>
+    </header>
+    <div id="cartItems" class="cart-items"></div>
+    <div class="payment-panel">
+      <strong id="total">Total: 0.00</strong>
+      <div class="order-type-panel">
+        <select id="orderType">
+          <option value="DINE_IN">Dine In</option>
+          <option value="TAKEAWAY">Takeaway</option>
+          <option value="DELIVERY">Delivery</option>
+          <option value="PHONE_ORDER">Phone Order</option>
+        </select>
+        <div id="deliveryFields" class="delivery-fields" hidden>
+          <input id="deliveryAddress" placeholder="Delivery address">
+          <input id="deliveryPhone" placeholder="Delivery phone">
+          <input id="deliveryFee" type="number" min="0" step="0.01" placeholder="Delivery fee">
+          <select id="deliveryPartner">
+            <option value="">Delivery partner</option>
+          </select>
+          <input id="expectedDeliveryTime" type="datetime-local">
+        </div>
+      </div>
+      <div class="customer-panel">
+        <div class="customer-search-row">
+          <input id="customerPhone" placeholder="Customer phone">
+          <button id="searchCustomer" class="secondary-btn">Search</button>
+        </div>
+        <input id="customerName" placeholder="Customer name">
+        <button id="createCustomer" class="secondary-btn">Create Customer</button>
+        <p id="customerSummary">No customer attached</p>
+        <label>Redeem points<input id="redeemPoints" type="number" min="0" step="1" value="0"></label>
+        <strong id="payableTotal">Payable: 0.00</strong>
+      </div>
+      <select id="paymentMode">
+        <option value="CASH">Cash</option>
+        <option value="CARD">Card</option>
+        <option value="UPI">UPI</option>
+        <option value="SPLIT">Split Payment</option>
+      </select>
+      <input id="cashAmount" type="number" step="0.01" placeholder="Cash amount">
+      <input id="cardAmount" type="number" step="0.01" placeholder="Card amount">
+      <input id="upiAmount" type="number" step="0.01" placeholder="UPI amount">
+      <div class="shift-cash-panel">
+        <strong>Shift & Cash</strong>
+        <p id="shiftCashStatus">Loading shift status...</p>
+        <div class="cart-actions">
+          <button id="clockInBtn" type="button" class="secondary-btn">Clock In</button>
+          <button id="clockOutBtn" type="button" class="secondary-btn">Clock Out</button>
+        </div>
+        <div class="cart-actions">
+          <button id="openRegisterBtn" type="button" class="secondary-btn">Open Register</button>
+          <button id="closeRegisterBtn" type="button" class="secondary-btn">Close Register</button>
+        </div>
+        <div class="cart-actions">
+          <button id="cashInBtn" type="button" class="secondary-btn">Cash In</button>
+          <button id="cashOutBtn" type="button" class="secondary-btn">Cash Out</button>
+        </div>
+      </div>
+      <div class="cart-actions">
+        <button id="saveOrder">Save</button>
+        <button id="submitKot">Submit KOT</button>
+        <button id="settleOrder">Settle</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="modal-backdrop" id="modifierModal" hidden>
+    <div class="modifier-modal">
+      <header>
+        <div>
+          <h2 id="modifierModalTitle">Customize item</h2>
+          <p id="modifierModalPrice">0.00</p>
+        </div>
+        <button class="secondary-btn" id="closeModifierModal">Close</button>
+      </header>
+      <div id="modifierGroups" class="modifier-groups"></div>
+      <div class="cart-actions">
+        <button id="addModifiedItem">Add Item</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/pos-live.js"></script>
+</body>
+</html>

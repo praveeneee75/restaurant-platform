@@ -1,0 +1,19 @@
+{
+  "name": "print-agent",
+  "version": "1.0.0",
+  "description": "Restaurant POS print agent",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "better-sqlite3": "^12.6.2",
+    "dotenv": "^17.3.1",
+    "node-thermal-printer": "^4.6.0"
+  }
+}

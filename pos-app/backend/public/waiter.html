@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Waiter Ordering</title>
+  <link rel="stylesheet" href="/css/waiter.css">
+</head>
+<body>
+  <header class="waiter-top">
+    <div>
+      <h1>Waiter POS</h1>
+      <p id="waiterStatus">Loading...</p>
+    </div>
+    <button id="refreshWaiter" type="button">Refresh</button>
+  </header>
+
+  <main class="waiter-layout">
+    <section class="panel">
+      <h2>Tables</h2>
+      <div id="waiterTables" class="table-grid"></div>
+    </section>
+
+    <section class="panel">
+      <h2 id="selectedTableTitle">Select a table</h2>
+      <div id="waiterCategories" class="category-strip"></div>
+      <div id="waiterItems" class="item-list"></div>
+    </section>
+
+    <section class="panel cart-panel">
+      <h2>Order</h2>
+      <p id="lockStatus">No table locked</p>
+      <div id="waiterCart" class="cart-list"></div>
+      <strong id="waiterTotal">Total: 0.00</strong>
+      <div class="actions">
+        <button id="saveWaiterOrder" type="button">Save Order</button>
+        <button id="submitWaiterKot" type="button">Submit KOT</button>
+        <button id="unlockWaiterTable" type="button">Unlock</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="/js/waiter.js"></script>
+</body>
+</html>

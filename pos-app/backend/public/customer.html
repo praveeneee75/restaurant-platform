@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Customer CRM</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="admin-shell customer-shell">
+  <aside class="admin-sidebar">
+    <div class="brand-block"><span class="brand-mark">CRM</span><strong>Customers</strong></div>
+    <a class="nav-link" href="/admin.html">Admin</a>
+    <a class="nav-link" href="/pos-live.html">POS</a>
+  </aside>
+  <main class="admin-main">
+    <header class="topbar">
+      <div>
+        <h1>Customer CRM</h1>
+        <p id="customerPageStatus">Loading customers...</p>
+      </div>
+      <button id="refreshCustomers" class="secondary-btn">Refresh</button>
+    </header>
+
+    <section class="crm-grid">
+      <form class="editor-panel" id="customerForm">
+        <input type="hidden" id="crmCustomerId">
+        <label>Name<input id="crmName" required></label>
+        <label>Phone<input id="crmPhone" required></label>
+        <label>Email<input id="crmEmail"></label>
+        <label>Birthday<input id="crmBirthday" type="date"></label>
+        <label>Address<input id="crmAddress"></label>
+        <button>Save Customer</button>
+      </form>
+      <form class="editor-panel" id="loyaltySettingsForm">
+        <label>Spend amount per point<input id="loyaltyEarnAmount" type="number" step="0.01" min="1"></label>
+        <label>Value per point<input id="loyaltyPointValue" type="number" step="0.01" min="0.01"></label>
+        <button>Save Loyalty Settings</button>
+      </form>
+    </section>
+
+    <section class="table-panel">
+      <table><thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Points</th><th></th></tr></thead><tbody id="customersTable"></tbody></table>
+    </section>
+
+    <section class="crm-grid">
+      <article class="report-card">
+        <h2 id="profileTitle">Select a customer</h2>
+        <div id="customerProfile"></div>
+        <form id="customerNoteForm" class="note-form">
+          <input id="customerNote" placeholder="Add note">
+          <button>Add Note</button>
+        </form>
+      </article>
+      <article class="report-card">
+        <h2>Customer Reports</h2>
+        <div id="customerReports"></div>
+      </article>
+    </section>
+  </main>
+  <script src="/js/customer.js"></script>
+</body>
+</html>

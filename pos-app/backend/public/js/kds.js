@@ -1,0 +1,133 @@
+const restaurantId = new URLSearchParams(window.location.search).get("restaurantId") || localStorage.getItem("restaurantId");
+if (restaurantId) localStorage.setItem("restaurantId", restaurantId);
+
+const user = JSON.parse(localStorage.getItem("user") || '{"role":"KITCHEN"}');
+const actor = { id: user.id, role: user.role || "KITCHEN", username: user.username };
+const allowedRoles = ["OWNER", "MANAGER_2", "KITCHEN"];
+const state = { kitchens: [], kitchenId: null, lastPendingIds: new Set(), firstLoad: true };
+
+const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+
+function minutesSince(value) {
+  const created = new Date(String(value).replace(" ", "T"));
+  const diff = Math.max(Date.now() - created.getTime(), 0);
+  const minutes = Math.floor(diff / 60000);
+  return minutes < 1 ? "Just now" : `${minutes} min`;
+}
+
+function beep() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audio = new AudioContext();
+    const oscillator = audio.createOscillator();
+    const gain = audio.createGain();
+    oscillator.frequency.value = 880;
+    gain.gain.value = 0.04;
+    oscillator.connect(gain);
+    gain.connect(audio.destination);
+    oscillator.start();
+    oscillator.stop(audio.currentTime + 0.16);
+  } catch (_) {}
+}
+
+async function postJson(url, body) {
+  return fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ restaurantId, actor, ...body })
+  }).then((res) => res.json());
+}
+
+function renderKitchenOptions() {
+  kitchenSelect.innerHTML = state.kitchens.map((kitchen) => `<option value="${kitchen.id}">${esc(kitchen.name)}</option>`).join("");
+  if (state.kitchenId) kitchenSelect.value = state.kitchenId;
+}
+
+async function boot() {
+  if (!restaurantId) {
+    kdsStatus.textContent = "POS is not activated";
+    return;
+  }
+  if (!allowedRoles.includes(actor.role)) {
+    kdsStatus.textContent = "KDS access denied";
+    document.querySelector(".kds-board").hidden = true;
+    return;
+  }
+  const data = await fetch(`/admin/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`).then((res) => res.json());
+  if (!data.success) throw new Error(data.message);
+  state.kitchens = data.kitchens || [];
+  state.kitchenId = Number(new URLSearchParams(window.location.search).get("kitchenId")) || Number(localStorage.getItem("kdsKitchenId")) || state.kitchens[0]?.id;
+  renderKitchenOptions();
+  await loadOrders();
+}
+
+function renderCard(order, item) {
+  const actions = {
+    PENDING: `<button data-item-status="PREPARING" data-order-item="${item.orderItemId}">Start</button>`,
+    PREPARING: `<button data-item-status="READY" data-order-item="${item.orderItemId}">Ready</button>`,
+    READY: `<button data-item-status="SERVED" data-order-item="${item.orderItemId}">Served</button>`
+  }[item.status] || "";
+  return `
+    <article class="kds-card">
+      <header><strong>#${order.orderId}</strong><span>${esc(order.tableName || "Parcel")}</span></header>
+      <h3>${esc(item.name)}</h3>
+      <p>Qty ${item.quantity} · ${minutesSince(order.createdAt)}</p>
+      ${(item.modifiers || []).map((modifier) => `<small>- ${esc(modifier.name)}</small>`).join("")}
+      <div class="kds-actions">${actions}</div>
+    </article>
+  `;
+}
+
+function renderOrders(orders) {
+  const buckets = { PENDING: [], PREPARING: [], READY: [] };
+  orders.forEach((order) => {
+    order.items.forEach((item) => {
+      if (buckets[item.status]) buckets[item.status].push(renderCard(order, item));
+    });
+  });
+  kdsPending.innerHTML = buckets.PENDING.join("") || "<p>No new orders</p>";
+  kdsPreparing.innerHTML = buckets.PREPARING.join("") || "<p>Nothing preparing</p>";
+  kdsReady.innerHTML = buckets.READY.join("") || "<p>Nothing ready</p>";
+
+  const pendingIds = new Set(orders.flatMap((order) => order.items.filter((item) => item.status === "PENDING").map((item) => item.orderItemId)));
+  const hasNewPending = [...pendingIds].some((id) => !state.lastPendingIds.has(id));
+  if (!state.firstLoad && hasNewPending) beep();
+  state.lastPendingIds = pendingIds;
+  state.firstLoad = false;
+  kdsStatus.textContent = `${orders.length} open order${orders.length === 1 ? "" : "s"}`;
+}
+
+async function loadOrders() {
+  if (!state.kitchenId || !allowedRoles.includes(actor.role)) return;
+  localStorage.setItem("kdsKitchenId", state.kitchenId);
+  const data = await fetch(`/kds/orders?restaurantId=${encodeURIComponent(restaurantId)}&kitchenId=${state.kitchenId}&role=${encodeURIComponent(actor.role)}`).then((res) => res.json());
+  if (!data.success) {
+    kdsStatus.textContent = data.message;
+    return;
+  }
+  renderOrders(data.orders);
+}
+
+document.addEventListener("click", async (event) => {
+  const target = event.target.closest("button");
+  if (!target) return;
+  if (target.dataset.itemStatus) {
+    const data = await postJson("/kds/item-status", { orderItemId: target.dataset.orderItem, status: target.dataset.itemStatus });
+    if (!data.success) return alert(data.message);
+    await loadOrders();
+  }
+});
+
+kitchenSelect.addEventListener("change", async () => {
+  state.kitchenId = Number(kitchenSelect.value);
+  state.firstLoad = true;
+  await loadOrders();
+});
+
+refreshKds.addEventListener("click", loadOrders);
+
+boot().catch((err) => {
+  kdsStatus.textContent = err.message;
+});
+
+setInterval(loadOrders, 5000);

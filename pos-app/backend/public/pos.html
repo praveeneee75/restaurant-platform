@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<title>Restaurant POS</title>
+
+<style>
+
+body{
+margin:0;
+font-family:Arial;
+}
+
+.container{
+display:flex;
+height:100vh;
+}
+
+/* Categories */
+
+.categories{
+width:20%;
+background:#2c3e50;
+color:white;
+padding:10px;
+overflow-y:auto;
+}
+
+.category{
+padding:10px;
+border-bottom:1px solid #444;
+cursor:pointer;
+}
+
+/* Items */
+
+.items{
+width:50%;
+padding:10px;
+display:flex;
+flex-wrap:wrap;
+overflow-y:auto;
+}
+
+.item{
+width:150px;
+border:1px solid #ddd;
+margin:10px;
+padding:10px;
+cursor:pointer;
+text-align:center;
+}
+
+/* Cart */
+
+.cart{
+width:30%;
+border-left:2px solid #ddd;
+padding:10px;
+display:flex;
+flex-direction:column;
+}
+
+.cart-items{
+flex:1;
+overflow-y:auto;
+}
+
+.total{
+font-size:20px;
+margin-top:10px;
+}
+
+button{
+padding:12px;
+margin-top:10px;
+cursor:pointer;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<div class="categories" id="categories"></div>
+
+<div class="items" id="items"></div>
+
+<div class="cart">
+
+<h3>Cart</h3>
+
+<div class="cart-items" id="cartItems"></div>
+
+<div class="total" id="total">Total: ₹0</div>
+
+<button onclick="checkout()">Checkout</button>
+
+</div>
+
+</div>
+
+<script src="/js/pos.js"></script>
+
+</body>
+</html>

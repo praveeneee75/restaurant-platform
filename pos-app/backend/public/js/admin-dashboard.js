@@ -1,0 +1,609 @@
+const restaurantId = new URLSearchParams(window.location.search).get("restaurantId") || localStorage.getItem("restaurantId");
+if (restaurantId) localStorage.setItem("restaurantId", restaurantId);
+
+const user = JSON.parse(localStorage.getItem("user") || '{"role":"OWNER"}');
+const actor = { id: user.id, role: user.role || "OWNER" };
+const state = { admin: {}, inventory: {}, modifiers: {}, backups: {}, settings: {}, permissions: {}, devices: {}, latestUpdate: null };
+
+const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+const money = (value) => Number(value || 0).toFixed(2);
+const can = (permission) => (state.permissions.currentPermissions || []).includes(permission) || actor.role === "OWNER";
+
+async function postJson(url, body) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ restaurantId, actor, ...body })
+  });
+  const data = await res.json();
+  if (!res.ok || data.success === false) throw new Error(data.message || "Request failed");
+  return data;
+}
+
+async function fetchJson(url) {
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!res.ok || data.success === false) throw new Error(data.message || "Request failed");
+  return data;
+}
+
+function actions(type, id) {
+  return `<button class="mini-btn" data-edit-${type}="${id}" type="button">Edit</button><button class="danger-btn" data-delete-${type}="${id}" type="button">Delete</button>`;
+}
+
+function fillSelect(element, rows, label = "name") {
+  element.innerHTML = rows.map((row) => `<option value="${row.id}">${esc(row[label])}</option>`).join("");
+}
+
+async function loadAdmin() {
+  state.admin = await fetchJson(`/admin/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`);
+  renderAdmin();
+}
+
+async function loadInventory() {
+  state.inventory = await fetchJson(`/inventory/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`);
+  renderInventory();
+}
+
+async function loadModifiers() {
+  state.modifiers = await fetchJson(`/modifiers/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`);
+  renderModifiers();
+}
+
+async function loadBackup() {
+  state.backups = await fetchJson(`/backup/settings?restaurantId=${encodeURIComponent(restaurantId)}`);
+  renderBackup();
+}
+
+async function loadSettings() {
+  state.settings = await fetchJson(`/settings?restaurantId=${encodeURIComponent(restaurantId)}`);
+  renderSettings();
+}
+
+async function loadPermissions() {
+  state.permissions = await fetchJson(`/permissions/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}`);
+  renderPermissions();
+  applyPermissionGuards();
+}
+
+async function loadDeviceSessions() {
+  if (!can("admin.view")) return;
+  state.devices = await fetchJson(`/device-sessions/list?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}`);
+  renderDeviceSessions();
+}
+
+async function loadUpdates() {
+  const version = await fetchJson("/version");
+  updateCurrentVersion.textContent = `Current version: ${version.posVersion} | Print Agent: ${version.printAgentVersion || "Not detected"}`;
+  const logs = await fetchJson(`/updates/logs?restaurantId=${encodeURIComponent(restaurantId)}`).catch(() => ({ logs: [] }));
+  updateLogsPanel.innerHTML = (logs.logs || []).map((log) => `<p><strong>${esc(log.status)}</strong> ${esc(log.current_version || "")} -> ${esc(log.target_version || "")}<br><small>${esc(log.message || "")} ${esc(log.created_at || "")}</small></p>`).join("") || "<p>No update logs yet.</p>";
+}
+
+function auditQuery() {
+  const params = new URLSearchParams({ restaurantId, role: actor.role });
+  if (auditFromDate.value) params.set("fromDate", auditFromDate.value);
+  if (auditToDate.value) params.set("toDate", auditToDate.value);
+  if (auditUser.value) params.set("user", auditUser.value);
+  if (auditAction.value) params.set("action", auditAction.value);
+  if (auditEntityType.value) params.set("entityType", auditEntityType.value);
+  if (auditSeverity.value) params.set("severity", auditSeverity.value);
+  return params;
+}
+
+async function loadAudit() {
+  if (!["OWNER", "MANAGER_2"].includes(actor.role)) {
+    auditStatus.textContent = "Audit dashboard requires OWNER or MANAGER_2";
+    return;
+  }
+  const summary = await fetchJson(`/audit/compliance-summary?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}`);
+  const cards = summary.cards || {};
+  complianceCards.innerHTML = [
+    ["Refunds today", cards.refundsToday],
+    ["Voided bills today", cards.voidedBillsToday],
+    ["Manual discounts today", cards.manualDiscountsToday],
+    ["Non-invoice sales today", cards.nonInvoiceSalesToday],
+    ["Failed logins", cards.failedLogins],
+    ["Backup restores", cards.backupRestoreEvents]
+  ].map(([label, value]) => `<article><h3>${esc(label)}</h3><strong>${value || 0}</strong></article>`).join("");
+
+  const data = await fetchJson(`/audit/logs?${auditQuery().toString()}`);
+  auditLogsTable.innerHTML = (data.logs || []).map((log) => `
+    <tr>
+      <td>${esc(log.created_at)}</td>
+      <td>${esc(log.user || log.user_role || "")}</td>
+      <td>${esc(log.action)}</td>
+      <td>${esc(log.entity_type)} #${esc(log.entity_id || "")}</td>
+      <td><small>${esc(log.old_value || "")}</small></td>
+      <td><small>${esc(log.new_value || "")}</small></td>
+    </tr>
+  `).join("") || `<tr><td colspan="6">No audit logs found.</td></tr>`;
+  complianceEventsTable.innerHTML = (summary.events || []).concat(data.complianceEvents || []).slice(0, 100).map((event) => `
+    <tr>
+      <td>${esc(event.created_at)}</td>
+      <td>${esc(event.severity)}</td>
+      <td>${esc(event.event_type)}</td>
+      <td>${esc(event.message)}</td>
+      <td>${esc(event.entity_type || "")} #${esc(event.entity_id || "")}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="5">No compliance events found.</td></tr>`;
+  auditStatus.textContent = "Audit loaded";
+}
+
+async function loadAll() {
+  adminStatus.textContent = "Loading workspace...";
+  await loadPermissions();
+  await Promise.all([loadAdmin(), loadInventory(), loadModifiers(), loadBackup(), loadSettings(), loadUpdates(), loadAudit(), loadDeviceSessions()]);
+  adminStatus.textContent = "Workspace ready";
+}
+
+function renderAdmin() {
+  const { kitchens = [], categories = [], items = [], users = [], tables = [] } = state.admin;
+  fillSelect(categoryKitchen, kitchens);
+  fillSelect(itemCategory, categories);
+  fillSelect(recipeMenuItem, items);
+  fillSelect(modifierAssignItem, items);
+  fillSelect(comboItem, items);
+  kitchensTable.innerHTML = kitchens.map((k) => `<tr><td>${esc(k.name)}</td><td>${esc(k.printer_name || "")}</td><td>${k.active ? "Active" : "Inactive"}</td><td>${actions("kitchen", k.id)}</td></tr>`).join("");
+  categoriesTable.innerHTML = categories.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.kitchen_name || "")}</td><td>${c.active ? "Active" : "Inactive"}</td><td>${actions("category", c.id)}</td></tr>`).join("");
+  const term = (itemSearch?.value || "").toLowerCase();
+  itemsTable.innerHTML = items.filter((i) => !term || i.name.toLowerCase().includes(term)).map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.category_name || "")}</td><td>${money(i.price)}</td><td>${i.active ? "Active" : "Inactive"}</td><td>${actions("item", i.id)}</td></tr>`).join("");
+  usersTable.innerHTML = users.map((u) => `<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${esc(u.role)}</td><td>${u.active ? "Active" : "Disabled"}</td><td><button class="mini-btn" data-edit-user="${u.id}" type="button">Edit</button><button class="danger-btn" data-disable-user="${u.id}" type="button">Disable</button></td></tr>`).join("");
+  tablesTable.innerHTML = tables.map((t) => `<tr><td>${esc(t.table_name)}</td><td>${esc(t.status)}</td><td>${actions("table", t.id)}</td></tr>`).join("");
+}
+
+function renderInventory() {
+  const { suppliers = [], ingredients = [], recipes = [], purchaseOrders = [], lowStock = [], supplierPayments = [], supplierBalances = [] } = state.inventory;
+  fillSelect(purchaseSupplier, suppliers);
+  fillSelect(paymentSupplier, suppliers);
+  fillSelect(purchaseIngredient, ingredients);
+  fillSelect(stockIngredient, ingredients);
+  fillSelect(recipeIngredient, ingredients);
+  paymentPurchaseOrder.innerHTML = `<option value="">General supplier payment</option>` + purchaseOrders.map((po) => `<option value="${po.id}">${esc(po.po_number || `PO-${po.id}`)} - ${esc(po.supplier_name || "")}</option>`).join("");
+  suppliersTable.innerHTML = suppliers.map((s) => `<tr><td>${esc(s.name)}</td><td>${esc(s.phone || "")}</td><td>${esc(s.email || "")}</td><td>${esc(s.gstin || "")}</td><td>${actions("supplier", s.id)}</td></tr>`).join("");
+  ingredientsTable.innerHTML = ingredients.map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.unit)}</td><td>${money(i.current_stock)}</td><td>${money(i.low_stock_alert ?? i.low_stock_level)}</td><td>${actions("ingredient", i.id)}</td></tr>`).join("");
+  purchaseOrdersTable.innerHTML = purchaseOrders.map((po) => `<tr><td>${esc(po.po_number || `PO-${po.id}`)}</td><td>${esc(po.supplier_name || "")}</td><td>${esc(po.status)}</td><td>${money(po.total_amount)}</td><td>${money(po.paid_amount)}</td><td>${money(po.outstanding_amount)}</td><td>${esc(po.order_date || po.created_at || "")}</td><td><button class="mini-btn" data-receive-po="${po.id}" type="button">Receive</button><button class="danger-btn" data-cancel-po="${po.id}" type="button">Cancel</button></td></tr>`).join("");
+  recipesTable.innerHTML = recipes.map((r) => `<tr><td>${esc(r.item_name)}</td><td>${esc(r.ingredient_name)}</td><td>${money(r.quantity_per_item)}</td><td>${esc(r.unit || "")}</td><td><button class="danger-btn" data-delete-recipe="${r.id}" type="button">Delete</button></td></tr>`).join("");
+  inventoryLowStock.innerHTML = lowStock.map((i) => `<p>${esc(i.name)}: ${money(i.current_stock)} ${esc(i.unit || "")}</p>`).join("") || "<p>No low stock alerts.</p>";
+  supplierBalancePanel.innerHTML = supplierBalances.map((row) => `<p>${esc(row.name)}: outstanding ${money(row.outstanding_amount)} / billed ${money(row.billed_amount)}</p>`).join("") || "<p>No supplier balances.</p>";
+  supplierPaymentsPanel.innerHTML = supplierPayments.map((row) => `<p>${esc(row.supplier_name)} ${money(row.amount)} ${esc(row.payment_mode)} <small>${esc(row.po_number || "")}</small></p>`).join("") || "<p>No supplier payments.</p>";
+}
+
+function renderModifiers() {
+  const { groups = [], modifiers = [], assignments = [], combos = [], comboItems = [] } = state.modifiers;
+  fillSelect(modifierOptionGroup, groups);
+  fillSelect(modifierAssignGroup, groups);
+  modifierGroupsTable.innerHTML = groups.map((g) => `<tr><td>${esc(g.name)}</td><td>${g.min_select}</td><td>${g.max_select}</td><td>${g.required ? "Yes" : "No"}</td><td>${actions("modifier-group", g.id)}</td></tr>`).join("");
+  modifierOptionsTable.innerHTML = modifiers.map((m) => `<tr><td>${esc(m.group_name || "")}</td><td>${esc(m.name)}</td><td>${money(m.price_delta)}</td><td>${actions("modifier-option", m.id)}</td></tr>`).join("");
+  modifierAssignmentsTable.innerHTML = assignments.map((a) => `<tr><td>${esc(a.item_name)}</td><td>${esc(a.group_name)}</td><td><button class="danger-btn" data-delete-modifier-assignment="${a.id}" type="button">Delete</button></td></tr>`).join("");
+  combosTable.innerHTML = combos.map((c) => {
+    const included = comboItems.filter((item) => item.combo_id === c.id).map((item) => `${item.item_name} x${item.quantity}`).join(", ");
+    return `<tr><td>${esc(c.name)}</td><td>${money(c.price)}</td><td>${esc(included)}</td><td>${actions("combo", c.id)}</td></tr>`;
+  }).join("");
+}
+
+function renderBackup() {
+  const settings = state.backups.settings || {};
+  backupEnabled.checked = settings.backup_enabled === "1";
+  backupInterval.value = settings.backup_interval_minutes || 60;
+  backupFolderPath.value = settings.backup_folder_path || "";
+  onedriveFolderPath.value = settings.onedrive_folder_path || "";
+  backupStatusPanel.innerHTML = `<p>Last backup: ${esc(settings.last_backup_at || "Never")}</p><p>Last sync: ${esc(settings.last_sync_at || "Never")}</p>`;
+  backupLogsPanel.innerHTML = (state.backups.logs || []).map((log) => `<p><strong>${esc(log.type)}</strong> ${esc(log.status)}<br><small>${esc(log.message || "")}</small></p>`).join("") || "<p>No logs yet.</p>";
+  backupListTable.innerHTML = (state.backups.backups || []).map((backup) => `<tr><td>${esc(backup.filename)}</td><td>${backup.size}</td><td>${esc(backup.created_at)}</td><td><button data-restore-backup="${esc(backup.filename)}" class="danger-btn" type="button">Restore</button></td></tr>`).join("");
+}
+
+function renderPermissions() {
+  if (actor.role !== "OWNER") {
+    permissionsStatus.textContent = "Only OWNER can edit permissions";
+    permissionsMatrixHead.innerHTML = "";
+    permissionsMatrixBody.innerHTML = "";
+    savePermissionsMatrix.hidden = true;
+    return;
+  }
+  savePermissionsMatrix.hidden = false;
+  const roles = state.permissions.roles || [];
+  const permissions = state.permissions.permissions || [];
+  const matrix = state.permissions.matrix || [];
+  const allowed = new Map(matrix.map((row) => [`${row.role}:${row.permission_code}`, Number(row.allowed) === 1]));
+  permissionsMatrixHead.innerHTML = `<tr><th>Module</th><th>Permission</th>${roles.map((role) => `<th>${esc(role.name)}</th>`).join("")}</tr>`;
+  permissionsMatrixBody.innerHTML = permissions.map((permission) => `
+    <tr>
+      <td>${esc(permission.module)}</td>
+      <td><strong>${esc(permission.code)}</strong><br><small>${esc(permission.description || "")}</small></td>
+      ${roles.map((role) => `<td><input type="checkbox" data-permission-role="${esc(role.name)}" data-permission-code="${esc(permission.code)}" ${allowed.get(`${role.name}:${permission.code}`) ? "checked" : ""} ${role.name === "OWNER" ? "disabled" : ""}></td>`).join("")}
+    </tr>
+  `).join("");
+  permissionsStatus.textContent = "Permission matrix loaded";
+}
+
+function renderDeviceSessions() {
+  deviceSessionsTable.innerHTML = (state.devices.devices || []).map((device) => `
+    <tr>
+      <td>${esc(device.user_name || device.user_id)}</td>
+      <td>${esc(device.role || "")}</td>
+      <td>${esc(device.device_name || "")}</td>
+      <td>${esc(device.ip_address || "")}</td>
+      <td>${esc(device.login_at || "")}</td>
+      <td>${esc(device.last_seen_at || "")}</td>
+      <td><button class="danger-btn" data-force-logout="${device.id}" type="button">Force Logout</button></td>
+    </tr>
+  `).join("") || `<tr><td colspan="7">No active devices.</td></tr>`;
+  deviceStatus.textContent = "Device sessions loaded";
+}
+
+function applyPermissionGuards() {
+  const viewPermissions = {
+    users: "admin.users.manage",
+    inventory: "inventory.view",
+    reports: "reports.view_invoice_only",
+    devices: "admin.view",
+    settings: "admin.settings.manage",
+    permissions: "admin.settings.manage",
+    backup: "backup.manage",
+    audit: "audit.view"
+  };
+  document.querySelectorAll(".nav-btn").forEach((btn) => {
+    const permission = viewPermissions[btn.dataset.view];
+    if (permission && !can(permission) && !(permission === "reports.view_invoice_only" && can("reports.view_all"))) {
+      btn.hidden = true;
+    }
+  });
+  document.querySelectorAll(".danger-btn").forEach((btn) => {
+    if (!can("admin.menu.manage") && !can("inventory.manage")) btn.hidden = true;
+  });
+  if (!can("reports.export")) exportAuditCsv.hidden = true;
+  if (!can("inventory.purchase_orders")) {
+    purchaseOrderForm.hidden = true;
+    supplierPaymentForm.hidden = true;
+  }
+  if (!can("admin.settings.manage")) settingsForm.querySelectorAll("input,select,button").forEach((element) => element.disabled = true);
+}
+
+function checkedValue(element) {
+  return element.checked ? "1" : "0";
+}
+
+function setChecked(element, value) {
+  element.checked = value === "1" || value === true || value === "true";
+}
+
+function renderSettings() {
+  const settings = state.settings.settings || {};
+  settingRestaurantDisplayName.value = settings.restaurant_display_name || "";
+  settingLegalName.value = settings.legal_name || "";
+  settingGstin.value = settings.gstin || "";
+  settingAddressLine1.value = settings.address_line_1 || "";
+  settingAddressLine2.value = settings.address_line_2 || "";
+  settingCity.value = settings.city || "";
+  settingState.value = settings.state || "";
+  settingCountry.value = settings.country || "";
+  settingPhone.value = settings.phone || "";
+  settingEmail.value = settings.email || "";
+  settingCurrency.value = settings.currency || "INR";
+  settingTimezone.value = settings.timezone || "Asia/Kolkata";
+  settingLogoPath.value = settings.logo_path || "";
+  settingDefaultOrderType.value = settings.default_order_type || "DINE_IN";
+  setChecked(settingAllowNonInvoiceOrders, settings.allow_non_invoice_orders);
+  setChecked(settingAllowDiscount, settings.allow_discount);
+  setChecked(settingAllowManualPriceOverride, settings.allow_manual_price_override);
+  setChecked(settingAllowRefund, settings.allow_refund);
+  setChecked(settingAllowOrderCancel, settings.allow_order_cancel);
+  setChecked(settingRequireManagerPinForDiscount, settings.require_manager_pin_for_discount);
+  setChecked(settingRequireManagerPinForRefund, settings.require_manager_pin_for_refund);
+  setChecked(settingRequireManagerPinForVoid, settings.require_manager_pin_for_void);
+  setChecked(settingRequireClockInBeforeOrder, settings.require_clock_in_before_order);
+  settingInvoicePrefix.value = settings.invoice_prefix || "INV";
+  settingInvoiceResetFrequency.value = settings.invoice_reset_frequency || "DAILY";
+  setChecked(settingShowTaxOnBill, settings.show_tax_on_bill);
+  setChecked(settingShowQrOnBill, settings.show_qr_on_bill);
+  settingUpiId.value = settings.upi_id || "";
+  setChecked(settingServiceChargeEnabled, settings.service_charge_enabled);
+  settingServiceChargePercent.value = settings.service_charge_percent || "0";
+  setChecked(settingRoundOffEnabled, settings.round_off_enabled);
+  setChecked(settingAutoPrintKot, settings.auto_print_kot);
+  setChecked(settingPrintKotOnSave, settings.print_kot_on_save);
+  setChecked(settingPrintKotOnSubmit, settings.print_kot_on_submit);
+  setChecked(settingAllowKotReprint, settings.allow_kot_reprint);
+  settingKotHeaderText.value = settings.kot_header_text || "";
+  settingKotFooterText.value = settings.kot_footer_text || "";
+  setChecked(settingBackupEnabled, settings.backup_enabled);
+  settingBackupFolderPath.value = settings.backup_folder_path || "";
+  settingOnedriveFolderPath.value = settings.onedrive_folder_path || "";
+  settingBackupIntervalMinutes.value = settings.backup_interval_minutes || "60";
+  setChecked(settingRequireOpenRegisterForCashPayment, settings.require_open_register_for_cash_payment);
+  setChecked(settingAllowCashierRegisterClose, settings.allow_cashier_register_close);
+  settingCashDiscrepancyThreshold.value = settings.cash_discrepancy_threshold || "0";
+  settingsStatus.textContent = "Settings loaded";
+}
+
+function collectSettings() {
+  return {
+    restaurant_display_name: settingRestaurantDisplayName.value,
+    legal_name: settingLegalName.value,
+    gstin: settingGstin.value,
+    address_line_1: settingAddressLine1.value,
+    address_line_2: settingAddressLine2.value,
+    city: settingCity.value,
+    state: settingState.value,
+    country: settingCountry.value,
+    phone: settingPhone.value,
+    email: settingEmail.value,
+    currency: settingCurrency.value,
+    timezone: settingTimezone.value,
+    logo_path: settingLogoPath.value,
+    default_order_type: settingDefaultOrderType.value,
+    allow_non_invoice_orders: checkedValue(settingAllowNonInvoiceOrders),
+    allow_discount: checkedValue(settingAllowDiscount),
+    allow_manual_price_override: checkedValue(settingAllowManualPriceOverride),
+    allow_refund: checkedValue(settingAllowRefund),
+    allow_order_cancel: checkedValue(settingAllowOrderCancel),
+    require_manager_pin_for_discount: checkedValue(settingRequireManagerPinForDiscount),
+    require_manager_pin_for_refund: checkedValue(settingRequireManagerPinForRefund),
+    require_manager_pin_for_void: checkedValue(settingRequireManagerPinForVoid),
+    require_clock_in_before_order: checkedValue(settingRequireClockInBeforeOrder),
+    invoice_prefix: settingInvoicePrefix.value,
+    invoice_reset_frequency: settingInvoiceResetFrequency.value,
+    show_tax_on_bill: checkedValue(settingShowTaxOnBill),
+    show_qr_on_bill: checkedValue(settingShowQrOnBill),
+    upi_id: settingUpiId.value,
+    service_charge_enabled: checkedValue(settingServiceChargeEnabled),
+    service_charge_percent: settingServiceChargePercent.value,
+    round_off_enabled: checkedValue(settingRoundOffEnabled),
+    auto_print_kot: checkedValue(settingAutoPrintKot),
+    print_kot_on_save: checkedValue(settingPrintKotOnSave),
+    print_kot_on_submit: checkedValue(settingPrintKotOnSubmit),
+    allow_kot_reprint: checkedValue(settingAllowKotReprint),
+    kot_header_text: settingKotHeaderText.value,
+    kot_footer_text: settingKotFooterText.value,
+    backup_enabled: checkedValue(settingBackupEnabled),
+    backup_folder_path: settingBackupFolderPath.value,
+    onedrive_folder_path: settingOnedriveFolderPath.value,
+    backup_interval_minutes: settingBackupIntervalMinutes.value,
+    require_open_register_for_cash_payment: checkedValue(settingRequireOpenRegisterForCashPayment),
+    allow_cashier_register_close: checkedValue(settingAllowCashierRegisterClose),
+    cash_discrepancy_threshold: settingCashDiscrepancyThreshold.value
+  };
+}
+
+document.querySelectorAll(".nav-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".nav-btn").forEach((item) => item.classList.remove("active"));
+    document.querySelectorAll(".admin-view").forEach((view) => view.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById(`view-${btn.dataset.view}`).classList.add("active");
+  });
+});
+
+document.querySelectorAll("[data-inventory-tab]").forEach((btn) => btn.addEventListener("click", () => document.querySelectorAll(".inventory-tab").forEach((tab) => tab.hidden = tab.id !== `inventory-${btn.dataset.inventoryTab}`)));
+document.querySelectorAll("[data-modifier-tab]").forEach((btn) => btn.addEventListener("click", () => document.querySelectorAll(".modifier-tab").forEach((tab) => tab.hidden = tab.id !== `modifier-${btn.dataset.modifierTab}`)));
+
+refreshBtn.addEventListener("click", loadAll);
+itemSearch.addEventListener("input", renderAdmin);
+
+kitchenForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/kitchens/save", { id: kitchenId.value || null, name: kitchenName.value, printerName: kitchenPrinter.value, active: kitchenActive.checked }); kitchenForm.reset(); kitchenActive.checked = true; await loadAdmin(); });
+categoryForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/categories/save", { id: categoryId.value || null, name: categoryName.value, kitchenId: categoryKitchen.value, active: categoryActive.checked }); categoryForm.reset(); categoryActive.checked = true; await loadAdmin(); });
+itemForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, isVeg: itemVeg.checked, allowParcel: itemParcel.checked, active: itemActive.checked }); itemForm.reset(); itemActive.checked = true; await loadAdmin(); });
+userForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/users/save", { id: userId.value || null, name: userName.value, username: userUsername.value, pin: userPin.value, role: userRole.value, active: userActive.checked }); userForm.reset(); userActive.checked = true; await loadAdmin(); });
+tableForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/tables/save", { id: tableId.value || null, tableName: tableName.value, status: tableStatus.value }); tableForm.reset(); await loadAdmin(); });
+
+supplierForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/inventory/suppliers/save", { id: supplierId.value || null, name: supplierName.value, phone: supplierPhone.value, email: supplierEmail.value, address: supplierAddress.value, gstin: supplierGstin.value }); supplierForm.reset(); await loadInventory(); });
+ingredientForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/inventory/ingredients/save", { id: ingredientId.value || null, name: ingredientName.value, unit: ingredientUnit.value, lowStockAlert: ingredientLowStock.value }); ingredientForm.reset(); await loadInventory(); });
+purchaseOrderForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const payload = { supplierId: purchaseSupplier.value, status: purchaseStatus.value, notes: purchaseNotes.value, items: [{ ingredientId: purchaseIngredient.value, quantity: Number(purchaseQty.value), unitPrice: Number(purchaseUnitCost.value || 0), taxRate: Number(purchaseTaxRate.value || 0) }] };
+  const url = purchaseOrderId.value ? "/purchase-orders/update" : "/purchase-orders/create";
+  await postJson(url, purchaseOrderId.value ? { id: purchaseOrderId.value, ...payload } : payload);
+  purchaseOrderForm.reset();
+  await loadInventory();
+});
+supplierPaymentForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await postJson("/supplier-payments/add", { supplierId: paymentSupplier.value, purchaseOrderId: paymentPurchaseOrder.value || null, amount: supplierPaymentAmount.value, paymentMode: supplierPaymentMode.value, referenceNo: supplierPaymentReference.value });
+  supplierPaymentForm.reset();
+  await loadInventory();
+});
+stockForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const movement = stockMovement.value;
+  const url = movement === "PURCHASE" ? "/inventory/stock-in" : "/inventory/stock-out";
+  const payload = movement === "PURCHASE"
+    ? { ingredientId: stockIngredient.value, quantity: Number(stockQty.value), unitCost: Number(stockUnitCost.value || 0), notes: stockNotes.value }
+    : { ingredientId: stockIngredient.value, quantity: Number(stockQty.value), reason: movement, notes: stockNotes.value };
+  await postJson(url, payload);
+  stockForm.reset();
+  await loadInventory();
+});
+recipeForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/inventory/recipes/save", { itemId: recipeMenuItem.value, ingredientId: recipeIngredient.value, quantityPerItem: recipeQty.value }); recipeForm.reset(); await loadInventory(); });
+
+modifierGroupForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/modifiers/groups/save", { id: modifierGroupId.value || null, name: modifierGroupName.value, minSelect: modifierGroupMin.value, maxSelect: modifierGroupMax.value, required: modifierGroupRequired.checked }); modifierGroupForm.reset(); await loadModifiers(); });
+modifierOptionForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/modifiers/options/save", { id: modifierOptionId.value || null, groupId: modifierOptionGroup.value, name: modifierOptionName.value, priceDelta: modifierOptionPrice.value }); modifierOptionForm.reset(); await loadModifiers(); });
+modifierAssignForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/modifiers/assign/save", { itemId: modifierAssignItem.value, groupId: modifierAssignGroup.value }); modifierAssignForm.reset(); await loadModifiers(); });
+comboForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/combos/save", { id: comboId.value || null, name: comboName.value, price: comboPrice.value, items: [{ itemId: comboItem.value, quantity: Number(comboItemQty.value || 1) }] }); comboForm.reset(); await loadModifiers(); });
+
+settingsForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    settingsStatus.textContent = "Saving settings...";
+    state.settings = await postJson("/settings/update", { updatedByRole: actor.role, settings: collectSettings() });
+    renderSettings();
+    await loadBackup();
+    settingsStatus.textContent = "Settings saved";
+    alert("Settings saved");
+  } catch (err) {
+    settingsStatus.textContent = err.message;
+    alert(err.message);
+  }
+});
+
+resetSettingsDefaults.addEventListener("click", async () => {
+  if (!confirm("Reset restaurant settings to defaults?")) return;
+  try {
+    state.settings = await postJson("/settings/reset-defaults", { updatedByRole: actor.role });
+    renderSettings();
+    await loadBackup();
+    settingsStatus.textContent = "Defaults restored";
+    alert("Defaults restored");
+  } catch (err) {
+    settingsStatus.textContent = err.message;
+    alert(err.message);
+  }
+});
+
+savePermissionsMatrix.addEventListener("click", async () => {
+  if (actor.role !== "OWNER") return;
+  const roles = [...new Set([...document.querySelectorAll("[data-permission-role]")].map((input) => input.dataset.permissionRole))].filter((role) => role !== "OWNER");
+  for (const role of roles) {
+    const permissions = {};
+    document.querySelectorAll(`[data-permission-role="${role}"]`).forEach((input) => {
+      permissions[input.dataset.permissionCode] = input.checked;
+    });
+    await postJson("/permissions/update", { role, permissions });
+  }
+  permissionsStatus.textContent = "Permissions saved";
+  alert("Permissions saved");
+  await loadPermissions();
+});
+
+loadDevices.addEventListener("click", () => loadDeviceSessions().catch((err) => {
+  deviceStatus.textContent = err.message;
+  alert(err.message);
+}));
+
+async function fetchStaffCashReports() {
+  if (!["OWNER", "MANAGER_2"].includes(actor.role)) {
+    staffCashStatus.textContent = "Reports require OWNER or MANAGER_2";
+    return;
+  }
+  const params = new URLSearchParams({ restaurantId, role: actor.role });
+  if (staffCashFrom.value) params.set("fromDate", staffCashFrom.value);
+  if (staffCashTo.value) params.set("toDate", staffCashTo.value);
+  if (staffCashUserId.value) params.set("userId", staffCashUserId.value);
+  const attendance = await fetchJson(`/attendance/report?${params.toString()}`);
+  const cash = await fetchJson(`/cash-register/report?${params.toString()}`);
+  attendanceReportTable.innerHTML = (attendance.attendance || []).map((row) => `
+    <tr>
+      <td>${esc(row.user_name || row.user_id)}</td>
+      <td>${esc(row.role || "")}</td>
+      <td>${esc(row.clock_in_at)}</td>
+      <td>${esc(row.clock_out_at || "")}</td>
+      <td>${esc(row.status)}</td>
+      <td>${esc(row.duration_minutes || "")}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="6">No attendance rows.</td></tr>`;
+  cashRegisterReportTable.innerHTML = (cash.sessions || []).map((row) => `
+    <tr>
+      <td>${esc(row.opened_at)}</td>
+      <td>${esc(row.opened_by_name || row.opened_by)}</td>
+      <td>${esc(row.closed_at || "")}</td>
+      <td>${money(row.opening_cash)}</td>
+      <td>${money(row.expected_cash)}</td>
+      <td>${money(row.closing_cash)}</td>
+      <td>${money(row.cash_difference)}</td>
+      <td>${esc(row.status)}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="8">No cash sessions.</td></tr>`;
+  cashMovementReportTable.innerHTML = (cash.movements || []).map((row) => `
+    <tr>
+      <td>${esc(row.created_at)}</td>
+      <td>${esc(row.type)}</td>
+      <td>${money(row.amount)}</td>
+      <td>${esc(row.reason || "")}</td>
+      <td>${esc(row.performed_by_name || row.performed_by || "")}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="5">No movements.</td></tr>`;
+  cashDiscrepancyReportTable.innerHTML = (cash.discrepancies || []).map((row) => `
+    <tr>
+      <td>${esc(row.id)}</td>
+      <td>${money(row.expected_cash)}</td>
+      <td>${money(row.closing_cash)}</td>
+      <td>${money(row.cash_difference)}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="4">No discrepancies.</td></tr>`;
+  staffCashStatus.textContent = "Reports loaded";
+}
+
+loadStaffCashReports.addEventListener("click", () => fetchStaffCashReports().catch((err) => {
+  staffCashStatus.textContent = err.message;
+  alert(err.message);
+}));
+
+backupSettingsForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/backup/settings", { settings: { backup_enabled: backupEnabled.checked ? "1" : "0", backup_interval_minutes: backupInterval.value, backup_folder_path: backupFolderPath.value, onedrive_folder_path: onedriveFolderPath.value } }); alert("Backup settings saved"); await Promise.all([loadBackup(), loadSettings()]); });
+runBackupNow.addEventListener("click", async () => { const data = await postJson("/backup/run", {}); alert(data.message || "Backup complete"); await loadBackup(); });
+runOneDriveSync.addEventListener("click", async () => { const data = await postJson("/backup/sync", {}); alert(data.message || "Sync complete"); await loadBackup(); });
+refreshBackups.addEventListener("click", loadBackup);
+
+checkUpdateNow.addEventListener("click", async () => {
+  updateStatus.textContent = "Checking for updates...";
+  const data = await fetchJson(`/updates/check?restaurantId=${encodeURIComponent(restaurantId)}`);
+  state.latestUpdate = data;
+  downloadUpdateNow.disabled = !data.updateAvailable;
+  updateStatus.textContent = data.message;
+  updateLatestPanel.innerHTML = data.updateAvailable
+    ? `<p><strong>${esc(data.latestVersion)}</strong> ${data.mandatoryUpdate ? "Mandatory" : "Optional"}</p><p>${esc(data.releaseNotes || "")}</p><p>${(data.files || []).map((file) => esc(file.file_name)).join(", ")}</p>`
+    : `<p>${esc(data.message || "No update available")}</p>`;
+  await loadUpdates();
+});
+
+downloadUpdateNow.addEventListener("click", async () => {
+  if (!state.latestUpdate?.updateAvailable) return;
+  const data = await postJson("/updates/download", { version: state.latestUpdate.latestVersion, files: state.latestUpdate.files });
+  updateStatus.textContent = `Downloaded to ${data.stagingDir}`;
+  await loadUpdates();
+});
+
+loadAuditLogs.addEventListener("click", loadAudit);
+exportAuditCsv.addEventListener("click", () => {
+  if (actor.role !== "OWNER") {
+    auditStatus.textContent = "Only OWNER can export audit logs";
+    return;
+  }
+  window.location.href = `/audit/export?${auditQuery().toString()}`;
+});
+
+document.addEventListener("click", async (event) => {
+  const target = event.target.closest("button");
+  if (!target) return;
+  const pick = (name) => target.dataset[name];
+  try {
+    if (pick("deleteKitchen") && confirm("Delete this kitchen?")) await postJson("/admin/kitchens/delete", { id: pick("deleteKitchen") }).then(loadAdmin);
+    if (pick("deleteCategory") && confirm("Delete this category?")) await postJson("/admin/categories/delete", { id: pick("deleteCategory") }).then(loadAdmin);
+    if (pick("deleteItem") && confirm("Delete this item?")) await postJson("/admin/items/delete", { id: pick("deleteItem") }).then(loadAdmin);
+    if (pick("disableUser") && confirm("Disable this user?")) await postJson("/admin/users/disable", { id: pick("disableUser") }).then(loadAdmin);
+    if (pick("deleteTable") && confirm("Delete this table?")) await postJson("/tables/delete", { id: pick("deleteTable") }).then(loadAdmin);
+    if (pick("deleteSupplier") && confirm("Delete this supplier?")) await postJson("/inventory/suppliers/delete", { id: pick("deleteSupplier") }).then(loadInventory);
+    if (pick("deleteIngredient") && confirm("Delete this ingredient?")) await postJson("/inventory/ingredients/delete", { id: pick("deleteIngredient") }).then(loadInventory);
+    if (pick("deleteRecipe") && confirm("Delete this recipe?")) await postJson("/inventory/recipes/delete", { id: pick("deleteRecipe") }).then(loadInventory);
+    if (pick("receivePo") && confirm("Receive this purchase order and increase stock?")) await postJson("/purchase-orders/receive", { id: pick("receivePo") }).then(loadInventory);
+    if (pick("cancelPo") && confirm("Cancel this purchase order?")) await postJson("/purchase-orders/cancel", { id: pick("cancelPo") }).then(loadInventory);
+    if (pick("deleteModifierGroup") && confirm("Delete this modifier group?")) await postJson("/modifiers/groups/delete", { id: pick("deleteModifierGroup") }).then(loadModifiers);
+    if (pick("deleteModifierOption") && confirm("Delete this modifier?")) await postJson("/modifiers/options/delete", { id: pick("deleteModifierOption") }).then(loadModifiers);
+    if (pick("deleteModifierAssignment") && confirm("Delete this assignment?")) await postJson("/modifiers/assign/delete", { id: pick("deleteModifierAssignment") }).then(loadModifiers);
+    if (pick("deleteCombo") && confirm("Delete this combo?")) await postJson("/combos/delete", { id: pick("deleteCombo") }).then(loadModifiers);
+    if (pick("restoreBackup") && confirm("Restore this backup?")) await postJson("/backup/restore", { filename: pick("restoreBackup") }).then((data) => alert(data.message));
+    if (pick("forceLogout") && confirm("Force logout this device?")) await postJson("/device-sessions/force-logout", { id: pick("forceLogout") }).then(loadDeviceSessions);
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+loadReports.addEventListener("click", async () => {
+  const data = await fetchJson(`/reports/dashboard?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`);
+  dailySales.innerHTML = (data.dailySales || []).map((row) => `<p>${esc(row.day)}: ${money(row.total)}</p>`).join("");
+  topItems.innerHTML = (data.topItems || []).map((row) => `<p>${esc(row.name)}: ${row.quantity}</p>`).join("");
+  orderSummary.innerHTML = (data.orderSummary || []).map((row) => `<p>${esc(row.status)} / ${esc(row.payment_status)}: ${row.count}</p>`).join("");
+  taxSummary.innerHTML = `<p>${money(data.taxSummary?.tax || 0)}</p>`;
+});
+
+loadInventoryReports.addEventListener("click", async () => {
+  const data = await fetchJson(`/inventory/reports?restaurantId=${encodeURIComponent(restaurantId)}&from=${inventoryReportFrom.value}&to=${inventoryReportTo.value}`);
+  const purchaseData = await fetchJson(`/purchase-orders/reports?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${inventoryReportFrom.value}&toDate=${inventoryReportTo.value}`).catch(() => ({ purchaseReport: [], paymentModeReport: [] }));
+  inventoryMovementSummary.innerHTML = (data.stockMovementReport || []).map((row) => `<p>${esc(row.movement_type)}: ${money(row.quantity)}</p>`).join("");
+  inventoryUsageReport.innerHTML = (data.ingredientUsageReport || []).map((row) => `<p>${esc(row.name)}: ${money(row.quantity)}</p>`).join("");
+  inventoryWastageReport.innerHTML = (data.wastageReport || []).map((row) => `<p>${esc(row.name)}: ${money(row.quantity)}</p>`).join("");
+  purchaseReportPanel.innerHTML = (purchaseData.purchaseReport || []).map((row) => `<p>${esc(row.day)} ${esc(row.status)}: ${money(row.total)}</p>`).join("") || "<p>No purchase data.</p>";
+  purchasePaymentModeReport.innerHTML = (purchaseData.paymentModeReport || []).map((row) => `<p>${esc(row.payment_mode)}: ${money(row.total)}</p>`).join("") || "<p>No supplier payments.</p>";
+});
+
+loadAll().catch((err) => {
+  adminStatus.textContent = err.message;
+});
