@@ -64,7 +64,14 @@ const DEFAULT_SYSTEM_SETTINGS = {
   cloud_sync_last_7_days_at: '',
   last_cloud_sync_at: '',
   last_cloud_sync_status: '',
-  last_cloud_sync_message: ''
+  last_cloud_sync_message: '',
+  enabled_modules: ''
+  ,
+  fraud_large_discount_threshold: '500',
+  fraud_refund_count_threshold: '5',
+  fraud_void_count_threshold: '5',
+  fraud_cash_mismatch_threshold: '100',
+  retention_customer_days: '365'
 };
 
 function seedDefaultSettings(db) {
@@ -120,6 +127,7 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'orders', 'loyalty_discount REAL DEFAULT 0');
   addColumn(db, 'orders', 'delivery_fee REAL DEFAULT 0');
   addColumn(db, 'orders', 'updated_at DATETIME');
+  addColumn(db, 'orders', "order_source TEXT DEFAULT 'POS'");
 
   addColumn(db, 'order_items', 'price REAL DEFAULT 0');
   addColumn(db, 'order_items', "status TEXT DEFAULT 'PLACED'");
@@ -402,7 +410,146 @@ function ensureRestaurantSchema(db) {
 
     CREATE INDEX IF NOT EXISTS idx_cloud_sync_queue_status ON cloud_sync_queue(status, created_at);
     CREATE INDEX IF NOT EXISTS idx_cloud_sync_queue_entity ON cloud_sync_queue(entity_type, entity_id);
+
+    CREATE TABLE IF NOT EXISTS reservations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_name TEXT NOT NULL,
+      phone TEXT,
+      table_id INTEGER,
+      guest_count INTEGER DEFAULT 1,
+      reservation_time DATETIME NOT NULL,
+      status TEXT NOT NULL DEFAULT 'BOOKED',
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME,
+      FOREIGN KEY (table_id) REFERENCES tables(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS expense_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_reservations_table_time ON reservations(table_id, reservation_time, status);
+
+    CREATE TABLE IF NOT EXISTS electronic_journal (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      journal_type TEXT NOT NULL,
+      order_id INTEGER,
+      invoice_no TEXT,
+      kot_id INTEGER,
+      amount REAL DEFAULT 0,
+      snapshot TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_electronic_journal_invoice ON electronic_journal(invoice_no, created_at);
+    CREATE INDEX IF NOT EXISTS idx_electronic_journal_order ON electronic_journal(order_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS fraud_alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      alert_type TEXT NOT NULL,
+      severity TEXT NOT NULL DEFAULT 'MEDIUM',
+      entity_type TEXT,
+      entity_id INTEGER,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'OPEN',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS customer_credit_accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL UNIQUE,
+      credit_limit REAL NOT NULL DEFAULT 0,
+      active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (customer_id) REFERENCES customers(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS credit_transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      credit_account_id INTEGER NOT NULL,
+      customer_id INTEGER NOT NULL,
+      order_id INTEGER,
+      type TEXT NOT NULL,
+      amount REAL NOT NULL,
+      note TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (credit_account_id) REFERENCES customer_credit_accounts(id),
+      FOREIGN KEY (customer_id) REFERENCES customers(id),
+      FOREIGN KEY (order_id) REFERENCES orders(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS payment_providers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      active INTEGER DEFAULT 1,
+      config TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS payment_transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider_code TEXT NOT NULL,
+      order_id INTEGER,
+      amount REAL NOT NULL,
+      currency TEXT DEFAULT 'INR',
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      provider_reference TEXT,
+      request_payload TEXT,
+      response_payload TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME,
+      FOREIGN KEY (order_id) REFERENCES orders(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS notification_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_type TEXT NOT NULL UNIQUE,
+      channel TEXT NOT NULL,
+      subject TEXT,
+      body TEXT NOT NULL,
+      active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS notification_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_type TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      recipient TEXT,
+      payload TEXT,
+      status TEXT NOT NULL DEFAULT 'QUEUED',
+      error TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS retention_settings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type TEXT NOT NULL UNIQUE,
+      retention_days INTEGER NOT NULL DEFAULT 365,
+      anonymize_after_days INTEGER,
+      active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
+  ['Rent', 'Salary', 'Electricity', 'Gas', 'Internet', 'Other'].forEach((name) => {
+    db.prepare('INSERT OR IGNORE INTO expense_categories (name) VALUES (?)').run(name);
+  });
+  db.prepare("INSERT OR IGNORE INTO payment_providers (code, name) VALUES ('STRIPE', 'Stripe')").run();
+  db.prepare("INSERT OR IGNORE INTO payment_providers (code, name) VALUES ('RAZORPAY', 'Razorpay')").run();
+  [
+    ['ORDER_CONFIRMATION', 'SMS', 'Order confirmation', 'Your order {{orderId}} is confirmed.'],
+    ['RESERVATION_REMINDER', 'SMS', 'Reservation reminder', 'Reminder for reservation {{reservationId}}.'],
+    ['SUBSCRIPTION_EXPIRY', 'EMAIL', 'Subscription expiry', 'Your subscription expires on {{expiresAt}}.']
+  ].forEach((template) => {
+    db.prepare('INSERT OR IGNORE INTO notification_templates (event_type, channel, subject, body) VALUES (?, ?, ?, ?)').run(...template);
+  });
+  db.prepare("INSERT OR IGNORE INTO retention_settings (entity_type, retention_days, anonymize_after_days) VALUES ('CUSTOMERS', 365, 365)").run();
+  addColumn(db, 'expenses', 'category_id INTEGER');
   addColumn(db, 'system_config', 'updated_at DATETIME');
   seedDefaultSettings(db);
   seedDefaultPermissions(db);

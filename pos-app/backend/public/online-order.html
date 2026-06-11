@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Online Order</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="customer-screen">
+  <main class="customer-panel">
+    <h1 id="restaurantName">Online Order</h1>
+    <section class="editor-panel">
+      <label>Name<input id="customerName" required></label>
+      <label>Phone<input id="customerPhone" required></label>
+      <label>Order Type<select id="orderType"><option value="TAKEAWAY">Takeaway</option><option value="DELIVERY">Delivery</option></select></label>
+      <label>Delivery Address<input id="deliveryAddress"></label>
+    </section>
+    <div class="toolbar" id="categoryBar"></div>
+    <section id="itemsGrid" class="menu-grid"></section>
+    <aside class="cart-panel">
+      <h2>Cart</h2>
+      <div id="cartItems"></div>
+      <strong id="cartTotal">0.00</strong>
+      <button id="placeOrder">Place Order</button>
+      <p id="orderStatus"></p>
+    </aside>
+  </main>
+  <script src="/js/online-order.js"></script>
+</body>
+</html>

@@ -110,6 +110,351 @@ async function migrate() {
     )
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS owner_users (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      active BOOLEAN NOT NULL DEFAULT true,
+      reset_required BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS restaurant_owners (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      owner_user_id UUID NOT NULL REFERENCES owner_users(id) ON DELETE CASCADE,
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(owner_user_id, tenant_id)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS subscription_plans (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      code TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      duration_days INTEGER NOT NULL,
+      price NUMERIC(12,2) NOT NULL DEFAULT 0,
+      active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      plan_id UUID NOT NULL REFERENCES subscription_plans(id),
+      status TEXT NOT NULL DEFAULT 'ACTIVE',
+      starts_at DATE NOT NULL DEFAULT CURRENT_DATE,
+      expires_at DATE NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS subscription_payments (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      subscription_id UUID NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      payment_mode TEXT,
+      reference_no TEXT,
+      paid_at TIMESTAMPTZ DEFAULT NOW(),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pos_heartbeats (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE SET NULL,
+      restaurant_code TEXT NOT NULL,
+      pos_version TEXT,
+      backup_status TEXT,
+      printer_status TEXT,
+      license_status TEXT,
+      app_status TEXT,
+      payload JSONB,
+      last_heartbeat_at TIMESTAMPTZ DEFAULT NOW(),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(restaurant_code)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS partners (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name TEXT NOT NULL,
+      business_name TEXT,
+      email TEXT,
+      phone TEXT,
+      status TEXT NOT NULL DEFAULT 'ACTIVE',
+      commission_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS partner_users (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      partner_id UUID NOT NULL REFERENCES partners(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'PARTNER_ADMIN',
+      active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS partner_branding (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      partner_id UUID NOT NULL UNIQUE REFERENCES partners(id) ON DELETE CASCADE,
+      brand_name TEXT,
+      logo_url TEXT,
+      primary_color TEXT,
+      secondary_color TEXT,
+      support_email TEXT,
+      support_phone TEXT,
+      custom_domain TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS partner_restaurants (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      partner_id UUID NOT NULL REFERENCES partners(id) ON DELETE CASCADE,
+      restaurant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(partner_id, restaurant_id)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS partner_subscriptions (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      partner_id UUID NOT NULL REFERENCES partners(id) ON DELETE CASCADE,
+      subscription_id UUID REFERENCES subscriptions(id) ON DELETE SET NULL,
+      restaurant_id UUID REFERENCES tenants(id) ON DELETE SET NULL,
+      revenue_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      commission_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+      commission_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      payout_status TEXT NOT NULL DEFAULT 'PENDING',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS partner_commissions (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      partner_id UUID NOT NULL REFERENCES partners(id) ON DELETE CASCADE,
+      subscription_id UUID REFERENCES subscriptions(id) ON DELETE SET NULL,
+      restaurant_id UUID REFERENCES tenants(id) ON DELETE SET NULL,
+      revenue_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      commission_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+      commission_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      payout_status TEXT NOT NULL DEFAULT 'PENDING',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS partner_payouts (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      partner_id UUID NOT NULL REFERENCES partners(id) ON DELETE CASCADE,
+      amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      reference_no TEXT,
+      paid_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS saas_audit_logs (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      actor_id TEXT,
+      actor_role TEXT,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT,
+      old_value JSONB,
+      new_value JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS modules (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      code TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      category TEXT,
+      status TEXT NOT NULL DEFAULT 'ACTIVE',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_modules (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      module_id UUID NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+      enabled BOOLEAN NOT NULL DEFAULT true,
+      trial_ends_at TIMESTAMPTZ,
+      activated_at TIMESTAMPTZ DEFAULT NOW(),
+      deactivated_at TIMESTAMPTZ,
+      UNIQUE(tenant_id, module_id)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS module_pricing (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      module_id UUID NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+      billing_cycle TEXT NOT NULL DEFAULT 'MONTHLY',
+      price NUMERIC(12,2) NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'INR',
+      UNIQUE(module_id, billing_cycle, currency)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS module_usage_logs (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      module_code TEXT NOT NULL,
+      usage_type TEXT NOT NULL,
+      usage_count INTEGER NOT NULL DEFAULT 1,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS partner_allowed_modules (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      partner_id UUID NOT NULL REFERENCES partners(id) ON DELETE CASCADE,
+      module_id UUID NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+      allowed BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(partner_id, module_id)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS organizations (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name TEXT NOT NULL,
+      legal_name TEXT,
+      email TEXT,
+      phone TEXT,
+      status TEXT NOT NULL DEFAULT 'ACTIVE',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS organization_users (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'ORG_OWNER',
+      active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS branch_groups (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      description TEXT,
+      active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(organization_id, name)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS organization_restaurants (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      branch_group_id UUID REFERENCES branch_groups(id) ON DELETE SET NULL,
+      branch_name TEXT,
+      active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(organization_id, tenant_id)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS support_notes (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      restaurant_code TEXT,
+      note TEXT NOT NULL,
+      created_by TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    INSERT INTO subscription_plans (code, name, duration_days, price)
+    VALUES
+      ('TRIAL', 'Trial', 14, 0),
+      ('MONTHLY', 'Monthly', 30, 0),
+      ('QUARTERLY', 'Quarterly', 90, 0),
+      ('YEARLY', 'Yearly', 365, 0)
+    ON CONFLICT(code) DO NOTHING
+  `);
+
+  await pool.query(`
+    INSERT INTO modules (code, name, description, category, status)
+    VALUES
+      ('INVENTORY', 'Inventory Management', 'Ingredients, suppliers, stock movements and recipe mapping', 'OPERATIONS', 'ACTIVE'),
+      ('KDS', 'Kitchen Display System', 'Kitchen display order preparation screens', 'OPERATIONS', 'ACTIVE'),
+      ('LOYALTY', 'Customer CRM & Loyalty', 'Customer profiles, visits and loyalty points', 'CUSTOMER', 'ACTIVE'),
+      ('QR_ORDERING', 'QR Ordering', 'Customer self-ordering through table QR links', 'SALES', 'ACTIVE'),
+      ('RESERVATIONS', 'Reservations', 'Table reservation management', 'SALES', 'ACTIVE'),
+      ('CLOUD_REPORTING', 'Cloud Reporting', 'Owner remote summary reporting sync', 'REPORTING', 'ACTIVE'),
+      ('MULTI_BRANCH', 'Multi Branch', 'Franchise and multi-location management placeholder', 'ENTERPRISE', 'ACTIVE'),
+      ('WHITE_LABEL', 'White Label', 'Partner branding and reseller management', 'ENTERPRISE', 'ACTIVE')
+    ON CONFLICT(code) DO NOTHING
+  `);
+
+  await pool.query(`
+    INSERT INTO module_pricing (module_id, billing_cycle, price, currency)
+    SELECT id, 'MONTHLY', 0, 'INR' FROM modules
+    ON CONFLICT(module_id, billing_cycle, currency) DO NOTHING
+  `);
+
+  await pool.query(`
+    INSERT INTO tenant_modules (tenant_id, module_id, enabled, activated_at)
+    SELECT t.id, m.id, true, NOW()
+    FROM tenants t
+    CROSS JOIN modules m
+    ON CONFLICT(tenant_id, module_id) DO NOTHING
+  `);
+
   await pool.query('CREATE INDEX IF NOT EXISTS idx_tenants_restaurant_code ON tenants(restaurant_code)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_licenses_tenant_id ON licenses(tenant_id)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_licenses_license_key ON licenses(license_key)');
@@ -119,6 +464,25 @@ async function migrate() {
   await pool.query('CREATE INDEX IF NOT EXISTS idx_tenant_daily_reports_date ON tenant_daily_reports(tenant_id, report_date)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_tenant_item_sales_date ON tenant_item_sales(tenant_id, report_date)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_tenant_sync_logs_tenant ON tenant_sync_logs(tenant_id, created_at DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_restaurant_owners_owner ON restaurant_owners(owner_user_id, active)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_subscriptions_tenant ON subscriptions(tenant_id, status, expires_at)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_subscription_payments_tenant ON subscription_payments(tenant_id, paid_at DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_pos_heartbeats_time ON pos_heartbeats(last_heartbeat_at DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_partner_users_partner ON partner_users(partner_id, active)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_partner_restaurants_partner ON partner_restaurants(partner_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_partner_restaurants_restaurant ON partner_restaurants(restaurant_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_partner_commissions_partner ON partner_commissions(partner_id, payout_status)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_partner_payouts_partner ON partner_payouts(partner_id, status)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_saas_audit_logs_entity ON saas_audit_logs(entity_type, entity_id, created_at DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_modules_code ON modules(code)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_tenant_modules_tenant ON tenant_modules(tenant_id, enabled)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_module_usage_tenant ON module_usage_logs(tenant_id, module_code, created_at DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_partner_allowed_modules_partner ON partner_allowed_modules(partner_id, allowed)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_organization_users_org ON organization_users(organization_id, active)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_organization_restaurants_org ON organization_restaurants(organization_id, active)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_organization_restaurants_tenant ON organization_restaurants(tenant_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_branch_groups_org ON branch_groups(organization_id, active)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_support_notes_restaurant ON support_notes(restaurant_code, created_at DESC)');
 
   if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {
     const existing = await pool.query('SELECT id FROM admin_users WHERE email = $1', [process.env.ADMIN_EMAIL]);

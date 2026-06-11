@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Partner Dashboard</title>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background: #f2f2f2; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 12px 0; }
+    .card { border: 1px solid #ddd; border-radius: 6px; padding: 12px; background: #fafafa; }
+    .card strong { display: block; font-size: 20px; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <h2 id="partnerTitle">Partner Dashboard</h2>
+  <p id="partnerStatus">Loading...</p>
+  <div class="cards">
+    <div class="card">Restaurants<strong id="totalRestaurants">0</strong></div>
+    <div class="card">Active Licenses<strong id="activeLicenses">0</strong></div>
+    <div class="card">Expired Licenses<strong id="expiredLicenses">0</strong></div>
+    <div class="card">MRR<strong id="mrr">0.00</strong></div>
+    <div class="card">Online<strong id="onlineRestaurants">0</strong></div>
+    <div class="card">Offline<strong id="offlineRestaurants">0</strong></div>
+  </div>
+  <h3>Restaurants</h3>
+  <table>
+    <thead><tr><th>Restaurant</th><th>License</th><th>Online</th><th>POS</th><th>Backup</th><th>Printer</th><th>Last Sync</th></tr></thead>
+    <tbody id="restaurantRows"></tbody>
+  </table>
+  <h3>Commissions</h3>
+  <p id="commissionSummary"></p>
+  <table>
+    <thead><tr><th>Restaurant</th><th>Revenue</th><th>Commission</th><th>Status</th></tr></thead>
+    <tbody id="commissionRows"></tbody>
+  </table>
+  <script src="/js/partner-dashboard.js"></script>
+</body>
+</html>

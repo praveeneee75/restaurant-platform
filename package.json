@@ -1,0 +1,9 @@
+{
+  "name": "restaurant-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Restaurant SaaS and local POS platform",
+  "scripts": {
+    "test": "node tests/smoke-commercial-readiness.js"
+  }
+}

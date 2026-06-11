@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Owner Mobile</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial; margin: 0; padding: 14px; background: #f6f7f8; }
+    select, button { width: 100%; padding: 10px; margin: 6px 0; }
+    .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .card { background: white; border: 1px solid #ddd; border-radius: 8px; padding: 12px; }
+    .card strong { display: block; font-size: 20px; margin-top: 6px; }
+    table { width: 100%; border-collapse: collapse; background: white; margin-top: 12px; }
+    th, td { border: 1px solid #ddd; padding: 8px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h2>Owner Dashboard</h2>
+  <select id="restaurantSelect"></select>
+  <button id="refresh">Refresh</button>
+  <p id="status">Loading...</p>
+  <div class="cards">
+    <div class="card">Today Sales<strong id="todaySales">0</strong></div>
+    <div class="card">Month Sales<strong id="monthSales">0</strong></div>
+    <div class="card">License<strong id="licenseStatus">-</strong></div>
+    <div class="card">POS<strong id="posStatus">-</strong></div>
+    <div class="card">Backup<strong id="backupStatus">-</strong></div>
+    <div class="card">Sync<strong id="syncStatus">-</strong></div>
+  </div>
+  <h3>Top Items</h3>
+  <table><thead><tr><th>Item</th><th>Qty</th><th>Sales</th></tr></thead><tbody id="topItems"></tbody></table>
+  <script src="/js/owner-mobile.js"></script>
+</body>
+</html>

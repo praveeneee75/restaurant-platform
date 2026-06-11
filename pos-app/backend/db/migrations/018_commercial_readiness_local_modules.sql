@@ -1,0 +1,4 @@
+-- Commercial readiness local modules are applied by the shared schema helper.
+-- Tables covered: electronic_journal, fraud_alerts, customer_credit_accounts,
+-- credit_transactions, payment_providers, payment_transactions,
+-- notification_templates, notification_logs and retention_settings.

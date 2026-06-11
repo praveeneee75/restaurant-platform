@@ -12,6 +12,7 @@ const state = {
   combos: [],
   comboItems: [],
   deliveryPartners: [],
+  enabledModules: [],
   settings: { currency: "INR", defaultOrderType: "DINE_IN" },
   cart: [],
   selectedTable: null,
@@ -85,6 +86,7 @@ function applyBootstrap(data) {
     combos: data.combos || [],
     comboItems: data.comboItems || [],
     deliveryPartners: data.deliveryPartners || [],
+    enabledModules: data.enabledModules || [],
     settings: data.settings || state.settings
   });
   if (selectedTableId) {

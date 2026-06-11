@@ -124,6 +124,24 @@ function tableExists(db, tableName) {
   return Boolean(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName));
 }
 
+function managerCanOverrideReservation(role) {
+  return ['OWNER', 'MANAGER', 'MANAGER_1', 'MANAGER_2'].includes(role);
+}
+
+function activeReservationForTable(db, tableId) {
+  if (!isPositiveId(tableId)) return null;
+  return db.prepare(`
+    SELECT r.*, t.table_name
+    FROM reservations r
+    LEFT JOIN tables t ON t.id = r.table_id
+    WHERE r.table_id = ?
+      AND r.status = 'BOOKED'
+      AND DATETIME(r.reservation_time) BETWEEN DATETIME('now', '-30 minutes') AND DATETIME('now', '+2 hours')
+    ORDER BY r.reservation_time ASC
+    LIMIT 1
+  `).get(tableId);
+}
+
 function isValidAmount(value) {
   return Number.isFinite(Number(value)) && Number(value) >= 0;
 }
@@ -271,6 +289,124 @@ function setConfigValues(db, settings) {
   Object.entries(settings).forEach(([key, value]) => setValue.run(key, String(value ?? '')));
 }
 
+const DEFAULT_ENABLED_MODULES = [
+  'INVENTORY',
+  'KDS',
+  'LOYALTY',
+  'QR_ORDERING',
+  'RESERVATIONS',
+  'CLOUD_REPORTING',
+  'MULTI_BRANCH',
+  'WHITE_LABEL'
+];
+
+function enabledModules(db) {
+  const raw = getConfigValue(db, 'enabled_modules', '');
+  if (!raw) return DEFAULT_ENABLED_MODULES;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map((code) => String(code).toUpperCase()) : DEFAULT_ENABLED_MODULES;
+  } catch (_) {
+    return String(raw).split(',').map((code) => code.trim().toUpperCase()).filter(Boolean);
+  }
+}
+
+function moduleEnabled(db, moduleCode) {
+  return enabledModules(db).includes(String(moduleCode).toUpperCase());
+}
+
+function requireModule(db, moduleCode) {
+  if (!moduleEnabled(db, moduleCode)) {
+    const err = new Error('Module not enabled for this restaurant');
+    err.status = 403;
+    throw err;
+  }
+}
+
+function cacheEnabledModules(db, modules) {
+  if (Array.isArray(modules)) {
+    setConfigValues(db, { enabled_modules: JSON.stringify(modules.map((code) => String(code).toUpperCase())) });
+  }
+}
+
+function moduleGate(moduleCode) {
+  return (req, res, next) => {
+    const restaurantId = req.method === 'GET' ? req.query.restaurantId : req.body?.restaurantId;
+    if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+    const db = openRestaurantDatabase(restaurantId);
+    try {
+      requireModule(db, moduleCode);
+      next();
+    } catch (err) {
+      sendError(res, err);
+    } finally {
+      db.close();
+    }
+  };
+}
+
+async function trackModuleUsage(restaurantId, moduleCode, usageType, usageCount = 1) {
+  const saasUrl = process.env.SAAS_URL;
+  if (!saasUrl || !restaurantId) return;
+  let db;
+  try {
+    db = openRestaurantDatabase(restaurantId);
+    const syncToken = getConfigValue(db, 'cloud_sync_token', '');
+    const license = db.prepare('SELECT license_key FROM license_status WHERE restaurant_id = ? ORDER BY last_checked DESC LIMIT 1').get(restaurantId);
+    if (!syncToken && !license?.license_key) return;
+    await axios.post(`${saasUrl.replace(/\/$/, '')}/modules/usage`, {
+      restaurantId,
+      syncToken: syncToken || null,
+      licenseKey: license?.license_key || null,
+      moduleCode,
+      usageType,
+      usageCount
+    }, { timeout: 3000 });
+  } catch (_) {
+    // Usage tracking is best effort and must never block offline POS operations.
+  } finally {
+    if (db) db.close();
+  }
+}
+
+function insertElectronicJournal(db, type, orderId, snapshot) {
+  const amount = Number(snapshot?.payable || snapshot?.total_amount || snapshot?.total || 0);
+  const result = db.prepare(`
+    INSERT INTO electronic_journal (journal_type, order_id, invoice_no, kot_id, amount, snapshot)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(type, orderId || null, snapshot?.invoiceNo || snapshot?.invoice_no || null, snapshot?.kotId || null, amount, JSON.stringify(snapshot || {}));
+  return result.lastInsertRowid;
+}
+
+function createFraudAlert(db, alertType, severity, entityType, entityId, message) {
+  const existing = db.prepare(`
+    SELECT id FROM fraud_alerts
+    WHERE alert_type = ? AND entity_type = ? AND entity_id = ? AND status = 'OPEN'
+    LIMIT 1
+  `).get(alertType, entityType, entityId || null);
+  if (existing) return existing.id;
+  return db.prepare(`
+    INSERT INTO fraud_alerts (alert_type, severity, entity_type, entity_id, message)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(alertType, severity || 'MEDIUM', entityType || null, entityId || null, message).lastInsertRowid;
+}
+
+function evaluateOrderFraud(db, orderId) {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+  if (!order) return;
+  const discountThreshold = getNumberConfig(db, 'fraud_large_discount_threshold', 500);
+  if (Number(order.loyalty_discount || 0) >= discountThreshold) {
+    createFraudAlert(db, 'LARGE_DISCOUNT', 'HIGH', 'ORDER', orderId, `Large discount on order #${orderId}`);
+  }
+}
+
+function queueNotification(db, eventType, channel, recipient, payload) {
+  db.prepare(`
+    INSERT INTO notification_logs (event_type, channel, recipient, payload, status)
+    VALUES (?, ?, ?, ?, 'QUEUED')
+  `).run(eventType, channel || 'SMS', recipient || null, JSON.stringify(payload || {}));
+}
+
 const SETTINGS_BOOLEAN_KEYS = new Set([
   'allow_non_invoice_orders',
   'allow_discount',
@@ -293,6 +429,17 @@ const SETTINGS_BOOLEAN_KEYS = new Set([
   'require_open_register_for_cash_payment',
   'allow_cashier_register_close'
 ]);
+
+app.use('/inventory', moduleGate('INVENTORY'));
+app.use('/purchase-orders', moduleGate('INVENTORY'));
+app.use('/supplier-payments', moduleGate('INVENTORY'));
+app.use('/kds', moduleGate('KDS'));
+app.use('/customers', moduleGate('LOYALTY'));
+app.use('/loyalty', moduleGate('LOYALTY'));
+app.use('/members', moduleGate('LOYALTY'));
+app.use('/qr', moduleGate('QR_ORDERING'));
+app.use('/reservations', moduleGate('RESERVATIONS'));
+app.use('/cloud-sync', moduleGate('CLOUD_REPORTING'));
 
 const SETTINGS_PERCENT_KEYS = new Set(['service_charge_percent']);
 
@@ -572,6 +719,7 @@ db.prepare(`
 if (response.data.syncToken) {
   setConfigValues(db, { cloud_sync_token: response.data.syncToken });
 }
+cacheEnabledModules(db, response.data.enabledModules);
 
 db.close();
     res.json({
@@ -1433,6 +1581,7 @@ app.post('/orders/refund', (req, res) => {
         reason: reason || null
       }, { restaurantId });
       writeCompliance(db, 'REFUND', 'HIGH', `Refund processed for order #${orderId}`, 'ORDER', orderId);
+      createFraudAlert(db, 'REFUND', 'HIGH', 'ORDER', orderId, `Refund processed for order #${orderId}`);
 
       res.json({
         success: true,
@@ -2204,9 +2353,10 @@ app.post('/orders/redeem-points', (req, res) => {
     return res.status(403).json({ success: false, message: 'Not allowed' });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
+    requireModule(db, 'LOYALTY');
     const balanceRow = db.prepare(`
       SELECT COALESCE(SUM(
         CASE WHEN type='EARN' THEN points ELSE -points END
@@ -2309,6 +2459,7 @@ async function checkLicenseDaily(restaurantId) {
     if (response.data.syncToken) {
       setConfigValues(db, { cloud_sync_token: response.data.syncToken });
     }
+    cacheEnabledModules(db, response.data.enabledModules);
     if (!response.data.valid) {
       db.exec(`
         CREATE TABLE IF NOT EXISTS compliance_events (
@@ -2640,8 +2791,617 @@ app.get('/admin/bootstrap', (req, res) => {
         ORDER BY i.name
       `).all(includeInactive),
       users: db.prepare("SELECT id, name, username, role, active, created_at FROM users WHERE (? = 'true' OR active = 1) ORDER BY name").all(includeInactive),
-      tables: db.prepare("SELECT id, table_name, status, active, created_at FROM tables WHERE (? = 'true' OR active = 1) ORDER BY id").all(includeInactive)
+      tables: db.prepare("SELECT id, table_name, status, active, created_at FROM tables WHERE (? = 'true' OR active = 1) ORDER BY id").all(includeInactive),
+      enabledModules: enabledModules(db)
     });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/expenses/categories', (req, res) => {
+  const { restaurantId } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    res.json({ success: true, categories: db.prepare('SELECT * FROM expense_categories WHERE active = 1 ORDER BY name').all() });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/expenses/save', (req, res) => {
+  const { restaurantId, actor, categoryId, categoryName, description, amount, expenseDate } = req.body;
+  if (!restaurantId || !isValidAmount(amount) || Number(amount) <= 0 || !expenseDate) {
+    return res.status(400).json({ success: false, message: 'Expense date and positive amount are required' });
+  }
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    if (!['OWNER', 'MANAGER_2'].includes(actor?.role)) {
+      throw new Error('Expense management requires OWNER or MANAGER_2');
+    }
+    requirePermission(db, actor?.role, 'reports.view_all', 'Expense management requires OWNER or MANAGER_2');
+    let finalCategoryId = isPositiveId(categoryId) ? Number(categoryId) : null;
+    let finalCategoryName = normaliseText(categoryName);
+    if (finalCategoryId) {
+      const category = db.prepare('SELECT * FROM expense_categories WHERE id = ? AND active = 1').get(finalCategoryId);
+      if (!category) throw new Error('Expense category not found');
+      finalCategoryName = category.name;
+    } else if (hasText(finalCategoryName)) {
+      const result = db.prepare('INSERT OR IGNORE INTO expense_categories (name) VALUES (?)').run(finalCategoryName);
+      finalCategoryId = result.lastInsertRowid || db.prepare('SELECT id FROM expense_categories WHERE name = ?').get(finalCategoryName).id;
+    } else {
+      throw new Error('Expense category is required');
+    }
+    const result = db.prepare(`
+      INSERT INTO expenses (expense_type, category_id, description, amount, expense_date, created_by)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(finalCategoryName, finalCategoryId, normaliseText(description), Number(amount), expenseDate, actor?.id || null);
+    const expense = db.prepare('SELECT * FROM expenses WHERE id = ?').get(result.lastInsertRowid);
+    writeAudit(db, actor, 'CREATE', 'EXPENSE', result.lastInsertRowid, null, expense);
+    res.json({ success: true, expense });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+function profitDashboard(db, fromDate, toDate) {
+  const sales = db.prepare(`
+    SELECT COALESCE(SUM(total_amount), 0) AS sales
+    FROM orders
+    WHERE payment_status = 'PAID'
+      AND COALESCE(status, '') != 'CANCELLED'
+      AND DATE(COALESCE(settled_at, created_at)) BETWEEN DATE(?) AND DATE(?)
+  `).get(fromDate, toDate).sales || 0;
+  const refunds = tableExists(db, 'refunds') ? db.prepare("SELECT COALESCE(SUM(amount), 0) AS total FROM refunds WHERE DATE(created_at) BETWEEN DATE(?) AND DATE(?)").get(fromDate, toDate).total || 0 : 0;
+  const discounts = tableExists(db, 'discounts') ? db.prepare(`
+    SELECT COALESCE(SUM(CASE WHEN UPPER(value_type) IN ('AMOUNT', 'FLAT') THEN value ELSE 0 END), 0) AS total
+    FROM discounts
+    WHERE DATE(created_at) BETWEEN DATE(?) AND DATE(?)
+  `).get(fromDate, toDate).total || 0 : 0;
+  const expenses = db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE DATE(expense_date) BETWEEN DATE(?) AND DATE(?)').get(fromDate, toDate).total || 0;
+  const byCategory = db.prepare(`
+    SELECT COALESCE(ec.name, e.expense_type) AS category, COALESCE(SUM(e.amount), 0) AS total
+    FROM expenses e
+    LEFT JOIN expense_categories ec ON ec.id = e.category_id
+    WHERE DATE(e.expense_date) BETWEEN DATE(?) AND DATE(?)
+    GROUP BY COALESCE(ec.name, e.expense_type)
+    ORDER BY total DESC
+  `).all(fromDate, toDate);
+  return { sales, refunds, discounts, expenses, profit: Number(sales) - Number(refunds) - Number(discounts) - Number(expenses), byCategory };
+}
+
+app.get('/reports/profit-dashboard', (req, res) => {
+  const { restaurantId, role, fromDate, toDate } = req.query;
+  if (!restaurantId || !fromDate || !toDate || !['OWNER', 'MANAGER_2'].includes(role)) {
+    return res.status(403).json({ success: false, message: 'OWNER or MANAGER_2 required' });
+  }
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    res.json({ success: true, fromDate, toDate, ...profitDashboard(db, fromDate, toDate) });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/reports/profit/export', (req, res) => {
+  const { restaurantId, role, fromDate, toDate } = req.query;
+  if (!restaurantId || !fromDate || !toDate || !['OWNER', 'MANAGER_2'].includes(role)) {
+    return res.status(403).json({ success: false, message: 'OWNER or MANAGER_2 required' });
+  }
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const report = profitDashboard(db, fromDate, toDate);
+    const rows = [
+      ['metric', 'amount'],
+      ['sales', report.sales],
+      ['refunds', report.refunds],
+      ['discounts', report.discounts],
+      ['expenses', report.expenses],
+      ['profit', report.profit],
+      [],
+      ['category', 'expense_total'],
+      ...report.byCategory.map((row) => [row.category, row.total])
+    ];
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="profit_report.csv"');
+    res.send(rows.map((row) => row.map(csvCell).join(',')).join('\n'));
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/analytics/dashboard', (req, res) => {
+  const { restaurantId, fromDate = todayIso(), toDate = todayIso() } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const salesTrend = db.prepare(`
+      SELECT DATE(COALESCE(settled_at, created_at)) AS date, SUM(total_amount) AS total, COUNT(*) AS orders
+      FROM orders
+      WHERE payment_status = 'PAID' AND COALESCE(status, '') != 'CANCELLED'
+        AND DATE(COALESCE(settled_at, created_at)) BETWEEN DATE(?) AND DATE(?)
+      GROUP BY DATE(COALESCE(settled_at, created_at))
+      ORDER BY date
+    `).all(fromDate, toDate);
+    const peakHours = db.prepare(`
+      SELECT STRFTIME('%H', COALESCE(settled_at, created_at)) AS hour, COUNT(*) AS orders, SUM(total_amount) AS sales
+      FROM orders
+      WHERE payment_status = 'PAID' AND COALESCE(status, '') != 'CANCELLED'
+      GROUP BY STRFTIME('%H', COALESCE(settled_at, created_at))
+      ORDER BY orders DESC
+      LIMIT 8
+    `).all();
+    const itemRows = db.prepare(`
+      SELECT i.name, SUM(oi.quantity) AS quantity, SUM(oi.quantity * oi.price) AS sales
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      LEFT JOIN items i ON i.id = oi.item_id
+      WHERE o.payment_status = 'PAID' AND COALESCE(o.status, '') != 'CANCELLED'
+      GROUP BY i.name
+      ORDER BY sales DESC
+    `).all();
+    const dailyAverage = salesTrend.length ? salesTrend.reduce((sum, row) => sum + Number(row.total || 0), 0) / salesTrend.length : 0;
+    const ingredientForecast = db.prepare(`
+      SELECT ing.name, ing.unit, ing.current_stock, ing.low_stock_alert,
+             COALESCE(SUM(oi.quantity * ri.quantity), 0) AS estimated_daily_usage
+      FROM ingredients ing
+      LEFT JOIN recipe_items ri ON ri.ingredient_id = ing.id AND ri.active = 1
+      LEFT JOIN recipes r ON r.id = ri.recipe_id AND r.active = 1
+      LEFT JOIN order_items oi ON oi.item_id = r.menu_item_id
+      LEFT JOIN orders o ON o.id = oi.order_id AND DATE(COALESCE(o.settled_at, o.created_at)) >= DATE('now', '-7 days')
+      WHERE ing.active = 1
+      GROUP BY ing.id
+      ORDER BY ing.current_stock ASC
+      LIMIT 25
+    `).all().map((row) => ({ ...row, predicted_stock_tomorrow: Number(row.current_stock || 0) - Number(row.estimated_daily_usage || 0) / 7 }));
+    const riskAlerts = db.prepare("SELECT * FROM fraud_alerts WHERE status = 'OPEN' ORDER BY created_at DESC LIMIT 20").all();
+    res.json({
+      success: true,
+      salesTrend,
+      peakHours,
+      bestSellingItems: itemRows.slice(0, 10),
+      worstSellingItems: itemRows.slice(-10).reverse(),
+      revenueForecast: { nextDay: dailyAverage, nextWeek: dailyAverage * 7 },
+      ingredientForecast,
+      alertCenter: riskAlerts
+    });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/reports/advanced', (req, res) => {
+  const { restaurantId, fromDate = todayIso(), toDate = todayIso() } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const profit = profitDashboard(db, fromDate, toDate);
+    const hourlySales = db.prepare(`
+      SELECT STRFTIME('%H', COALESCE(settled_at, created_at)) AS hour, SUM(total_amount) AS sales, COUNT(*) AS orders
+      FROM orders
+      WHERE payment_status = 'PAID' AND DATE(COALESCE(settled_at, created_at)) BETWEEN DATE(?) AND DATE(?)
+      GROUP BY hour ORDER BY hour
+    `).all(fromDate, toDate);
+    const waiterPerformance = db.prepare(`
+      SELECT COALESCE(u.name, 'Unknown') AS waiter, COUNT(o.id) AS orders, COALESCE(SUM(o.total_amount), 0) AS sales
+      FROM orders o LEFT JOIN users u ON u.id = o.created_by
+      WHERE DATE(o.created_at) BETWEEN DATE(?) AND DATE(?)
+      GROUP BY u.id, u.name ORDER BY sales DESC
+    `).all(fromDate, toDate);
+    const paymentSummary = db.prepare(`
+      SELECT payment_mode, COUNT(*) AS payments, SUM(amount) AS total
+      FROM payments
+      WHERE DATE(created_at) BETWEEN DATE(?) AND DATE(?)
+      GROUP BY payment_mode
+    `).all(fromDate, toDate);
+    const inventoryValuation = db.prepare('SELECT name, unit, current_stock, current_stock * 0 AS valuation_placeholder FROM ingredients WHERE active = 1 ORDER BY name').all();
+    const wastageCost = db.prepare("SELECT COALESCE(SUM(quantity), 0) AS quantity FROM stock_movements WHERE movement_type = 'WASTAGE' AND DATE(created_at) BETWEEN DATE(?) AND DATE(?)").get(fromDate, toDate);
+    const supplierOutstanding = tableExists(db, 'purchase_orders') ? db.prepare(`
+      SELECT s.name, COALESCE(SUM(po.total_amount), 0) - COALESCE((SELECT SUM(sp.amount) FROM supplier_payments sp WHERE sp.supplier_id = s.id), 0) AS outstanding
+      FROM suppliers s LEFT JOIN purchase_orders po ON po.supplier_id = s.id
+      GROUP BY s.id ORDER BY outstanding DESC
+    `).all() : [];
+    res.json({ success: true, profitAndLoss: profit, hourlySales, waiterPerformance, paymentSummary, inventoryValuation, wastageCost, supplierOutstanding });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/reports/advanced/export', (req, res) => {
+  const { restaurantId, fromDate = todayIso(), toDate = todayIso() } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const report = profitDashboard(db, fromDate, toDate);
+    const rows = [['metric', 'amount'], ['sales', report.sales], ['refunds', report.refunds], ['discounts', report.discounts], ['expenses', report.expenses], ['profit', report.profit]];
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="advanced_report.csv"');
+    res.send(rows.map((row) => row.map(csvCell).join(',')).join('\n'));
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/journal/search', (req, res) => {
+  const { restaurantId, invoiceNo, orderId, fromDate, toDate, minAmount, maxAmount } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const rows = db.prepare(`
+      SELECT * FROM electronic_journal
+      WHERE (? IS NULL OR invoice_no = ?)
+        AND (? IS NULL OR order_id = ?)
+        AND (? IS NULL OR DATE(created_at) >= DATE(?))
+        AND (? IS NULL OR DATE(created_at) <= DATE(?))
+        AND (? IS NULL OR amount >= ?)
+        AND (? IS NULL OR amount <= ?)
+      ORDER BY created_at DESC LIMIT 200
+    `).all(invoiceNo || null, invoiceNo || null, orderId || null, orderId || null, fromDate || null, fromDate || null, toDate || null, toDate || null, minAmount || null, minAmount || null, maxAmount || null, maxAmount || null);
+    res.json({ success: true, entries: rows });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/journal/export', (req, res) => {
+  const { restaurantId, format = 'csv' } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const rows = db.prepare('SELECT * FROM electronic_journal ORDER BY created_at DESC LIMIT 1000').all();
+    if (format === 'json') return res.json({ success: true, entries: rows.map((row) => ({ ...row, snapshot: JSON.parse(row.snapshot || '{}') })) });
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="electronic_journal.csv"');
+    res.send([['type', 'order_id', 'invoice_no', 'amount', 'created_at'], ...rows.map((row) => [row.journal_type, row.order_id, row.invoice_no, row.amount, row.created_at])].map((row) => row.map(csvCell).join(',')).join('\n'));
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/fraud/alerts', (req, res) => {
+  const { restaurantId, status = 'OPEN' } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    res.json({ success: true, alerts: db.prepare('SELECT * FROM fraud_alerts WHERE (? = "ALL" OR status = ?) ORDER BY created_at DESC LIMIT 200').all(status, status) });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/fraud/settings', (req, res) => {
+  const { restaurantId, actor, settings } = req.body;
+  if (!restaurantId || !['OWNER', 'MANAGER_2'].includes(actor?.role)) return res.status(403).json({ success: false, message: 'OWNER or MANAGER_2 required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    setConfigValues(db, settings || {});
+    writeAudit(db, actor, 'UPDATE', 'FRAUD_SETTINGS', null, null, settings || {});
+    res.json({ success: true });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/credit/accounts/save', (req, res) => {
+  const { restaurantId, actor, customerId, creditLimit } = req.body;
+  if (!restaurantId || !isPositiveId(customerId) || !isValidAmount(creditLimit)) return res.status(400).json({ success: false, message: 'Customer and credit limit required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'billing.settle', 'Credit account permission required');
+    const customer = db.prepare('SELECT id FROM customers WHERE id = ? AND active = 1').get(customerId);
+    if (!customer) throw new Error('Customer not found');
+    const result = db.prepare(`
+      INSERT INTO customer_credit_accounts (customer_id, credit_limit, active)
+      VALUES (?, ?, 1)
+      ON CONFLICT(customer_id) DO UPDATE SET credit_limit = excluded.credit_limit, active = 1
+    `).run(customerId, Number(creditLimit));
+    writeAudit(db, actor, 'UPSERT', 'CREDIT_ACCOUNT', customerId, null, { customerId, creditLimit });
+    res.json({ success: true, changes: result.changes });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/credit/sale', (req, res) => {
+  const { restaurantId, actor, customerId, orderId, amount, note } = req.body;
+  if (!restaurantId || !isPositiveId(customerId) || !isPositiveId(orderId) || !isValidAmount(amount) || Number(amount) <= 0) return res.status(400).json({ success: false, message: 'Customer, order and amount required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const account = db.prepare('SELECT * FROM customer_credit_accounts WHERE customer_id = ? AND active = 1').get(customerId);
+    if (!account) throw new Error('Credit account not found');
+    const balance = db.prepare("SELECT COALESCE(SUM(CASE WHEN type = 'SALE' THEN amount ELSE -amount END), 0) AS balance FROM credit_transactions WHERE customer_id = ?").get(customerId).balance || 0;
+    if (Number(balance) + Number(amount) > Number(account.credit_limit || 0)) throw new Error('Credit limit exceeded');
+    const result = db.prepare('INSERT INTO credit_transactions (credit_account_id, customer_id, order_id, type, amount, note) VALUES (?, ?, ?, "SALE", ?, ?)').run(account.id, customerId, orderId, Number(amount), normaliseText(note) || null);
+    db.prepare("UPDATE orders SET payment_status = 'CREDIT', status = 'PAID', settled_at = CURRENT_TIMESTAMP WHERE id = ?").run(orderId);
+    writeAudit(db, actor, 'CREATE', 'CREDIT_SALE', result.lastInsertRowid, null, { customerId, orderId, amount });
+    res.json({ success: true, transactionId: result.lastInsertRowid });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/credit/payment', (req, res) => {
+  const { restaurantId, actor, customerId, amount, note } = req.body;
+  if (!restaurantId || !isPositiveId(customerId) || !isValidAmount(amount) || Number(amount) <= 0) return res.status(400).json({ success: false, message: 'Customer and amount required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const account = db.prepare('SELECT * FROM customer_credit_accounts WHERE customer_id = ? AND active = 1').get(customerId);
+    if (!account) throw new Error('Credit account not found');
+    const result = db.prepare('INSERT INTO credit_transactions (credit_account_id, customer_id, type, amount, note) VALUES (?, ?, "PAYMENT", ?, ?)').run(account.id, customerId, Number(amount), normaliseText(note) || null);
+    writeAudit(db, actor, 'CREATE', 'CREDIT_PAYMENT', result.lastInsertRowid, null, { customerId, amount });
+    res.json({ success: true, transactionId: result.lastInsertRowid });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/credit/statement', (req, res) => {
+  const { restaurantId, customerId } = req.query;
+  if (!restaurantId || !isPositiveId(customerId)) return res.status(400).json({ success: false, message: 'restaurantId and customerId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const account = db.prepare('SELECT * FROM customer_credit_accounts WHERE customer_id = ?').get(customerId);
+    const transactions = db.prepare('SELECT * FROM credit_transactions WHERE customer_id = ? ORDER BY created_at DESC').all(customerId);
+    const balance = transactions.reduce((sum, row) => sum + (row.type === 'SALE' ? Number(row.amount) : -Number(row.amount)), 0);
+    res.json({ success: true, account, balance, transactions });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/credit/aging-report', (req, res) => {
+  const { restaurantId } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const rows = db.prepare(`
+      SELECT c.name, c.phone, cca.credit_limit,
+             COALESCE(SUM(CASE WHEN ct.type = 'SALE' THEN ct.amount ELSE -ct.amount END), 0) AS balance,
+             MIN(CASE WHEN ct.type = 'SALE' THEN ct.created_at END) AS oldest_sale
+      FROM customer_credit_accounts cca
+      JOIN customers c ON c.id = cca.customer_id
+      LEFT JOIN credit_transactions ct ON ct.customer_id = c.id
+      WHERE cca.active = 1
+      GROUP BY cca.id
+      ORDER BY balance DESC
+    `).all();
+    res.json({ success: true, rows });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/payments/providers', (req, res) => {
+  const { restaurantId } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    res.json({ success: true, providers: db.prepare('SELECT code, name, active FROM payment_providers ORDER BY name').all() });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/payments/intent', (req, res) => {
+  const { restaurantId, orderId, providerCode, amount, currency } = req.body;
+  if (!restaurantId || !providerCode || !isValidAmount(amount) || Number(amount) <= 0) return res.status(400).json({ success: false, message: 'Provider and amount required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const provider = db.prepare('SELECT * FROM payment_providers WHERE code = ? AND active = 1').get(String(providerCode).toUpperCase());
+    if (!provider) throw new Error('Payment provider not configured');
+    const reference = `PI-${Date.now()}`;
+    const result = db.prepare('INSERT INTO payment_transactions (provider_code, order_id, amount, currency, status, provider_reference, request_payload) VALUES (?, ?, ?, ?, "PENDING", ?, ?)').run(provider.code, isPositiveId(orderId) ? orderId : null, Number(amount), currency || 'INR', reference, JSON.stringify(req.body));
+    res.json({ success: true, transactionId: result.lastInsertRowid, providerReference: reference, status: 'PENDING' });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/payments/transaction-status', (req, res) => {
+  const { restaurantId, transactionId, status, responsePayload } = req.body;
+  if (!restaurantId || !isPositiveId(transactionId) || !['PENDING', 'SUCCESS', 'FAILED', 'CANCELLED'].includes(status)) return res.status(400).json({ success: false, message: 'Valid transaction and status required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    db.prepare('UPDATE payment_transactions SET status = ?, response_payload = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, JSON.stringify(responsePayload || {}), transactionId);
+    res.json({ success: true });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/notifications/templates', (req, res) => {
+  const { restaurantId } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    res.json({ success: true, templates: db.prepare('SELECT * FROM notification_templates ORDER BY event_type').all() });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/notifications/send-placeholder', (req, res) => {
+  const { restaurantId, eventType, channel, recipient, payload } = req.body;
+  if (!restaurantId || !eventType || !channel) return res.status(400).json({ success: false, message: 'Event type and channel required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    queueNotification(db, eventType, channel, recipient, payload || {});
+    res.json({ success: true, status: 'QUEUED' });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/privacy/customer-export', (req, res) => {
+  const { restaurantId, customerId } = req.query;
+  if (!restaurantId || !isPositiveId(customerId)) return res.status(400).json({ success: false, message: 'restaurantId and customerId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
+    const orders = db.prepare('SELECT * FROM orders WHERE customer_id = ? ORDER BY created_at DESC').all(customerId);
+    const loyalty = db.prepare('SELECT * FROM loyalty_points WHERE customer_id = ? ORDER BY created_at DESC').all(customerId);
+    res.json({ success: true, customer, orders, loyalty });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/privacy/customer-anonymize', (req, res) => {
+  const { restaurantId, actor, customerId } = req.body;
+  if (!restaurantId || !isPositiveId(customerId) || !['OWNER', 'MANAGER_2'].includes(actor?.role)) return res.status(403).json({ success: false, message: 'OWNER or MANAGER_2 required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const oldValue = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
+    if (!oldValue) throw new Error('Customer not found');
+    db.prepare("UPDATE customers SET name = 'Anonymized Customer', phone = NULL, email = NULL, birthday = NULL, address = NULL WHERE id = ?").run(customerId);
+    const newValue = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
+    writeAudit(db, actor, 'ANONYMIZE', 'CUSTOMER', customerId, oldValue, newValue);
+    res.json({ success: true, customer: newValue });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/diagnostics', (req, res) => {
+  const { restaurantId } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const backup = getBackupConfig(db);
+    const pendingPrintJobs = db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE status = 'PENDING'").get().count;
+    const license = db.prepare('SELECT status, expires_at, last_checked FROM license_status WHERE restaurant_id = ?').get(restaurantId);
+    res.json({
+      success: true,
+      pos: { version: posPackageInfo().version, timestamp: new Date().toISOString() },
+      database: { status: 'OK' },
+      backup: { lastBackupAt: backup.last_backup_at || null, enabled: backup.backup_enabled === '1' },
+      printer: { pendingPrintJobs, status: pendingPrintJobs > 0 ? 'PENDING' : 'OK' },
+      license,
+      modules: enabledModules(db)
+    });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/disaster/check', (req, res) => {
+  const { restaurantId } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const integrity = db.pragma('integrity_check');
+    const ok = integrity?.[0]?.integrity_check === 'ok';
+    setConfigValues(db, { emergency_read_only_mode: ok ? '0' : '1' });
+    res.json({ success: true, databaseOk: ok, integrity, emergencyReadOnlyMode: !ok });
+  } catch (err) {
+    res.status(503).json({ success: false, databaseOk: false, message: friendlyErrorMessage(err), emergencyReadOnlyMode: true });
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/disaster/restore-latest-backup', (req, res) => {
+  const { restaurantId, actor } = req.body;
+  if (!restaurantId || !['OWNER', 'MANAGER_2'].includes(actor?.role)) return res.status(403).json({ success: false, message: 'OWNER or MANAGER_2 required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const backups = listBackups(db, restaurantId);
+    if (!backups.length) throw new Error('No backups available');
+    const latest = backups[0].filename;
+    const restored = restoreBackup(db, restaurantId, latest);
+    if (restored.success) {
+      const auditDb = openRestaurantDatabase(restaurantId);
+      try {
+        writeAudit(auditDb, actor, 'RESTORE_LATEST_BACKUP', 'DISASTER_RECOVERY', null, null, { filename: latest, restored });
+      } finally {
+        auditDb.close();
+      }
+    }
+    res.json({ success: true, restored });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    if (db.open) db.close();
+  }
+});
+
+app.post('/demo/reset', (req, res) => {
+  const { restaurantId, actor } = req.body;
+  if (!restaurantId || !['OWNER', 'MANAGER_2'].includes(actor?.role)) return res.status(403).json({ success: false, message: 'OWNER or MANAGER_2 required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const result = db.transaction(() => {
+      const kitchenId = db.prepare("INSERT OR IGNORE INTO kitchens (name, printer_name, active) VALUES ('Demo Kitchen', 'Demo Printer', 1)").run().lastInsertRowid
+        || db.prepare("SELECT id FROM kitchens WHERE name = 'Demo Kitchen'").get().id;
+      const categoryId = db.prepare("INSERT OR IGNORE INTO categories (name, kitchen_id, active) VALUES ('Demo Menu', ?, 1)").run(kitchenId).lastInsertRowid
+        || db.prepare("SELECT id FROM categories WHERE name = 'Demo Menu'").get().id;
+      [
+        ['Demo Tea', 20],
+        ['Demo Burger', 120],
+        ['Demo Thali', 180]
+      ].forEach(([name, price]) => db.prepare('INSERT OR IGNORE INTO items (name, category_id, price, active) VALUES (?, ?, ?, 1)').run(name, categoryId, price));
+      db.prepare("INSERT OR IGNORE INTO users (name, username, pin, role, active) VALUES ('Demo Cashier', 'demo_cashier', '1234', 'CASHIER', 1)").run();
+      db.prepare("INSERT OR IGNORE INTO tables (table_name, status, active) VALUES ('Demo Table', 'AVAILABLE', 1)").run();
+      const item = db.prepare("SELECT id, price FROM items WHERE name = 'Demo Tea'").get();
+      const table = db.prepare("SELECT id, table_name FROM tables WHERE table_name = 'Demo Table'").get();
+      const orderId = db.prepare("INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, order_source) VALUES ('DINE_IN', ?, ?, 'PAID', ?, 'PAID', 'DEMO')").run(table.id, table.table_name, item.price).lastInsertRowid;
+      db.prepare('INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price) VALUES (?, ?, 1, ?, ?)').run(orderId, item.id, kitchenId, item.price);
+      insertElectronicJournal(db, 'BILL', orderId, { orderId, invoiceNo: `DEMO-${orderId}`, payable: item.price });
+      writeAudit(db, actor, 'RESET', 'DEMO_DATA', orderId, null, { orderId });
+      return { orderId };
+    })();
+    res.json({ success: true, ...result });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -2879,6 +3639,73 @@ app.post('/tables/delete', (req, res) => {
   }
 });
 
+app.get('/reservations/list', (req, res) => {
+  const { restaurantId, fromDate, toDate } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const rows = db.prepare(`
+      SELECT r.*, t.table_name
+      FROM reservations r
+      LEFT JOIN tables t ON t.id = r.table_id
+      WHERE (? IS NULL OR DATE(r.reservation_time) >= DATE(?))
+        AND (? IS NULL OR DATE(r.reservation_time) <= DATE(?))
+      ORDER BY r.reservation_time DESC
+      LIMIT 200
+    `).all(fromDate || null, fromDate || null, toDate || null, toDate || null);
+    res.json({ success: true, reservations: rows });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/reservations/save', (req, res) => {
+  const { restaurantId, actor, id, customerName, phone, tableId, guestCount, reservationTime, status, notes } = req.body;
+  if (!restaurantId || !hasText(customerName) || !isPositiveId(tableId) || !reservationTime) {
+    return res.status(400).json({ success: false, message: 'Customer, table and reservation time are required' });
+  }
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'orders.create', 'Reservation permission required');
+    const selectedStatus = ['BOOKED', 'ARRIVED', 'CANCELLED', 'COMPLETED'].includes(status) ? status : 'BOOKED';
+    const oldValue = id ? db.prepare('SELECT * FROM reservations WHERE id = ?').get(id) : null;
+    const result = id
+      ? db.prepare(`UPDATE reservations SET customer_name = ?, phone = ?, table_id = ?, guest_count = ?, reservation_time = ?, status = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+        .run(normaliseText(customerName), normaliseText(phone), tableId, Number(guestCount || 1), reservationTime, selectedStatus, normaliseText(notes), id)
+      : db.prepare(`INSERT INTO reservations (customer_name, phone, table_id, guest_count, reservation_time, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(normaliseText(customerName), normaliseText(phone), tableId, Number(guestCount || 1), reservationTime, selectedStatus, normaliseText(notes));
+    const reservationId = id || result.lastInsertRowid;
+    const newValue = db.prepare('SELECT * FROM reservations WHERE id = ?').get(reservationId);
+    writeAudit(db, actor, id ? 'UPDATE' : 'CREATE', 'RESERVATION', reservationId, oldValue, newValue);
+    res.json({ success: true, reservation: newValue });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/reservations/cancel', (req, res) => {
+  const { restaurantId, actor, id } = req.body;
+  if (!restaurantId || !isPositiveId(id)) return res.status(400).json({ success: false, message: 'Reservation id required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'orders.cancel', 'Reservation cancel permission required');
+    const oldValue = db.prepare('SELECT * FROM reservations WHERE id = ?').get(id);
+    if (!oldValue) throw new Error('Reservation not found');
+    db.prepare("UPDATE reservations SET status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id);
+    const newValue = db.prepare('SELECT * FROM reservations WHERE id = ?').get(id);
+    writeAudit(db, actor, 'CANCEL', 'RESERVATION', id, oldValue, newValue);
+    res.json({ success: true, reservation: newValue });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
 app.get('/pos/bootstrap', (req, res) => {
   const { restaurantId } = req.query;
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
@@ -2887,7 +3714,24 @@ app.get('/pos/bootstrap', (req, res) => {
   try {
     res.json({
       success: true,
-      tables: db.prepare("SELECT * FROM tables WHERE active = 1 ORDER BY id").all(),
+      tables: db.prepare(`
+        SELECT t.*,
+               CASE WHEN r.id IS NOT NULL AND t.status = 'AVAILABLE' THEN 'RESERVED' ELSE t.status END AS status,
+               r.id AS reservation_id,
+               r.customer_name AS reservation_customer,
+               r.reservation_time
+        FROM tables t
+        LEFT JOIN reservations r ON r.id = (
+          SELECT id FROM reservations
+          WHERE table_id = t.id
+            AND status = 'BOOKED'
+            AND DATETIME(reservation_time) BETWEEN DATETIME('now', '-30 minutes') AND DATETIME('now', '+2 hours')
+          ORDER BY reservation_time ASC
+          LIMIT 1
+        )
+        WHERE t.active = 1
+        ORDER BY t.id
+      `).all(),
       categories: db.prepare('SELECT id, name FROM categories WHERE active = 1 ORDER BY name').all(),
       items: db.prepare('SELECT id, name, category_id, price FROM items WHERE active = 1 ORDER BY name').all(),
       modifierGroups: db.prepare(`
@@ -2913,6 +3757,7 @@ app.get('/pos/bootstrap', (req, res) => {
         ORDER BY ci.combo_id, i.name
       `).all(),
       deliveryPartners: db.prepare('SELECT id, name, phone FROM delivery_partners WHERE active = 1 ORDER BY name').all(),
+      enabledModules: enabledModules(db),
       settings: {
         currency: getConfigValue(db, 'currency', 'INR'),
         defaultOrderType: getConfigValue(db, 'default_order_type', 'DINE_IN'),
@@ -2996,8 +3841,159 @@ function createKotJobs(db, orderId) {
       deliveryPhone: orderMeta?.delivery_phone || null,
       items: group.items
     }));
+    insertElectronicJournal(db, 'KOT', orderId, {
+      kotId: kot.lastInsertRowid,
+      orderId,
+      kitchen: group.kitchenName,
+      orderType: orderMeta?.order_type || 'DINE_IN',
+      tableName: orderMeta?.table_no || null,
+      customerName: orderMeta?.customer_name || null,
+      items: group.items
+    });
   });
 }
+
+app.get('/qr/menu', (req, res) => {
+  const { restaurantId, tableId } = req.query;
+  if (!restaurantId || !isPositiveId(tableId)) return res.status(400).json({ success: false, message: 'restaurantId and tableId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const table = db.prepare('SELECT id, table_name, status FROM tables WHERE id = ? AND active = 1').get(tableId);
+    if (!table) throw new Error('Table not found');
+    res.json({
+      success: true,
+      table,
+      restaurant: {
+        displayName: getConfigValue(db, 'restaurant_display_name', 'Restaurant POS'),
+        currency: getConfigValue(db, 'currency', 'INR')
+      },
+      categories: db.prepare('SELECT id, name FROM categories WHERE active = 1 ORDER BY name').all(),
+      items: db.prepare('SELECT id, name, category_id, price FROM items WHERE active = 1 ORDER BY name').all()
+    });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/qr/orders/place', (req, res) => {
+  const { restaurantId, tableId, customerName, customerPhone, items } = req.body;
+  if (!restaurantId || !isPositiveId(tableId) || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ success: false, message: 'restaurantId, table and items are required' });
+  }
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const saved = db.transaction(() => {
+      const table = db.prepare('SELECT * FROM tables WHERE id = ? AND active = 1').get(tableId);
+      if (!table) throw new Error('Table not found');
+      const reservation = activeReservationForTable(db, table.id);
+      if (reservation) throw new Error(`This table is reserved for ${reservation.customer_name}. Please contact staff.`);
+      let customerId = null;
+      if (hasText(customerName) || hasText(customerPhone)) {
+        const existing = hasText(customerPhone) ? db.prepare('SELECT id FROM customers WHERE phone = ? AND active = 1').get(normaliseText(customerPhone)) : null;
+        customerId = existing?.id || db.prepare('INSERT INTO customers (name, phone) VALUES (?, ?)').run(normaliseText(customerName) || 'QR Customer', normaliseText(customerPhone) || null).lastInsertRowid;
+      }
+      const order = db.prepare(`
+        INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, customer_id, order_source)
+        VALUES ('DINE_IN', ?, ?, 'OPEN', 0, 'UNPAID', ?, 'QR')
+      `).run(table.id, table.table_name, customerId);
+      let total = 0;
+      items.forEach((line) => {
+        const quantity = Number(line.quantity || 1);
+        if (!isPositiveId(line.itemId) || !Number.isInteger(quantity) || quantity <= 0) throw new Error('Invalid QR order item');
+        const item = db.prepare(`
+          SELECT i.id, i.name, i.price, c.kitchen_id
+          FROM items i
+          JOIN categories c ON c.id = i.category_id
+          WHERE i.id = ? AND i.active = 1
+        `).get(line.itemId);
+        if (!item) throw new Error('Menu item not found');
+        db.prepare('INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price) VALUES (?, ?, ?, ?, ?)')
+          .run(order.lastInsertRowid, item.id, quantity, item.kitchen_id, item.price);
+        total += Number(item.price || 0) * quantity;
+      });
+      db.prepare("UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(total, order.lastInsertRowid);
+      db.prepare("UPDATE tables SET status = 'OCCUPIED' WHERE id = ?").run(table.id);
+      createKotJobs(db, order.lastInsertRowid);
+      writeAudit(db, { role: 'QR' }, 'CREATE', 'ORDER', order.lastInsertRowid, null, { orderSource: 'QR', total });
+      return { orderId: order.lastInsertRowid, total };
+    })();
+    trackModuleUsage(restaurantId, 'QR_ORDERING', 'QR_ORDER_PLACED').catch(() => {});
+    res.json({ success: true, ...saved });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/online/menu', (req, res) => {
+  const { restaurantId } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    res.json({
+      success: true,
+      restaurant: {
+        displayName: getConfigValue(db, 'restaurant_display_name', 'Restaurant POS'),
+        currency: getConfigValue(db, 'currency', 'INR')
+      },
+      categories: db.prepare('SELECT id, name FROM categories WHERE active = 1 ORDER BY name').all(),
+      items: db.prepare('SELECT id, name, category_id, price FROM items WHERE active = 1 ORDER BY name').all()
+    });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/online/orders/place', (req, res) => {
+  const { restaurantId, orderType, customerName, customerPhone, deliveryAddress, items } = req.body;
+  const selectedOrderType = normaliseOrderType(orderType || 'TAKEAWAY');
+  if (!restaurantId || !['TAKEAWAY', 'DELIVERY', 'ONLINE_ORDER'].includes(selectedOrderType) || !hasText(customerName) || !hasText(customerPhone) || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ success: false, message: 'Customer, order type and items are required' });
+  }
+  if (selectedOrderType === 'DELIVERY' && !hasText(deliveryAddress)) return res.status(400).json({ success: false, message: 'Delivery address required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const saved = db.transaction(() => {
+      const existingCustomer = db.prepare('SELECT id FROM customers WHERE phone = ? AND active = 1').get(normaliseText(customerPhone));
+      const customerId = existingCustomer?.id || db.prepare('INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)').run(normaliseText(customerName), normaliseText(customerPhone), normaliseText(deliveryAddress) || null).lastInsertRowid;
+      const order = db.prepare(`
+        INSERT INTO orders (order_type, table_no, status, total_amount, payment_status, customer_id, delivery_fee, order_source)
+        VALUES (?, ?, 'OPEN', 0, 'UNPAID', ?, 0, 'ONLINE')
+      `).run(selectedOrderType, selectedOrderType.replace(/_/g, ' '), customerId);
+      let total = 0;
+      items.forEach((line) => {
+        const quantity = Number(line.quantity || 1);
+        if (!isPositiveId(line.itemId) || !Number.isInteger(quantity) || quantity <= 0) throw new Error('Invalid online order item');
+        const item = db.prepare(`
+          SELECT i.id, i.price, c.kitchen_id
+          FROM items i JOIN categories c ON c.id = i.category_id
+          WHERE i.id = ? AND i.active = 1
+        `).get(line.itemId);
+        if (!item) throw new Error('Menu item not found');
+        db.prepare('INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price) VALUES (?, ?, ?, ?, ?)').run(order.lastInsertRowid, item.id, quantity, item.kitchen_id, item.price);
+        total += Number(item.price || 0) * quantity;
+      });
+      db.prepare('UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(total, order.lastInsertRowid);
+      if (selectedOrderType === 'DELIVERY') {
+        db.prepare('INSERT INTO delivery_orders (order_id, customer_id, delivery_address, delivery_phone, delivery_status) VALUES (?, ?, ?, ?, "RECEIVED")').run(order.lastInsertRowid, customerId, normaliseText(deliveryAddress), normaliseText(customerPhone));
+      }
+      createKotJobs(db, order.lastInsertRowid);
+      queueNotification(db, 'ORDER_CONFIRMATION', 'SMS', normaliseText(customerPhone), { orderId: order.lastInsertRowid, total });
+      writeAudit(db, { role: 'ONLINE' }, 'CREATE', 'ORDER', order.lastInsertRowid, null, { orderSource: 'ONLINE', total });
+      return { orderId: order.lastInsertRowid, total };
+    })();
+    res.json({ success: true, ...saved });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
 
 // Inventory sale consumption is tracked separately so an order can only deduct stock once.
 function deductInventoryForOrder(db, actor, orderId, reason) {
@@ -3070,6 +4066,8 @@ app.post('/orders/save', (req, res) => {
     deliveryFee,
     deliveryPartnerId,
     expectedDeliveryTime,
+    orderSource,
+    managerOverride,
     lockId,
     latestUpdatedAt
   } = req.body;
@@ -3099,6 +4097,10 @@ app.post('/orders/save', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     requirePermission(db, actor?.role, 'orders.create', 'Order creation permission required');
+    const reservation = activeReservationForTable(db, tableId);
+    if (reservation && !managerCanOverrideReservation(actor?.role)) {
+      throw new Error(`Table is reserved for ${reservation.customer_name}. Manager override required.`);
+    }
     if (lockId || latestUpdatedAt) verifyOrderLock(db, actor, tableId, orderId, lockId);
     if (orderId) {
       const existingOrder = db.prepare('SELECT id, status, payment_status, updated_at FROM orders WHERE id = ?').get(orderId);
@@ -3119,13 +4121,13 @@ app.post('/orders/save', (req, res) => {
       const oldValue = id ? db.prepare('SELECT * FROM orders WHERE id = ?').get(id) : null;
       if (!id) {
         const result = db.prepare(`
-          INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, created_by, customer_id, delivery_fee)
-          VALUES (?, ?, ?, 'OPEN', ?, 'UNPAID', ?, ?, ?)
-        `).run(selectedOrderType, safeTableId || null, safeTableName || null, total, actor?.id || null, isPositiveId(customerId) ? customerId : null, safeDeliveryFee);
+          INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, created_by, customer_id, delivery_fee, order_source)
+          VALUES (?, ?, ?, 'OPEN', ?, 'UNPAID', ?, ?, ?, ?)
+        `).run(selectedOrderType, safeTableId || null, safeTableName || null, total, actor?.id || null, isPositiveId(customerId) ? customerId : null, safeDeliveryFee, normaliseText(orderSource || 'POS').toUpperCase());
         id = result.lastInsertRowid;
         writeOrderStatusHistory(db, actor, id, 'OPEN', 'ORDER', `${selectedOrderType} order created`);
       } else {
-        db.prepare("UPDATE orders SET order_type = ?, table_id = ?, table_no = ?, total_amount = ?, status = 'OPEN', customer_id = COALESCE(?, customer_id), delivery_fee = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        db.prepare("UPDATE orders SET order_type = ?, table_id = ?, table_no = ?, total_amount = ?, status = 'OPEN', customer_id = COALESCE(?, customer_id), delivery_fee = ?, order_source = COALESCE(order_source, 'POS'), updated_at = CURRENT_TIMESTAMP WHERE id = ?")
           .run(selectedOrderType, safeTableId || null, safeTableName || null, 0, isPositiveId(customerId) ? customerId : null, safeDeliveryFee, id);
         const existingOrderItems = db.prepare('SELECT id FROM order_items WHERE order_id = ?').all(id).map((row) => row.id);
         if (existingOrderItems.length > 0) {
@@ -3281,6 +4283,41 @@ app.get('/orders/open', (req, res) => {
     const customer = order?.customer_id ? customerWithBalance(db, db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id)) : null;
     const lock = tableId ? currentLockForTable(db, tableId) : null;
     res.json({ success: true, order, items: [...plainItems, ...comboLines.values()], customer, lock });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/customer-display/current', (req, res) => {
+  const { restaurantId, tableId, orderId } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const order = orderId
+      ? db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId)
+      : db.prepare(`
+        SELECT * FROM orders
+        WHERE payment_status != 'PAID'
+          AND status NOT IN ('CANCELLED', 'PAID')
+          AND (? IS NULL OR table_id = ?)
+        ORDER BY updated_at DESC, created_at DESC
+        LIMIT 1
+      `).get(tableId || null, tableId || null);
+    if (!order) return res.json({ success: true, order: null, items: [], totals: null });
+    const items = db.prepare(`
+      SELECT i.name, oi.quantity, oi.price, oi.quantity * oi.price AS line_total
+      FROM order_items oi
+      JOIN items i ON i.id = oi.item_id
+      WHERE oi.order_id = ?
+      ORDER BY oi.id
+    `).all(order.id);
+    const subtotal = items.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+    const discount = Number(order.loyalty_discount || 0);
+    const tax = Number(order.tax_amount || 0);
+    const grandTotal = Number(order.total_amount || subtotal + tax - discount);
+    res.json({ success: true, order, items, totals: { subtotal, discount, tax, grandTotal, paymentStatus: order.payment_status } });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -3485,6 +4522,7 @@ app.post('/orders/cancel', (req, res) => {
     const newValue = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
     writeAudit(db, actor, 'DELETE', 'ORDER', orderId, oldValue, newValue);
     writeCompliance(db, 'VOIDED_BILL', 'HIGH', `Order cancelled #${orderId}`, 'ORDER', orderId);
+    createFraudAlert(db, 'VOIDED_BILL', 'HIGH', 'ORDER', orderId, `Order cancelled #${orderId}`);
     res.json({ success: true });
   } catch (err) {
     sendError(res, err);
@@ -3518,6 +4556,7 @@ app.post('/orders/settle', (req, res) => {
       }
       const pointValue = getSettingNumber(db, 'loyalty_point_value', 1);
       const redeem = Number(redeemPoints || 0);
+      if (redeem > 0) requireModule(db, 'LOYALTY');
       if (!Number.isInteger(redeem) || redeem < 0) throw new Error('Redeem points must be a whole number');
       if (redeem > 0 && !linkedCustomerId) throw new Error('Customer required to redeem points');
       const balance = linkedCustomerId ? customerLoyaltyBalance(db, linkedCustomerId) : 0;
@@ -3606,6 +4645,24 @@ app.post('/orders/settle', (req, res) => {
         roundOff,
         payable
       }));
+      const billSnapshot = {
+        orderId,
+        invoiceNo,
+        payments,
+        customerId: linkedCustomerId || null,
+        redeemedPoints: redeem,
+        loyaltyDiscount,
+        serviceCharge,
+        roundOff,
+        payable,
+        settledAt: new Date().toISOString()
+      };
+      insertElectronicJournal(db, 'BILL', orderId, billSnapshot);
+      evaluateOrderFraud(db, orderId);
+      if (linkedCustomerId) {
+        const customer = db.prepare('SELECT phone, email FROM customers WHERE id = ?').get(linkedCustomerId);
+        queueNotification(db, 'ORDER_CONFIRMATION', customer?.phone ? 'SMS' : 'EMAIL', customer?.phone || customer?.email || null, billSnapshot);
+      }
       const newValue = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
       writeAudit(db, actor, 'UPDATE', 'ORDER', orderId, order, newValue);
       if (Number(order.is_invoice) === 0) {
@@ -3955,6 +5012,7 @@ app.post('/kds/item-status', (req, res) => {
     }
     const newValue = db.prepare('SELECT * FROM order_items WHERE id = ?').get(orderItemId);
     writeAudit(db, actor, 'UPDATE', 'KDS_ITEM', orderItemId, oldValue, newValue);
+    trackModuleUsage(restaurantId, 'KDS', 'ITEM_STATUS_UPDATED').catch(() => {});
     res.json({ success: true });
   } catch (err) {
     sendError(res, err);
@@ -3985,6 +5043,7 @@ app.post('/kds/order-status', (req, res) => {
     db.prepare(sql).run(...params);
     const newValue = db.prepare('SELECT id, order_id, status, kitchen_id FROM order_items WHERE order_id = ?').all(orderId);
     writeAudit(db, actor, 'UPDATE', 'KDS_ORDER', orderId, oldValue, newValue);
+    trackModuleUsage(restaurantId, 'KDS', 'ORDER_STATUS_UPDATED').catch(() => {});
     res.json({ success: true });
   } catch (err) {
     sendError(res, err);
@@ -4043,6 +5102,7 @@ app.post('/customers/create', (req, res) => {
       .run(normaliseText(name), normaliseText(phone), normaliseText(email) || null, birthday || null, normaliseText(address) || null);
     const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(result.lastInsertRowid);
     writeAudit(db, actor, 'CREATE', 'CUSTOMER', result.lastInsertRowid, null, customer);
+    trackModuleUsage(restaurantId, 'LOYALTY', 'CUSTOMER_CREATED').catch(() => {});
     res.json({ success: true, customer: customerWithBalance(db, customer) });
   } catch (err) {
     sendError(res, err);
@@ -6042,6 +7102,7 @@ async function syncQueuedReport(db, restaurantId, row) {
       WHERE id = ?
     `).run(row.id);
     cloudSyncStatus(db, restaurantId, 'SYNCED', `Synced ${payload.reportDate}`);
+    trackModuleUsage(restaurantId, 'CLOUD_REPORTING', 'DAILY_REPORT_UPLOADED').catch(() => {});
     return { success: true, reportDate: payload.reportDate };
   } catch (err) {
     db.prepare(`
@@ -6124,6 +7185,36 @@ async function runCloudSyncSchedulerTick() {
 }
 
 setInterval(runCloudSyncSchedulerTick, 15 * 60 * 1000);
+
+async function sendPosHeartbeat() {
+  const restaurantId = getSingleRestaurantId();
+  const saasUrl = process.env.SAAS_URL;
+  if (!restaurantId || !saasUrl) return;
+  let db;
+  try {
+    db = openRestaurantDatabase(restaurantId);
+    const license = db.prepare('SELECT license_key, status FROM license_status WHERE restaurant_id = ?').get(restaurantId) || {};
+    const syncToken = getConfigValue(db, 'cloud_sync_token', '');
+    const backup = getBackupConfig(db);
+    const pendingPrintJobs = db.prepare("SELECT COUNT(*) AS count FROM print_jobs WHERE status = 'PENDING'").get().count;
+    await axios.post(`${saasUrl.replace(/\/$/, '')}/monitoring/heartbeat`, {
+      restaurantId,
+      licenseKey: license.license_key || null,
+      syncToken: syncToken || null,
+      posVersion: posPackageInfo().version,
+      backupStatus: backup.last_backup_at ? `Last backup ${backup.last_backup_at}` : 'No backup yet',
+      printerStatus: pendingPrintJobs > 0 ? `PENDING:${pendingPrintJobs}` : 'OK',
+      licenseStatus: license.status || 'UNKNOWN',
+      appStatus: 'OK'
+    }, { timeout: 5000 });
+  } catch (err) {
+    console.warn('POS heartbeat skipped:', err.message);
+  } finally {
+    if (db) db.close();
+  }
+}
+
+setInterval(sendPosHeartbeat, 60 * 1000);
 
 app.post('/cloud-sync/run', async (req, res) => {
   const { restaurantId, actor, date } = req.body;

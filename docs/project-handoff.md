@@ -8,6 +8,26 @@ C:\Users\prave\OneDrive\Desktop\Project\restaurant-platform\docs\project-handoff
 
 Update this file whenever project modules, deployment steps, startup scripts, or operational assumptions change.
 
+## 2026-06-11
+
+### One-Time Commercial Readiness Execution
+
+- Cancelled the scheduled automation and executed the requested plan immediately as a one-time implementation pass.
+- Added SaaS organization, branch group, organization restaurant mapping, organization user, and support note migrations.
+- Added SaaS `/organizations/*` APIs for organization creation, branch groups, restaurant assignment, consolidated reports, and central-menu readiness.
+- Added SaaS support diagnostics endpoints under `/monitoring/diagnostics` and `/monitoring/support-notes`.
+- Added SaaS admin dashboard sections for Organizations / Multi-Branch and Support Diagnostics.
+- Added owner mobile dashboard page at `saas-backend/public/owner-mobile.html`.
+- Added local POS schema support for electronic journal, fraud alerts, customer credit accounts, credit transactions, payment providers, notification templates/logs, and retention settings.
+- Added POS routes for AI-style analytics, advanced reports, electronic journal, fraud alerts, customer credit, payment preparation, notifications, privacy helpers, diagnostics, disaster recovery, demo reset, and online ordering.
+- Added POS Admin "Commercial Tools" section for analytics, advanced reports, journal, fraud alerts, credit aging, diagnostics, disaster check, and demo reset.
+- Added public online ordering page at `pos-app/backend/public/online-order.html`.
+- Added electronic journal hooks for KOT and bill print snapshots.
+- Added basic fraud alert hooks for refunds, voids, and large order settlement patterns.
+- Added local notification log queueing for order confirmation placeholders.
+- Added docs for commercial readiness and disaster recovery.
+- Added root `npm test` smoke check for syntax, required route registration, schema presence, and support page/doc presence.
+
 ## 2026-06-09
 
 ### Windows Installer & Startup Automation
@@ -128,3 +148,65 @@ Update this file whenever project modules, deployment steps, startup scripts, or
 - Updated SaaS admin dashboard with owner cloud report cards, restaurant selector, date range, payment summary, top selling items, last sync status, and request-sync action.
 - Verified POS syntax, SaaS route syntax, and offline POS sync behavior with SaaS unreachable: POS health stayed OK, sync failed gracefully, and queue/status recorded the failure.
 - Known limitation: SaaS Request Sync records an owner request in `tenant_sync_logs`; POS does not yet poll SaaS for request-sync commands.
+
+## 2026-06-11
+
+### New Module Expansion
+
+- Added SaaS owner account tables, restaurant-owner assignment mapping, owner login, owner dashboard, owner password change/reset, and SaaS admin owner assignment controls.
+- Added SaaS subscription tables for plans, subscriptions, payments, seeded TRIAL/MONTHLY/QUARTERLY/YEARLY plans, assign/renew, suspend/reactivate, expiry warning, days remaining, and SaaS admin subscription display.
+- Added SaaS/POS remote monitoring with POS heartbeat, POS version, backup status, printer queue status, license status, last heartbeat, and online/offline dashboard.
+- Added QR ordering page `qr-menu.html` and QR menu/order APIs. QR orders create normal POS orders, set `order_source = QR`, occupy the table, and create KOT print jobs through the existing KOT helper.
+- Added reservation tables and APIs with BOOKED/ARRIVED/CANCELLED/COMPLETED status, table reservation display in POS bootstrap, and manager override protection for reserved table ordering.
+- Added customer display page `customer-display.html` with read-only order items, subtotal, discount, tax, grand total, and payment-success status.
+- Added expense categories, seeded Rent/Salary/Electricity/Gas/Internet/Other, enhanced expense entry, profit dashboard, and CSV export for OWNER/MANAGER_2.
+- Added POS admin sections for QR links, reservations, expense entry, and profit dashboard.
+- Verified changed JavaScript syntax and checked duplicate route registrations for the newly added APIs.
+- Finalized the new modules with targeted hardening only:
+  - Reserved-table ordering now requires an actual OWNER/MANAGER_2 role; clients cannot bypass it by sending a plain override flag.
+  - SaaS subscription suspend/reactivate now updates only the latest subscription record so renewal history is preserved.
+  - SaaS subscription summary query now groups by `t.created_at` so PostgreSQL can order the dashboard rows correctly.
+  - SaaS owner, subscription, and monitoring POST routes now return validation JSON if a request body is missing instead of throwing raw Express errors.
+  - Expense entry is explicitly limited to OWNER/MANAGER_2.
+- Verified SaaS PostgreSQL migration completed and seeded TRIAL, MONTHLY, QUARTERLY, and YEARLY subscription plans.
+- Verified SaaS protected API smoke flow with a short-lived DEV token: owner create, owner assignment, owner login/dashboard scoping, subscription assignment visibility, and POS heartbeat visibility.
+- Verified POS smoke flow on RESTO87631: QR menu load, QR order creation with `order_source = QR`, table occupancy, customer display, KOT print job creation, reservation display as RESERVED, waiter block on reserved table, expense save, profit dashboard, and profit CSV export.
+- Verified existing POS integration lightly: order save, KOT submit, bill settlement, invoice generation, table release, and print job visibility.
+- Manual note: `ADMIN_EMAIL` and `ADMIN_PASSWORD` were not configured in the local SaaS `.env`, so real DEV admin password login was not verified in this pass.
+
+### White-Label SaaS and Reseller/Partner Management
+
+- Added SaaS partner tables for partners, partner users, restaurant mappings, branding, partner subscriptions, commissions, payouts, and SaaS audit logs.
+- Added `/partners/*` APIs for partner login, create/list/update, partner users, branding, partner restaurant creation, partner-scoped restaurants, partner dashboard, commissions, payout marking, and partner-scoped subscription assignment.
+- Added SaaS-side roles in the partner module: DEV_ADMIN, PARTNER_ADMIN, PARTNER_SUPPORT, ORG_OWNER, and RESTAURANT_OWNER are recognized for access modeling, with partner APIs enforcing DEV/admin or partner-token scoping.
+- Partner admin can create restaurants under their partner; the route creates the tenant, license, optional subscription, partner mapping, and commission records without changing POS activation or license validation.
+- Partner support can view dashboard/diagnostics but is blocked from subscription changes and payout marking.
+- Added public branding lookup by custom domain and made SaaS admin/owner/partner login pages display partner brand/support details when a domain matches configured branding.
+- Added SaaS admin dashboard sections for Partners, Partner Users, Partner Branding, Partner Restaurants, Partner Dashboard, Partner Commissions, and Partner Payouts.
+- Added partner-facing pages `partner-login.html` and `partner-dashboard.html`.
+- Verified SaaS migration, syntax checks, partner create, partner admin login, restaurant creation under partner, license validation, partner dashboard scoping, DEV admin all-restaurant visibility, commission calculation, payout marking, support-role subscription blocking, and public branding lookup.
+
+### Marketplace / Add-on Module System
+
+- Added SaaS marketplace tables for `modules`, `tenant_modules`, `module_pricing`, `module_usage_logs`, and `partner_allowed_modules`.
+- Seeded default add-on modules: INVENTORY, KDS, LOYALTY, QR_ORDERING, RESERVATIONS, CLOUD_REPORTING, MULTI_BRANCH, and WHITE_LABEL.
+- Existing tenants are seeded with all default modules enabled so existing licensed restaurants keep working after migration.
+- Added SaaS APIs:
+  - `GET /modules/list`
+  - `POST /modules/create`
+  - `POST /modules/update`
+  - `GET /modules/pricing`
+  - `POST /modules/usage`
+  - `GET /tenants/modules`
+  - `POST /tenants/modules/enable`
+  - `POST /tenants/modules/disable`
+- SaaS license validation now returns `enabledModules` for POS activation and license refresh.
+- POS activation and daily license refresh cache enabled modules in local SQLite `system_config.enabled_modules`.
+- POS backend blocks disabled add-on APIs with `Module not enabled for this restaurant` for inventory, purchase ordering, KDS, loyalty/customer CRM, QR ordering, reservations, and cloud reporting.
+- POS admin bootstrap and live POS bootstrap expose enabled modules to frontend code.
+- POS admin hides disabled inventory, reservation, QR, KDS, and customer UI entry points.
+- Usage tracking is best-effort and offline-safe for QR orders, KDS status updates, cloud report uploads, and customer creation.
+- SaaS admin dashboard now includes Marketplace controls for module catalog/pricing and per-restaurant enable/disable/trials, with monthly add-on charges included in subscription summary.
+- Partner tokens can use tenant module APIs only within their restaurant scope; PARTNER_SUPPORT is blocked from module changes.
+- Verified SaaS migration, syntax checks, module create, pricing list, tenant enable/disable, license response entitlements, usage logging, monthly module charge calculation, POS disabled-module backend block, and POS enabled-module API access.
+- Known test note: one SaaS smoke script printed all expected success fields but the Node process ended with a Windows async assertion after output; the APIs themselves returned the expected data.

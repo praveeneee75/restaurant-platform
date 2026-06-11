@@ -17,6 +17,8 @@
     <button class="nav-btn" data-view="items">Menu Items</button>
     <button class="nav-btn" data-view="users">Users</button>
     <button class="nav-btn" data-view="tables">Tables</button>
+    <button class="nav-btn" data-view="reservations">Reservations</button>
+    <button class="nav-btn" data-view="qr">QR Links</button>
     <button class="nav-btn" data-view="inventory">Inventory</button>
     <button class="nav-btn" data-view="modifiers">Modifiers & Combos</button>
     <button class="nav-btn" data-view="reports">Reports</button>
@@ -27,6 +29,7 @@
     <button class="nav-btn" data-view="backup">Backup</button>
     <button class="nav-btn" data-view="updates">Updates</button>
     <button class="nav-btn" data-view="audit">Audit</button>
+    <button class="nav-btn" data-view="commercial">Commercial Tools</button>
     <a class="nav-link" href="/pos-live.html">Open POS</a>
     <a class="nav-link" href="/kds.html">Open KDS</a>
     <a class="nav-link" href="/orders.html">Orders</a>
@@ -209,6 +212,34 @@
       </div>
     </section>
 
+    <section class="admin-view" id="view-reservations">
+      <form class="editor-panel" id="reservationForm">
+        <input type="hidden" id="reservationId">
+        <label>Customer name<input id="reservationCustomerName" required></label>
+        <label>Phone<input id="reservationPhone"></label>
+        <label>Table<select id="reservationTable" required></select></label>
+        <label>Guests<input id="reservationGuestCount" type="number" min="1" value="1"></label>
+        <label>Time<input id="reservationTime" type="datetime-local" required></label>
+        <label>Status<select id="reservationStatus"><option>BOOKED</option><option>ARRIVED</option><option>CANCELLED</option><option>COMPLETED</option></select></label>
+        <label>Notes<input id="reservationNotes"></label>
+        <button>Save Reservation</button>
+      </form>
+      <div class="toolbar">
+        <input id="reservationFrom" type="date">
+        <input id="reservationTo" type="date">
+        <button id="loadReservations" type="button">Load Reservations</button>
+      </div>
+      <div class="table-panel"><table><thead><tr><th>Customer</th><th>Phone</th><th>Table</th><th>Guests</th><th>Time</th><th>Status</th><th></th></tr></thead><tbody id="reservationsTable"></tbody></table></div>
+    </section>
+
+    <section class="admin-view" id="view-qr">
+      <div class="editor-panel">
+        <h2>QR Ordering Links</h2>
+        <p>Use these URLs to print QR codes with any QR generator.</p>
+      </div>
+      <div class="table-panel"><table><thead><tr><th>Table</th><th>QR Link</th></tr></thead><tbody id="qrLinksTable"></tbody></table></div>
+    </section>
+
     <section class="admin-view" id="view-modifiers">
       <div class="toolbar">
         <button class="secondary-btn modifier-tab active" data-modifier-tab="groups">Groups</button>
@@ -273,6 +304,19 @@
         <article><h3>Top Selling Items</h3><div id="topItems"></div></article>
         <article><h3>Order Summary</h3><div id="orderSummary"></div></article>
         <article><h3>Tax Summary</h3><div id="taxSummary"></div></article>
+      </div>
+      <div class="editor-panel">
+        <h3>Expenses & Profit</h3>
+        <form id="expenseForm">
+          <label>Category<select id="expenseCategory"></select></label>
+          <label>Description<input id="expenseDescription"></label>
+          <label>Amount<input id="expenseAmount" type="number" min="0.01" step="0.01"></label>
+          <label>Date<input id="expenseDate" type="date"></label>
+          <button>Add Expense</button>
+        </form>
+        <button id="loadProfitDashboard" type="button">Load Profit</button>
+        <button id="exportProfitCsv" type="button">Export CSV</button>
+        <div id="profitDashboard"></div>
       </div>
     </section>
 
@@ -520,6 +564,27 @@
           <thead><tr><th>Timestamp</th><th>Severity</th><th>Event</th><th>Message</th><th>Entity</th></tr></thead>
           <tbody id="complianceEventsTable"></tbody>
         </table>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-commercial">
+      <div class="editor-panel">
+        <h2>Commercial Tools</h2>
+        <div class="toolbar">
+          <button id="loadCommercialTools" type="button">Load Tools</button>
+          <button id="runDisasterCheck" type="button" class="secondary-btn">Run DB Check</button>
+          <button id="runDemoReset" type="button" class="secondary-btn">Reset Demo Data</button>
+          <a class="secondary-btn" href="/online-order.html" target="_blank">Online Ordering Page</a>
+        </div>
+        <p id="commercialStatus"></p>
+      </div>
+      <div class="report-grid">
+        <article><h3>Analytics</h3><div id="commercialAnalytics"></div></article>
+        <article><h3>Advanced Reports</h3><div id="commercialReports"></div></article>
+        <article><h3>Journal</h3><div id="commercialJournal"></div></article>
+        <article><h3>Fraud Alerts</h3><div id="commercialFraud"></div></article>
+        <article><h3>Credit Accounts</h3><div id="commercialCredit"></div></article>
+        <article><h3>Diagnostics</h3><div id="commercialDiagnostics"></div></article>
       </div>
     </section>
   </main>

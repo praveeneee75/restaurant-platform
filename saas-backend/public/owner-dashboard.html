@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Owner Dashboard</title>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background: #f2f2f2; }
+    input { margin: 4px; padding: 7px; }
+  </style>
+</head>
+<body>
+  <h2>Owner Dashboard</h2>
+  <p id="ownerStatus">Loading...</p>
+  <section>
+    <h3>Change Password</h3>
+    <input id="currentPassword" type="password" placeholder="Current password">
+    <input id="newPassword" type="password" placeholder="New password">
+    <button onclick="changePassword()">Change</button>
+    <p id="passwordMsg"></p>
+  </section>
+  <table>
+    <thead>
+      <tr>
+        <th>Restaurant</th>
+        <th>Code</th>
+        <th>Subscription</th>
+        <th>Days Remaining</th>
+        <th>POS</th>
+        <th>Version</th>
+        <th>Backup</th>
+        <th>Printer</th>
+        <th>Last Heartbeat</th>
+      </tr>
+    </thead>
+    <tbody id="ownerRestaurants"></tbody>
+  </table>
+  <script src="/js/owner-dashboard.js"></script>
+</body>
+</html>

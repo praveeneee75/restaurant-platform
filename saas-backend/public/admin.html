@@ -80,6 +80,229 @@
   <hr>
 
   <section>
+    <h3>Owner Accounts</h3>
+    <input id="ownerName" placeholder="Owner name">
+    <input id="ownerEmail" placeholder="Owner email">
+    <input id="ownerPassword" type="password" placeholder="Temporary password">
+    <button onclick="createOwner()">Create Owner</button>
+    <br>
+    <select id="ownerSelect"></select>
+    <select id="ownerRestaurantSelect"></select>
+    <button onclick="assignOwner()">Assign Owner</button>
+    <button onclick="removeOwner()">Remove Owner</button>
+    <input id="ownerResetPassword" type="password" placeholder="New password">
+    <button onclick="resetOwnerPassword()">Reset Password</button>
+    <p id="ownerMsg"></p>
+    <table id="ownerTable">
+      <thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Reset Required</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <hr>
+
+  <section>
+    <h3>Subscriptions</h3>
+    <select id="subscriptionRestaurant"></select>
+    <select id="subscriptionPlan"></select>
+    <input id="subscriptionStart" type="date">
+    <input id="subscriptionAmount" type="number" min="0" step="0.01" placeholder="Payment amount">
+    <select id="subscriptionMode"><option>CASH</option><option>UPI</option><option>BANK</option><option>CARD</option></select>
+    <input id="subscriptionRef" placeholder="Reference">
+    <button onclick="assignSubscription()">Assign/Renew Plan</button>
+    <button onclick="suspendSubscription()">Suspend</button>
+    <button onclick="reactivateSubscription()">Reactivate</button>
+    <p id="subscriptionMsg"></p>
+    <table id="subscriptionTable">
+      <thead><tr><th>Restaurant</th><th>Plan</th><th>Status</th><th>Expires</th><th>Days</th><th>Warning</th><th>Paid</th><th>Monthly Add-ons</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <hr>
+
+  <section>
+    <h3>Marketplace / Add-on Modules</h3>
+    <div>
+      <input id="moduleCode" placeholder="Code e.g. INVENTORY">
+      <input id="moduleName" placeholder="Module name">
+      <input id="moduleCategory" placeholder="Category">
+      <select id="moduleStatus"><option>ACTIVE</option><option>DISABLED</option></select>
+      <input id="moduleMonthlyPrice" type="number" min="0" step="0.01" placeholder="Monthly price">
+      <input id="moduleCurrency" placeholder="Currency" value="INR">
+      <button onclick="createModule()">Save Module</button>
+    </div>
+    <textarea id="moduleDescription" placeholder="Description" rows="2" style="width:100%;max-width:720px"></textarea>
+    <div>
+      <select id="moduleRestaurant"></select>
+      <select id="tenantModuleSelect"></select>
+      <input id="tenantModuleTrialDays" type="number" min="0" step="1" placeholder="Trial days">
+      <button onclick="enableTenantModule()">Enable</button>
+      <button onclick="disableTenantModule()">Disable</button>
+    </div>
+    <p id="moduleMsg"></p>
+    <div class="cards">
+      <div class="card">Monthly Add-ons<strong id="moduleMonthlyTotal">0.00</strong></div>
+      <div class="card">Enabled Modules<strong id="moduleEnabledList">None</strong></div>
+    </div>
+    <table id="moduleTable">
+      <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Status</th><th>Pricing</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <table id="tenantModuleTable">
+      <thead><tr><th>Module</th><th>Status</th><th>Trial Ends</th><th>Monthly</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <hr>
+
+  <section>
+    <h3>Remote POS Monitoring</h3>
+    <button onclick="loadMonitoring()">Refresh Monitoring</button>
+    <table id="monitoringTable">
+      <thead><tr><th>Restaurant</th><th>Status</th><th>Version</th><th>Backup</th><th>Printer</th><th>License</th><th>Last Heartbeat</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <hr>
+
+  <section>
+    <h3>Partners & White Label</h3>
+    <div>
+      <input id="partnerName" placeholder="Partner name">
+      <input id="partnerBusinessName" placeholder="Business name">
+      <input id="partnerEmail" placeholder="Email">
+      <input id="partnerPhone" placeholder="Phone">
+      <input id="partnerCommission" type="number" min="0" max="100" step="0.01" placeholder="Commission %">
+      <button onclick="createPartner()">Create Partner</button>
+    </div>
+    <div>
+      <select id="partnerSelect"></select>
+      <select id="partnerStatus"><option>ACTIVE</option><option>SUSPENDED</option></select>
+      <button onclick="updatePartner()">Update Partner</button>
+      <button onclick="loadPartnerDashboard()">Load Dashboard</button>
+    </div>
+    <p id="partnerMsg"></p>
+
+    <div class="cards">
+      <div class="card">Restaurants<strong id="partnerTotalRestaurants">0</strong></div>
+      <div class="card">Active Licenses<strong id="partnerActiveLicenses">0</strong></div>
+      <div class="card">Expired Licenses<strong id="partnerExpiredLicenses">0</strong></div>
+      <div class="card">MRR<strong id="partnerMrr">0.00</strong></div>
+      <div class="card">Online<strong id="partnerOnline">0</strong></div>
+      <div class="card">Offline<strong id="partnerOffline">0</strong></div>
+    </div>
+
+    <table id="partnerTable">
+      <thead><tr><th>Name</th><th>Business</th><th>Status</th><th>Commission %</th><th>Restaurants</th><th>Active Licenses</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <hr>
+
+  <section>
+    <h3>Organizations / Multi-Branch</h3>
+    <input id="orgName" placeholder="Organization name">
+    <input id="orgEmail" placeholder="Email">
+    <button onclick="createOrganization()">Create Organization</button>
+    <select id="orgSelect"></select>
+    <input id="branchGroupName" placeholder="Branch group name">
+    <button onclick="saveBranchGroup()">Save Branch Group</button>
+    <select id="orgRestaurantSelect"></select>
+    <select id="orgBranchGroupSelect"></select>
+    <input id="orgBranchName" placeholder="Branch name">
+    <button onclick="assignOrganizationRestaurant()">Assign Restaurant</button>
+    <p id="orgMsg"></p>
+    <table id="orgTable"><thead><tr><th>Name</th><th>Status</th><th>Restaurants</th><th>Active Licenses</th></tr></thead><tbody></tbody></table>
+    <table id="orgBranchesTable"><thead><tr><th>Restaurant</th><th>Group</th><th>Status</th><th>POS</th></tr></thead><tbody></tbody></table>
+    <div class="cards">
+      <div class="card">Net Sales<strong id="orgNetSales">0.00</strong></div>
+      <div class="card">Orders<strong id="orgOrders">0</strong></div>
+    </div>
+  </section>
+
+  <hr>
+
+  <section>
+    <h3>Support Diagnostics</h3>
+    <select id="supportRestaurant"></select>
+    <button onclick="loadSupportDiagnostics()">Load Diagnostics</button>
+    <input id="supportNote" placeholder="Support note">
+    <button onclick="saveSupportNote()">Add Note</button>
+    <p id="supportMsg"></p>
+    <pre id="supportDiagnostics"></pre>
+  </section>
+
+  <hr>
+
+  <section>
+    <h3>Partner Users</h3>
+    <input id="partnerUserName" placeholder="Name">
+    <input id="partnerUserEmail" placeholder="Email">
+    <input id="partnerUserPassword" type="password" placeholder="Temporary password">
+    <select id="partnerUserRole"><option>PARTNER_ADMIN</option><option>PARTNER_SUPPORT</option></select>
+    <button onclick="createPartnerUser()">Create Partner User</button>
+    <table id="partnerUserTable">
+      <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <hr>
+
+  <section>
+    <h3>Partner Branding</h3>
+    <input id="brandName" placeholder="Brand name">
+    <input id="brandLogo" placeholder="Logo URL">
+    <input id="brandPrimary" placeholder="Primary color">
+    <input id="brandSecondary" placeholder="Secondary color">
+    <input id="brandSupportEmail" placeholder="Support email">
+    <input id="brandSupportPhone" placeholder="Support phone">
+    <input id="brandDomain" placeholder="Custom domain placeholder">
+    <button onclick="savePartnerBranding()">Save Branding</button>
+  </section>
+
+  <hr>
+
+  <section>
+    <h3>Partner Restaurants</h3>
+    <input id="partnerRestaurantName" placeholder="Restaurant name">
+    <input id="partnerRestaurantExpiry" type="date">
+    <select id="partnerRestaurantPlan"></select>
+    <input id="partnerRestaurantPayment" type="number" min="0" step="0.01" placeholder="Initial payment">
+    <button onclick="createPartnerRestaurant()">Create Restaurant Under Partner</button>
+    <table id="partnerRestaurantTable">
+      <thead><tr><th>Restaurant</th><th>License</th><th>Online</th><th>POS</th><th>Backup</th><th>Printer</th><th>Last Sync</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <hr>
+
+  <section>
+    <h3>Partner Commissions & Payouts</h3>
+    <button onclick="loadPartnerCommissions()">Refresh Commissions</button>
+    <input id="partnerPayoutRef" placeholder="Payout reference">
+    <button onclick="markPartnerPayoutPaid()">Mark Selected Paid</button>
+    <p id="partnerCommissionMsg"></p>
+    <div class="cards">
+      <div class="card">Revenue<strong id="partnerRevenue">0.00</strong></div>
+      <div class="card">Commission<strong id="partnerCommissionTotal">0.00</strong></div>
+      <div class="card">Pending<strong id="partnerCommissionPending">0.00</strong></div>
+      <div class="card">Paid<strong id="partnerCommissionPaid">0.00</strong></div>
+    </div>
+    <table id="partnerCommissionTable">
+      <thead><tr><th>Select</th><th>Restaurant</th><th>Revenue</th><th>Commission %</th><th>Commission</th><th>Status</th><th>Created</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <hr>
+
+  <section>
     <h3>Owner Cloud Reports</h3>
     <select id="reportRestaurant"></select>
     <input id="reportFromDate" type="date">

@@ -3,11 +3,18 @@ if (restaurantId) localStorage.setItem("restaurantId", restaurantId);
 
 const user = JSON.parse(localStorage.getItem("user") || '{"role":"OWNER"}');
 const actor = { id: user.id, role: user.role || "OWNER" };
-const state = { admin: {}, inventory: {}, modifiers: {}, backups: {}, settings: {}, permissions: {}, devices: {}, latestUpdate: null };
+const state = { admin: {}, inventory: {}, modifiers: {}, backups: {}, settings: {}, permissions: {}, devices: {}, reservations: [], expenseCategories: [], latestUpdate: null, commercial: {} };
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 const money = (value) => Number(value || 0).toFixed(2);
 const can = (permission) => (state.permissions.currentPermissions || []).includes(permission) || actor.role === "OWNER";
+const moduleEnabled = (code) => (state.admin.enabledModules || []).includes(code);
+const todayIso = () => new Date().toISOString().slice(0, 10);
+const monthStartIso = () => {
+  const date = new Date();
+  date.setDate(1);
+  return date.toISOString().slice(0, 10);
+};
 
 async function postJson(url, body) {
   const res = await fetch(url, {
@@ -38,6 +45,7 @@ function fillSelect(element, rows, label = "name") {
 async function loadAdmin() {
   state.admin = await fetchJson(`/admin/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`);
   renderAdmin();
+  applyModuleGuards();
 }
 
 async function loadInventory() {
@@ -72,11 +80,45 @@ async function loadDeviceSessions() {
   renderDeviceSessions();
 }
 
+async function loadReservations() {
+  const params = new URLSearchParams({ restaurantId });
+  if (reservationFrom?.value) params.set("fromDate", reservationFrom.value);
+  if (reservationTo?.value) params.set("toDate", reservationTo.value);
+  const data = await fetchJson(`/reservations/list?${params.toString()}`);
+  state.reservations = data.reservations || [];
+  renderReservations();
+}
+
+async function loadExpenseCategories() {
+  const data = await fetchJson(`/expenses/categories?restaurantId=${encodeURIComponent(restaurantId)}`);
+  state.expenseCategories = data.categories || [];
+  renderExpenseCategories();
+}
+
 async function loadUpdates() {
   const version = await fetchJson("/version");
   updateCurrentVersion.textContent = `Current version: ${version.posVersion} | Print Agent: ${version.printAgentVersion || "Not detected"}`;
   const logs = await fetchJson(`/updates/logs?restaurantId=${encodeURIComponent(restaurantId)}`).catch(() => ({ logs: [] }));
   updateLogsPanel.innerHTML = (logs.logs || []).map((log) => `<p><strong>${esc(log.status)}</strong> ${esc(log.current_version || "")} -> ${esc(log.target_version || "")}<br><small>${esc(log.message || "")} ${esc(log.created_at || "")}</small></p>`).join("") || "<p>No update logs yet.</p>";
+}
+
+async function loadCommercial() {
+  if (!["OWNER", "MANAGER_2"].includes(actor.role)) {
+    commercialStatus.textContent = "Commercial tools require OWNER or MANAGER_2";
+    return;
+  }
+  const params = `restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}`;
+  const [analytics, reports, journal, fraud, credit, diagnostics, payments] = await Promise.all([
+    fetchJson(`/analytics/dashboard?${params}`),
+    fetchJson(`/reports/advanced?${params}`),
+    fetchJson(`/journal/search?${params}`),
+    fetchJson(`/fraud/alerts?${params}`),
+    fetchJson(`/credit/aging-report?${params}`),
+    fetchJson(`/diagnostics?${params}`),
+    fetchJson(`/payments/providers?${params}`)
+  ]);
+  state.commercial = { analytics, reports, journal, fraud, credit, diagnostics, payments };
+  renderCommercial();
 }
 
 function auditQuery() {
@@ -132,7 +174,11 @@ async function loadAudit() {
 async function loadAll() {
   adminStatus.textContent = "Loading workspace...";
   await loadPermissions();
-  await Promise.all([loadAdmin(), loadInventory(), loadModifiers(), loadBackup(), loadSettings(), loadUpdates(), loadAudit(), loadDeviceSessions()]);
+  await loadAdmin();
+  const loaders = [loadModifiers(), loadBackup(), loadSettings(), loadUpdates(), loadAudit(), loadDeviceSessions(), loadExpenseCategories()];
+  if (moduleEnabled("INVENTORY")) loaders.push(loadInventory());
+  if (moduleEnabled("RESERVATIONS")) loaders.push(loadReservations());
+  await Promise.all(loaders);
   adminStatus.textContent = "Workspace ready";
 }
 
@@ -143,12 +189,51 @@ function renderAdmin() {
   fillSelect(recipeMenuItem, items);
   fillSelect(modifierAssignItem, items);
   fillSelect(comboItem, items);
+  fillSelect(reservationTable, tables, "table_name");
   kitchensTable.innerHTML = kitchens.map((k) => `<tr><td>${esc(k.name)}</td><td>${esc(k.printer_name || "")}</td><td>${k.active ? "Active" : "Inactive"}</td><td>${actions("kitchen", k.id)}</td></tr>`).join("");
   categoriesTable.innerHTML = categories.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.kitchen_name || "")}</td><td>${c.active ? "Active" : "Inactive"}</td><td>${actions("category", c.id)}</td></tr>`).join("");
   const term = (itemSearch?.value || "").toLowerCase();
   itemsTable.innerHTML = items.filter((i) => !term || i.name.toLowerCase().includes(term)).map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.category_name || "")}</td><td>${money(i.price)}</td><td>${i.active ? "Active" : "Inactive"}</td><td>${actions("item", i.id)}</td></tr>`).join("");
   usersTable.innerHTML = users.map((u) => `<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${esc(u.role)}</td><td>${u.active ? "Active" : "Disabled"}</td><td><button class="mini-btn" data-edit-user="${u.id}" type="button">Edit</button><button class="danger-btn" data-disable-user="${u.id}" type="button">Disable</button></td></tr>`).join("");
   tablesTable.innerHTML = tables.map((t) => `<tr><td>${esc(t.table_name)}</td><td>${esc(t.status)}</td><td>${actions("table", t.id)}</td></tr>`).join("");
+  qrLinksTable.innerHTML = tables.map((t) => {
+    const url = `${location.origin}/qr-menu.html?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${t.id}`;
+    return `<tr><td>${esc(t.table_name)}</td><td><a href="${url}" target="_blank">${esc(url)}</a></td></tr>`;
+  }).join("");
+}
+
+function applyModuleGuards() {
+  const moduleViews = {
+    inventory: "INVENTORY",
+    reservations: "RESERVATIONS",
+    qr: "QR_ORDERING"
+  };
+  Object.entries(moduleViews).forEach(([view, code]) => {
+    const enabled = moduleEnabled(code);
+    document.querySelectorAll(`[data-view="${view}"]`).forEach((el) => { el.style.display = enabled ? "" : "none"; });
+    const panel = document.getElementById(`view-${view}`);
+    if (panel) panel.style.display = enabled ? "" : "none";
+  });
+  document.querySelectorAll('a[href="/kds.html"]').forEach((el) => { el.style.display = moduleEnabled("KDS") ? "" : "none"; });
+  document.querySelectorAll('a[href="/customer.html"]').forEach((el) => { el.style.display = moduleEnabled("LOYALTY") ? "" : "none"; });
+}
+
+function renderReservations() {
+  reservationsTable.innerHTML = state.reservations.map((row) => `
+    <tr>
+      <td>${esc(row.customer_name)}</td>
+      <td>${esc(row.phone || "")}</td>
+      <td>${esc(row.table_name || row.table_id || "")}</td>
+      <td>${esc(row.guest_count || "")}</td>
+      <td>${esc(row.reservation_time)}</td>
+      <td>${esc(row.status)}</td>
+      <td><button class="danger-btn" data-cancel-reservation="${row.id}" type="button">Cancel</button></td>
+    </tr>
+  `).join("") || `<tr><td colspan="7">No reservations found.</td></tr>`;
+}
+
+function renderExpenseCategories() {
+  expenseCategory.innerHTML = state.expenseCategories.map((category) => `<option value="${category.id}">${esc(category.name)}</option>`).join("");
 }
 
 function renderInventory() {
@@ -229,6 +314,31 @@ function renderDeviceSessions() {
     </tr>
   `).join("") || `<tr><td colspan="7">No active devices.</td></tr>`;
   deviceStatus.textContent = "Device sessions loaded";
+}
+
+function renderCommercial() {
+  const data = state.commercial;
+  const analytics = data.analytics || {};
+  const reports = data.reports || {};
+  commercialAnalytics.innerHTML = `
+    <p>Forecast: ${money(analytics.revenueForecast?.forecast || 0)}</p>
+    <p>Peak hours: ${(analytics.peakHours || []).map((row) => `${esc(row.hour)} (${row.orders})`).join(", ") || "No data"}</p>
+    <p>Alerts: ${(analytics.alerts || []).map((row) => esc(row.message)).join(", ") || "None"}</p>
+  `;
+  commercialReports.innerHTML = `
+    <p>Sales: ${money(reports.profitLoss?.sales || 0)}</p>
+    <p>Expenses: ${money(reports.profitLoss?.expenses || 0)}</p>
+    <p>Profit: <strong>${money(reports.profitLoss?.profit || 0)}</strong></p>
+  `;
+  commercialJournal.innerHTML = (data.journal?.journal || []).slice(0, 5).map((row) => `<p>${esc(row.document_type)} ${esc(row.invoice_no || `Order #${row.order_id}`)} ${money(row.total_amount)}</p>`).join("") || "<p>No journal entries.</p>";
+  commercialFraud.innerHTML = (data.fraud?.alerts || []).slice(0, 5).map((row) => `<p><strong>${esc(row.severity)}</strong> ${esc(row.message)}</p>`).join("") || "<p>No fraud alerts.</p>";
+  commercialCredit.innerHTML = (data.credit?.aging || []).slice(0, 5).map((row) => `<p>${esc(row.customer_name || row.customer_id)}: ${money(row.balance)}</p>`).join("") || "<p>No credit balances.</p>";
+  commercialDiagnostics.innerHTML = `
+    <p>Database: ${data.diagnostics?.databaseOk ? "OK" : "Check required"}</p>
+    <p>Backups: ${esc(data.diagnostics?.backup?.last_backup_at || "Never")}</p>
+    <p>Payment providers: ${(data.payments?.providers || []).map((row) => esc(row.provider_code)).join(", ") || "None"}</p>
+  `;
+  commercialStatus.textContent = "Commercial tools loaded";
 }
 
 function applyPermissionGuards() {
@@ -379,12 +489,42 @@ document.querySelectorAll("[data-modifier-tab]").forEach((btn) => btn.addEventLi
 
 refreshBtn.addEventListener("click", loadAll);
 itemSearch.addEventListener("input", renderAdmin);
+loadCommercialTools.addEventListener("click", () => loadCommercial().catch((err) => {
+  commercialStatus.textContent = err.message;
+  alert(err.message);
+}));
+runDisasterCheck.addEventListener("click", async () => {
+  const data = await fetchJson(`/disaster/check?restaurantId=${encodeURIComponent(restaurantId)}`);
+  commercialStatus.textContent = data.databaseOk ? "Database integrity check passed" : "Database integrity check failed";
+});
+runDemoReset.addEventListener("click", async () => {
+  if (!confirm("Reset demo data for this restaurant?")) return;
+  const data = await postJson("/demo/reset", {});
+  commercialStatus.textContent = `Demo data ready. Order #${data.orderId}`;
+  await Promise.all([loadAdmin(), loadCommercial().catch(() => undefined)]);
+});
 
 kitchenForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/kitchens/save", { id: kitchenId.value || null, name: kitchenName.value, printerName: kitchenPrinter.value, active: kitchenActive.checked }); kitchenForm.reset(); kitchenActive.checked = true; await loadAdmin(); });
 categoryForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/categories/save", { id: categoryId.value || null, name: categoryName.value, kitchenId: categoryKitchen.value, active: categoryActive.checked }); categoryForm.reset(); categoryActive.checked = true; await loadAdmin(); });
 itemForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, isVeg: itemVeg.checked, allowParcel: itemParcel.checked, active: itemActive.checked }); itemForm.reset(); itemActive.checked = true; await loadAdmin(); });
 userForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/users/save", { id: userId.value || null, name: userName.value, username: userUsername.value, pin: userPin.value, role: userRole.value, active: userActive.checked }); userForm.reset(); userActive.checked = true; await loadAdmin(); });
 tableForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/tables/save", { id: tableId.value || null, tableName: tableName.value, status: tableStatus.value }); tableForm.reset(); await loadAdmin(); });
+reservationForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await postJson("/reservations/save", {
+    id: reservationId.value || null,
+    customerName: reservationCustomerName.value,
+    phone: reservationPhone.value,
+    tableId: reservationTable.value,
+    guestCount: reservationGuestCount.value,
+    reservationTime: reservationTime.value,
+    status: reservationStatus.value,
+    notes: reservationNotes.value
+  });
+  reservationForm.reset();
+  reservationGuestCount.value = 1;
+  await Promise.all([loadReservations(), loadAdmin()]);
+});
 
 supplierForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/inventory/suppliers/save", { id: supplierId.value || null, name: supplierName.value, phone: supplierPhone.value, email: supplierEmail.value, address: supplierAddress.value, gstin: supplierGstin.value }); supplierForm.reset(); await loadInventory(); });
 ingredientForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/inventory/ingredients/save", { id: ingredientId.value || null, name: ingredientName.value, unit: ingredientUnit.value, lowStockAlert: ingredientLowStock.value }); ingredientForm.reset(); await loadInventory(); });
@@ -570,6 +710,7 @@ document.addEventListener("click", async (event) => {
     if (pick("deleteItem") && confirm("Delete this item?")) await postJson("/admin/items/delete", { id: pick("deleteItem") }).then(loadAdmin);
     if (pick("disableUser") && confirm("Disable this user?")) await postJson("/admin/users/disable", { id: pick("disableUser") }).then(loadAdmin);
     if (pick("deleteTable") && confirm("Delete this table?")) await postJson("/tables/delete", { id: pick("deleteTable") }).then(loadAdmin);
+    if (pick("cancelReservation") && confirm("Cancel this reservation?")) await postJson("/reservations/cancel", { id: pick("cancelReservation") }).then(loadReservations);
     if (pick("deleteSupplier") && confirm("Delete this supplier?")) await postJson("/inventory/suppliers/delete", { id: pick("deleteSupplier") }).then(loadInventory);
     if (pick("deleteIngredient") && confirm("Delete this ingredient?")) await postJson("/inventory/ingredients/delete", { id: pick("deleteIngredient") }).then(loadInventory);
     if (pick("deleteRecipe") && confirm("Delete this recipe?")) await postJson("/inventory/recipes/delete", { id: pick("deleteRecipe") }).then(loadInventory);
@@ -594,6 +735,41 @@ loadReports.addEventListener("click", async () => {
   taxSummary.innerHTML = `<p>${money(data.taxSummary?.tax || 0)}</p>`;
 });
 
+expenseForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await postJson("/expenses/save", {
+    categoryId: expenseCategory.value,
+    description: expenseDescription.value,
+    amount: expenseAmount.value,
+    expenseDate: expenseDate.value
+  });
+  expenseForm.reset();
+  await loadExpenseCategories();
+  alert("Expense added");
+});
+
+async function refreshProfitDashboard() {
+  if (!["OWNER", "MANAGER_2"].includes(actor.role)) {
+    profitDashboard.textContent = "OWNER or MANAGER_2 required";
+    return;
+  }
+  const data = await fetchJson(`/reports/profit-dashboard?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`);
+  profitDashboard.innerHTML = `
+    <p>Sales: ${money(data.sales)}</p>
+    <p>Refunds: ${money(data.refunds)}</p>
+    <p>Discounts: ${money(data.discounts)}</p>
+    <p>Expenses: ${money(data.expenses)}</p>
+    <p><strong>Profit: ${money(data.profit)}</strong></p>
+    ${(data.byCategory || []).map((row) => `<p>${esc(row.category)}: ${money(row.total)}</p>`).join("")}
+  `;
+}
+
+loadProfitDashboard.addEventListener("click", () => refreshProfitDashboard().catch((err) => alert(err.message)));
+exportProfitCsv.addEventListener("click", () => {
+  window.location.href = `/reports/profit/export?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`;
+});
+document.getElementById("loadReservations").addEventListener("click", () => loadReservations().catch((err) => alert(err.message)));
+
 loadInventoryReports.addEventListener("click", async () => {
   const data = await fetchJson(`/inventory/reports?restaurantId=${encodeURIComponent(restaurantId)}&from=${inventoryReportFrom.value}&to=${inventoryReportTo.value}`);
   const purchaseData = await fetchJson(`/purchase-orders/reports?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${inventoryReportFrom.value}&toDate=${inventoryReportTo.value}`).catch(() => ({ purchaseReport: [], paymentModeReport: [] }));
@@ -603,6 +779,12 @@ loadInventoryReports.addEventListener("click", async () => {
   purchaseReportPanel.innerHTML = (purchaseData.purchaseReport || []).map((row) => `<p>${esc(row.day)} ${esc(row.status)}: ${money(row.total)}</p>`).join("") || "<p>No purchase data.</p>";
   purchasePaymentModeReport.innerHTML = (purchaseData.paymentModeReport || []).map((row) => `<p>${esc(row.payment_mode)}: ${money(row.total)}</p>`).join("") || "<p>No supplier payments.</p>";
 });
+
+reportFrom.value ||= monthStartIso();
+reportTo.value ||= todayIso();
+reservationFrom.value ||= todayIso();
+reservationTo.value ||= todayIso();
+expenseDate.value ||= todayIso();
 
 loadAll().catch((err) => {
   adminStatus.textContent = err.message;

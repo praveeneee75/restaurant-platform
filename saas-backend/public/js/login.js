@@ -1,3 +1,15 @@
+async function loadBranding() {
+  try {
+    const res = await fetch(`/partners/branding/public?domain=${encodeURIComponent(window.location.hostname)}`);
+    const data = await res.json();
+    if (!data.success || !data.branding) return;
+    if (window.loginTitle) loginTitle.innerText = `${data.branding.brand_name || data.branding.partner_name} Admin Login`;
+    if (window.brandSupport && (data.branding.support_email || data.branding.support_phone)) {
+      brandSupport.innerText = `Support: ${data.branding.support_email || ""} ${data.branding.support_phone || ""}`.trim();
+    }
+  } catch (_) {}
+}
+
 async function login() {
 
   const email = document.getElementById("email").value;
@@ -41,3 +53,5 @@ async function login() {
 
   }
 }
+
+loadBranding();

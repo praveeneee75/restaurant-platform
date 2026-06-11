@@ -131,6 +131,20 @@ const migrations = [
       // Cloud reporting sync stores only aggregated summaries and retry state locally.
       ensureRestaurantSchema(db);
     }
+  },
+  {
+    id: '019_qr_reservations_customer_display_expenses',
+    run(db) {
+      // QR ordering, reservations, customer display and expense categories are restaurant-local.
+      ensureRestaurantSchema(db);
+    }
+  },
+  {
+    id: '020_commercial_readiness_local_modules',
+    run(db) {
+      // Electronic journal, fraud alerts, receivables, payment placeholders, notifications and retention controls.
+      ensureRestaurantSchema(db);
+    }
   }
 ];
 

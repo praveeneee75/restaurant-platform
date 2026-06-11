@@ -60,6 +60,13 @@ app.use('/license', require('./routes/license'));
 app.use('/updates', require('./routes/updates'));
 app.use('/sync', require('./routes/sync'));
 app.use('/owner/reports', require('./routes/ownerReports'));
+app.use('/owners', require('./routes/owners'));
+app.use('/subscriptions', require('./routes/subscriptions'));
+app.use('/monitoring', require('./routes/monitoring'));
+app.use('/partners', require('./routes/partners'));
+app.use('/modules', require('./routes/modules'));
+app.use('/tenants', require('./routes/tenantModules'));
+app.use('/organizations', require('./routes/organizations'));
 
 app.listen(config.port, () => {
   console.log(`SaaS backend running on port ${config.port}`);

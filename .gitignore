@@ -11,3 +11,6 @@ backups/*.db
 
 Thumbs.db
 .DS_Store
+
+pos-app/backups/
+pos-app/data/*.db

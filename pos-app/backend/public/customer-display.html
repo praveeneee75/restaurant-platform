@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Customer Display</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="admin-shell">
+  <main class="admin-main">
+    <header class="topbar">
+      <div>
+        <h1>Customer Display</h1>
+        <p id="displayStatus">Waiting for order...</p>
+      </div>
+    </header>
+    <section class="table-panel">
+      <table>
+        <thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+        <tbody id="displayItems"></tbody>
+      </table>
+    </section>
+    <section class="report-grid">
+      <article><h3>Subtotal</h3><strong id="displaySubtotal">0</strong></article>
+      <article><h3>Discount</h3><strong id="displayDiscount">0</strong></article>
+      <article><h3>Tax</h3><strong id="displayTax">0</strong></article>
+      <article><h3>Grand Total</h3><strong id="displayGrandTotal">0</strong></article>
+    </section>
+  </main>
+  <script src="/js/customer-display.js"></script>
+</body>
+</html>

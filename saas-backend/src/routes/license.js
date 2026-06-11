@@ -17,7 +17,7 @@ router.post('/validate', async (req, res) => {
   try {
     const result = await pool.query(
       `
-      SELECT l.status, l.expires_at, l.sync_token
+      SELECT l.status, l.expires_at, l.sync_token, t.id AS tenant_id
       FROM licenses l
       JOIN tenants t ON t.id = l.tenant_id
       WHERE t.restaurant_code = $1
@@ -36,10 +36,21 @@ router.post('/validate', async (req, res) => {
       return res.json({ valid: false });
     }
 
+    const modules = await pool.query(`
+      SELECT m.code
+      FROM tenant_modules tm
+      JOIN modules m ON m.id = tm.module_id
+      WHERE tm.tenant_id = $1
+        AND tm.enabled = true
+        AND m.status = 'ACTIVE'
+      ORDER BY m.code
+    `, [license.tenant_id]);
+
     res.json({
       valid: true,
       expiresAt: license.expires_at,
-      syncToken: license.sync_token
+      syncToken: license.sync_token,
+      enabledModules: modules.rows.map((row) => row.code)
     });
 
   } catch (err) {
