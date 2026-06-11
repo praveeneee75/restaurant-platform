@@ -12,28 +12,49 @@
       <span class="brand-mark">POS</span>
       <strong>Admin</strong>
     </div>
-    <button class="nav-btn active" data-view="kitchens">Kitchens</button>
-    <button class="nav-btn" data-view="categories">Categories</button>
-    <button class="nav-btn" data-view="items">Menu Items</button>
-    <button class="nav-btn" data-view="users">Users</button>
-    <button class="nav-btn" data-view="tables">Tables</button>
-    <button class="nav-btn" data-view="reservations">Reservations</button>
-    <button class="nav-btn" data-view="qr">QR Links</button>
-    <button class="nav-btn" data-view="inventory">Inventory</button>
-    <button class="nav-btn" data-view="modifiers">Modifiers & Combos</button>
-    <button class="nav-btn" data-view="reports">Reports</button>
-    <button class="nav-btn" data-view="staff-cash">Staff & Cash</button>
-    <button class="nav-btn" data-view="devices">Devices</button>
-    <button class="nav-btn" data-view="settings">Settings</button>
-    <button class="nav-btn" data-view="permissions">Permissions</button>
-    <button class="nav-btn" data-view="backup">Backup</button>
-    <button class="nav-btn" data-view="updates">Updates</button>
-    <button class="nav-btn" data-view="audit">Audit</button>
-    <button class="nav-btn" data-view="commercial">Commercial Tools</button>
-    <a class="nav-link" href="/pos-live.html">Open POS</a>
-    <a class="nav-link" href="/kds.html">Open KDS</a>
-    <a class="nav-link" href="/orders.html">Orders</a>
-    <a class="nav-link" href="/customer.html">Customers</a>
+    <nav class="admin-nav" aria-label="Admin sections">
+      <div class="nav-group">
+        <p class="nav-group-title">Menu Setup</p>
+        <button class="nav-btn active" data-view="kitchens">Kitchens</button>
+        <button class="nav-btn" data-view="categories">Categories</button>
+        <button class="nav-btn" data-view="items">Menu Items</button>
+        <button class="nav-btn" data-view="modifiers">Modifiers & Combos</button>
+      </div>
+
+      <div class="nav-group">
+        <p class="nav-group-title">Floor & Orders</p>
+        <button class="nav-btn" data-view="tables">Tables</button>
+        <button class="nav-btn" data-view="reservations">Reservations</button>
+        <button class="nav-btn" data-view="qr">QR Links</button>
+        <button class="nav-btn" data-view="staff-cash">Staff & Cash</button>
+        <button class="nav-btn" data-view="devices">Devices</button>
+      </div>
+
+      <div class="nav-group">
+        <p class="nav-group-title">Business</p>
+        <button class="nav-btn" data-view="inventory">Inventory</button>
+        <button class="nav-btn" data-view="reports">Reports</button>
+        <button class="nav-btn" data-view="audit">Audit</button>
+        <button class="nav-btn" data-view="commercial">Commercial Tools</button>
+      </div>
+
+      <div class="nav-group">
+        <p class="nav-group-title">System</p>
+        <button class="nav-btn" data-view="users">Users</button>
+        <button class="nav-btn" data-view="settings">Settings</button>
+        <button class="nav-btn" data-view="permissions">Permissions</button>
+        <button class="nav-btn" data-view="backup">Backup</button>
+        <button class="nav-btn" data-view="updates">Updates</button>
+      </div>
+
+      <div class="nav-group nav-group-links">
+        <p class="nav-group-title">Quick Links</p>
+        <a class="nav-link" href="/pos-live.html">Open POS</a>
+        <a class="nav-link" href="/orders.html">Orders</a>
+        <a class="nav-link" href="/kds.html">Open KDS</a>
+        <a class="nav-link" href="/customer.html">Customers</a>
+      </div>
+    </nav>
   </aside>
 
   <main class="admin-main">
