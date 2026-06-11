@@ -48,6 +48,26 @@ const posServer = read('pos-app/backend/server.js');
   "app.post('/demo/reset'"
 ].forEach((needle) => assert(posServer.includes(needle), `Missing POS route: ${needle}`));
 
+const adminJs = read('pos-app/backend/public/js/admin-dashboard.js');
+[
+  'editKitchen',
+  'editCategory',
+  'editItem',
+  'editUser',
+  'editTable',
+  'editSupplier',
+  'editIngredient',
+  'editModifierGroup',
+  'editModifierOption',
+  'editCombo'
+].forEach((handler) => {
+  assert(adminJs.includes(`function ${handler}(`), `Missing admin edit handler: ${handler}`);
+  assert(adminJs.includes(`pick("${handler.replace(/^edit/, 'edit')}")`) || adminJs.includes(handler), `Missing admin click branch for: ${handler}`);
+});
+
+assert(adminJs.includes('showInventoryTab(btn.dataset.inventoryTab)'), 'Inventory tab buttons are not wired to switch panels');
+assert(adminJs.includes('showModifierTab(btn.dataset.modifierTab)'), 'Modifier tab buttons are not wired to switch panels');
+
 const schema = read('pos-app/backend/services/schema.js');
 [
   'electronic_journal',
@@ -73,9 +93,19 @@ const saasMigrate = read('saas-backend/src/db/migrate.js');
 
 [
   'pos-app/backend/public/online-order.html',
+  'pos-app/backend/public/orders.html',
+  'pos-app/backend/public/js/orders.js',
   'saas-backend/public/owner-mobile.html',
   'docs/commercial-readiness-checklist.md',
   'docs/disaster-recovery.md'
 ].forEach((relativePath) => assert(fs.existsSync(file(relativePath)), `Missing support file: ${relativePath}`));
+
+[
+  'pos-app/backend/public/orders.html',
+  'pos-app/backend/public/js/orders.js'
+].forEach((relativePath) => {
+  const content = read(relativePath);
+  assert(!content.includes('\u0000'), `Corrupted null bytes found in ${relativePath}`);
+});
 
 console.log('Commercial readiness smoke checks passed.');

@@ -31,11 +31,14 @@ function beep() {
 }
 
 async function postJson(url, body) {
-  return fetch(url, {
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ restaurantId, actor, ...body })
-  }).then((res) => res.json());
+  });
+  const data = await res.json();
+  if (!res.ok || data.success === false) throw new Error(data.message || "Request failed");
+  return data;
 }
 
 function renderKitchenOptions() {
@@ -112,9 +115,19 @@ document.addEventListener("click", async (event) => {
   const target = event.target.closest("button");
   if (!target) return;
   if (target.dataset.itemStatus) {
-    const data = await postJson("/kds/item-status", { orderItemId: target.dataset.orderItem, status: target.dataset.itemStatus });
-    if (!data.success) return alert(data.message);
-    await loadOrders();
+    target.disabled = true;
+    const previousText = target.textContent;
+    target.textContent = "Updating...";
+    try {
+      await postJson("/kds/item-status", { orderItemId: target.dataset.orderItem, status: target.dataset.itemStatus });
+      kdsStatus.textContent = `Item marked ${target.dataset.itemStatus}`;
+      await loadOrders();
+    } catch (err) {
+      kdsStatus.textContent = err.message;
+      alert(err.message);
+      target.disabled = false;
+      target.textContent = previousText;
+    }
   }
 });
 

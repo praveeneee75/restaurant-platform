@@ -341,6 +341,156 @@ function renderCommercial() {
   commercialStatus.textContent = "Commercial tools loaded";
 }
 
+function findById(rows, id) {
+  return (rows || []).find((row) => String(row.id) === String(id));
+}
+
+function showView(view) {
+  const btn = document.querySelector(`.nav-btn[data-view="${view}"]`);
+  if (btn) btn.click();
+}
+
+function showInventoryTab(tab) {
+  document.querySelectorAll(".inventory-tab").forEach((btn) => btn.classList.toggle("active", btn.dataset.inventoryTab === tab));
+  document.querySelectorAll(".inventory-panel").forEach((panel) => panel.classList.toggle("active", panel.id === `inventory-${tab}`));
+}
+
+function showModifierTab(tab) {
+  document.querySelectorAll(".modifier-tab").forEach((btn) => btn.classList.toggle("active", btn.dataset.modifierTab === tab));
+  document.querySelectorAll(".modifier-panel").forEach((panel) => panel.classList.toggle("active", panel.id === `modifier-${tab}`));
+}
+
+function focusFirstInput(form) {
+  form?.querySelector("input:not([type='hidden']), select, textarea")?.focus();
+  form?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function editKitchen(id) {
+  const row = findById(state.admin.kitchens, id);
+  if (!row) return;
+  showView("kitchens");
+  kitchenId.value = row.id;
+  kitchenName.value = row.name || "";
+  kitchenPrinter.value = row.printer_name || "";
+  kitchenActive.checked = Number(row.active) !== 0;
+  focusFirstInput(kitchenForm);
+}
+
+function editCategory(id) {
+  const row = findById(state.admin.categories, id);
+  if (!row) return;
+  showView("categories");
+  categoryId.value = row.id;
+  categoryName.value = row.name || "";
+  categoryKitchen.value = row.kitchen_id || "";
+  categoryActive.checked = Number(row.active) !== 0;
+  focusFirstInput(categoryForm);
+}
+
+function editItem(id) {
+  const row = findById(state.admin.items, id);
+  if (!row) return;
+  showView("items");
+  itemId.value = row.id;
+  itemName.value = row.name || "";
+  itemCategory.value = row.category_id || "";
+  itemPrice.value = row.price ?? 0;
+  itemVeg.checked = Number(row.is_veg ?? 1) === 1;
+  itemParcel.checked = Number(row.allow_parcel ?? 1) === 1;
+  itemActive.checked = Number(row.active) !== 0;
+  focusFirstInput(itemForm);
+}
+
+function editUser(id) {
+  const row = findById(state.admin.users, id);
+  if (!row) return;
+  showView("users");
+  userId.value = row.id;
+  userName.value = row.name || "";
+  userUsername.value = row.username || "";
+  userPin.value = "";
+  userRole.value = row.role || "WAITER";
+  userActive.checked = Number(row.active) !== 0;
+  focusFirstInput(userForm);
+}
+
+function editTable(id) {
+  const row = findById(state.admin.tables, id);
+  if (!row) return;
+  showView("tables");
+  tableId.value = row.id;
+  tableName.value = row.table_name || "";
+  tableStatus.value = row.status || "AVAILABLE";
+  focusFirstInput(tableForm);
+}
+
+function editSupplier(id) {
+  const row = findById(state.inventory.suppliers, id);
+  if (!row) return;
+  showView("inventory");
+  showInventoryTab("suppliers");
+  supplierId.value = row.id;
+  supplierName.value = row.name || "";
+  supplierPhone.value = row.phone || "";
+  supplierEmail.value = row.email || "";
+  supplierAddress.value = row.address || "";
+  supplierGstin.value = row.gstin || "";
+  focusFirstInput(supplierForm);
+}
+
+function editIngredient(id) {
+  const row = findById(state.inventory.ingredients, id);
+  if (!row) return;
+  showView("inventory");
+  showInventoryTab("ingredients");
+  ingredientId.value = row.id;
+  ingredientName.value = row.name || "";
+  ingredientUnit.value = row.unit || "";
+  ingredientLowStock.value = row.low_stock_alert ?? row.low_stock_level ?? 0;
+  focusFirstInput(ingredientForm);
+}
+
+function editModifierGroup(id) {
+  const row = findById(state.modifiers.groups, id);
+  if (!row) return;
+  showView("modifiers");
+  showModifierTab("groups");
+  modifierGroupId.value = row.id;
+  modifierGroupName.value = row.name || "";
+  modifierGroupMin.value = row.min_select ?? 0;
+  modifierGroupMax.value = row.max_select ?? 1;
+  modifierGroupRequired.checked = Number(row.required) === 1;
+  focusFirstInput(modifierGroupForm);
+}
+
+function editModifierOption(id) {
+  const row = findById(state.modifiers.modifiers, id);
+  if (!row) return;
+  showView("modifiers");
+  showModifierTab("options");
+  modifierOptionId.value = row.id;
+  modifierOptionGroup.value = row.group_id || "";
+  modifierOptionName.value = row.name || "";
+  modifierOptionPrice.value = row.price_delta ?? 0;
+  focusFirstInput(modifierOptionForm);
+}
+
+function editCombo(id) {
+  const row = findById(state.modifiers.combos, id);
+  const firstItem = (state.modifiers.comboItems || []).find((item) => String(item.combo_id) === String(id));
+  if (!row) return;
+  showView("modifiers");
+  showModifierTab("combos");
+  comboId.value = row.id;
+  comboName.value = row.name || "";
+  comboPrice.value = row.price ?? 0;
+  if (firstItem) {
+    comboItem.value = firstItem.item_id || "";
+    comboItemQty.value = firstItem.quantity || 1;
+  }
+  focusFirstInput(comboForm);
+}
+
 function applyPermissionGuards() {
   const viewPermissions = {
     users: "admin.users.manage",
@@ -484,8 +634,8 @@ document.querySelectorAll(".nav-btn").forEach((btn) => {
   });
 });
 
-document.querySelectorAll("[data-inventory-tab]").forEach((btn) => btn.addEventListener("click", () => document.querySelectorAll(".inventory-tab").forEach((tab) => tab.hidden = tab.id !== `inventory-${btn.dataset.inventoryTab}`)));
-document.querySelectorAll("[data-modifier-tab]").forEach((btn) => btn.addEventListener("click", () => document.querySelectorAll(".modifier-tab").forEach((tab) => tab.hidden = tab.id !== `modifier-${btn.dataset.modifierTab}`)));
+document.querySelectorAll("[data-inventory-tab]").forEach((btn) => btn.addEventListener("click", () => showInventoryTab(btn.dataset.inventoryTab)));
+document.querySelectorAll("[data-modifier-tab]").forEach((btn) => btn.addEventListener("click", () => showModifierTab(btn.dataset.modifierTab)));
 
 refreshBtn.addEventListener("click", loadAll);
 itemSearch.addEventListener("input", renderAdmin);
@@ -705,6 +855,16 @@ document.addEventListener("click", async (event) => {
   if (!target) return;
   const pick = (name) => target.dataset[name];
   try {
+    if (pick("editKitchen")) return editKitchen(pick("editKitchen"));
+    if (pick("editCategory")) return editCategory(pick("editCategory"));
+    if (pick("editItem")) return editItem(pick("editItem"));
+    if (pick("editUser")) return editUser(pick("editUser"));
+    if (pick("editTable")) return editTable(pick("editTable"));
+    if (pick("editSupplier")) return editSupplier(pick("editSupplier"));
+    if (pick("editIngredient")) return editIngredient(pick("editIngredient"));
+    if (pick("editModifierGroup")) return editModifierGroup(pick("editModifierGroup"));
+    if (pick("editModifierOption")) return editModifierOption(pick("editModifierOption"));
+    if (pick("editCombo")) return editCombo(pick("editCombo"));
     if (pick("deleteKitchen") && confirm("Delete this kitchen?")) await postJson("/admin/kitchens/delete", { id: pick("deleteKitchen") }).then(loadAdmin);
     if (pick("deleteCategory") && confirm("Delete this category?")) await postJson("/admin/categories/delete", { id: pick("deleteCategory") }).then(loadAdmin);
     if (pick("deleteItem") && confirm("Delete this item?")) await postJson("/admin/items/delete", { id: pick("deleteItem") }).then(loadAdmin);

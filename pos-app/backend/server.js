@@ -104,6 +104,10 @@ function canUseKds(role) {
   }
 }
 
+function canUseKdsWithDb(db, role) {
+  return ['OWNER', 'MANAGER_2', 'KITCHEN'].includes(role) || canRole(db, role, 'kitchen.kds.view');
+}
+
 const ORDER_TYPES = ['DINE_IN', 'TAKEAWAY', 'DELIVERY', 'PARCEL', 'PHONE_ORDER', 'ONLINE_ORDER'];
 const DELIVERY_ORDER_TYPES = ['DELIVERY', 'PHONE_ORDER', 'ONLINE_ORDER'];
 const DELIVERY_STATUSES = ['RECEIVED', 'ACCEPTED', 'PREPARING', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'];
@@ -4922,12 +4926,15 @@ app.get('/reports/order-types', (req, res) => {
 
 app.get('/kds/orders', (req, res) => {
   const { restaurantId, kitchenId, role } = req.query;
-  if (!restaurantId || !isPositiveId(kitchenId) || !canUseKds(role)) {
+  if (!restaurantId || !isPositiveId(kitchenId)) {
     return res.status(400).json({ success: false, message: 'Kitchen, restaurant and KDS permission are required' });
   }
 
   const db = openRestaurantDatabase(restaurantId);
   try {
+    if (!canUseKdsWithDb(db, role)) {
+      return res.status(403).json({ success: false, message: 'KDS access denied' });
+    }
     const rows = db.prepare(`
       SELECT
         o.id AS order_id,
@@ -4996,12 +5003,15 @@ app.get('/kds/orders', (req, res) => {
 app.post('/kds/item-status', (req, res) => {
   const { restaurantId, actor, orderItemId, status } = req.body;
   const statuses = ['PENDING', 'PREPARING', 'READY', 'SERVED', 'CANCELLED'];
-  if (!restaurantId || !canUseKds(actor?.role) || !isPositiveId(orderItemId) || !statuses.includes(status)) {
+  if (!restaurantId || !isPositiveId(orderItemId) || !statuses.includes(status)) {
     return res.status(400).json({ success: false, message: 'Valid item, status and KDS permission are required' });
   }
 
   const db = openRestaurantDatabase(restaurantId);
   try {
+    if (!canUseKdsWithDb(db, actor?.role)) {
+      return res.status(403).json({ success: false, message: 'KDS access denied' });
+    }
     const oldValue = db.prepare('SELECT * FROM order_items WHERE id = ?').get(orderItemId);
     if (!oldValue) throw new Error('Order item not found');
     const timestampColumn = kdsTimestampColumn(status);
@@ -5024,12 +5034,15 @@ app.post('/kds/item-status', (req, res) => {
 app.post('/kds/order-status', (req, res) => {
   const { restaurantId, actor, orderId, kitchenId, status } = req.body;
   const statuses = ['PENDING', 'PREPARING', 'READY', 'SERVED', 'CANCELLED'];
-  if (!restaurantId || !canUseKds(actor?.role) || !isPositiveId(orderId) || !statuses.includes(status)) {
+  if (!restaurantId || !isPositiveId(orderId) || !statuses.includes(status)) {
     return res.status(400).json({ success: false, message: 'Valid order, status and KDS permission are required' });
   }
 
   const db = openRestaurantDatabase(restaurantId);
   try {
+    if (!canUseKdsWithDb(db, actor?.role)) {
+      return res.status(403).json({ success: false, message: 'KDS access denied' });
+    }
     const oldValue = db.prepare('SELECT id, order_id, status, kitchen_id FROM order_items WHERE order_id = ?').all(orderId);
     const timestampColumn = kdsTimestampColumn(status);
     const params = [status === 'PENDING' ? 'PLACED' : status, orderId];
