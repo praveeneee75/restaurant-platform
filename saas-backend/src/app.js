@@ -10,8 +10,32 @@ const tenantRoutes = require('./routes/tenants');
 requireProductionConfig();
 
 const app = express();
+const healthCache = {
+  checkedAt: 0,
+  ttlMs: Number(process.env.SAAS_HEALTH_CACHE_MS || 5000),
+  database: { status: 'UNKNOWN' },
+  success: true
+};
 
-app.use(express.static(path.join(__dirname, '../public')));
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  const writeHead = res.writeHead;
+  res.writeHead = function patchedWriteHead(...args) {
+    if (!res.headersSent) res.setHeader('X-Response-Time-Ms', String(Date.now() - startedAt));
+    return writeHead.apply(this, args);
+  };
+  res.on('finish', () => {
+    const durationMs = Date.now() - startedAt;
+    if (durationMs > Number(process.env.SAAS_SLOW_REQUEST_MS || 1000)) {
+      console.warn(`Slow SaaS request ${req.method} ${req.originalUrl} ${durationMs}ms`);
+    }
+  });
+  next();
+});
+app.use(express.static(path.join(__dirname, '../public'), {
+  maxAge: config.nodeEnv === 'production' ? '1h' : 0,
+  etag: true
+}));
 app.use(cors({
   origin: config.corsOrigin === '*' ? '*' : config.corsOrigin.split(',').map((origin) => origin.trim()),
   credentials: config.corsOrigin !== '*'
@@ -27,14 +51,24 @@ app.get('/health', async (req, res) => {
     timestamp: new Date().toISOString()
   };
 
-  try {
-    await pool.query('SELECT 1');
-    health.database.status = 'OK';
-  } catch (err) {
-    health.success = false;
-    health.database.status = 'ERROR';
-    health.database.message = publicError(err);
-    res.status(503);
+  if (Date.now() - healthCache.checkedAt <= healthCache.ttlMs) {
+    health.success = healthCache.success;
+    health.database = healthCache.database;
+  } else {
+    try {
+      await pool.query('SELECT 1');
+      health.database.status = 'OK';
+      healthCache.success = true;
+      healthCache.database = { status: 'OK' };
+    } catch (err) {
+      health.success = false;
+      health.database.status = 'ERROR';
+      health.database.message = publicError(err);
+      healthCache.success = false;
+      healthCache.database = health.database;
+      res.status(503);
+    }
+    healthCache.checkedAt = Date.now();
   }
 
   res.json(health);
@@ -70,4 +104,15 @@ app.use('/organizations', require('./routes/organizations'));
 
 app.listen(config.port, () => {
   console.log(`SaaS backend running on port ${config.port}`);
+  pool.query('SELECT 1')
+    .then(() => {
+      healthCache.checkedAt = Date.now();
+      healthCache.success = true;
+      healthCache.database = { status: 'OK' };
+    })
+    .catch((err) => {
+      healthCache.checkedAt = Date.now();
+      healthCache.success = false;
+      healthCache.database = { status: 'ERROR', message: publicError(err) };
+    });
 });

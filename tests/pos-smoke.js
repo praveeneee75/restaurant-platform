@@ -14,6 +14,7 @@ const actor = { role: 'OWNER', name: 'Smoke Test' };
 
 function request(method, targetPath, body) {
   return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
     const payload = body ? JSON.stringify(body) : null;
     const req = http.request({
       hostname: '127.0.0.1',
@@ -25,7 +26,7 @@ function request(method, targetPath, body) {
     }, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, body: data }));
+      res.on('end', () => resolve({ status: res.statusCode, body: data, ms: Date.now() - startedAt }));
     });
     req.on('timeout', () => req.destroy(new Error(`${method} ${targetPath} timeout`)));
     req.on('error', reject);
@@ -63,6 +64,10 @@ async function main() {
   const liveOrders = await json('GET', `/orders/live?restaurantId=${restaurantId}`);
   const orderTypes = await json('GET', `/reports/order-types?restaurantId=${restaurantId}`);
   await json('GET', `/delivery/partners?restaurantId=${restaurantId}`);
+  const tableOne = await request('GET', `/orders/open?restaurantId=${restaurantId}&tableId=1`);
+  const tableTwo = await request('GET', `/orders/open?restaurantId=${restaurantId}&tableId=2`);
+  if (tableOne.ms > Number(process.env.POS_TABLE_SELECT_BUDGET_MS || 300)) throw new Error(`Table 1 selection too slow: ${tableOne.ms}ms`);
+  if (tableTwo.ms > Number(process.env.POS_TABLE_SELECT_BUDGET_MS || 300)) throw new Error(`Table 2 selection too slow: ${tableTwo.ms}ms`);
 
   let kdsResult = { skipped: true };
   for (const kitchen of admin.kitchens || []) {
@@ -105,6 +110,7 @@ async function main() {
     },
     liveOrders: liveOrders.orders.length,
     orderTypeSummary: orderTypes.orderTypeSummary.length,
+    tableSelectMs: { tableOne: tableOne.ms, tableTwo: tableTwo.ms },
     kdsResult
   }, null, 2));
 }

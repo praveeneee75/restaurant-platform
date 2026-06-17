@@ -5,6 +5,7 @@
   "description": "Restaurant SaaS and local POS platform",
   "scripts": {
     "test": "node tests/smoke-commercial-readiness.js",
-    "test:pos": "node tests/pos-smoke.js"
+    "test:pos": "node tests/pos-smoke.js",
+    "test:saas": "node tests/saas-smoke.js"
   }
 }

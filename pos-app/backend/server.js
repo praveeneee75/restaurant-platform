@@ -28,6 +28,21 @@ const {
 
 const app = express();
 app.use(bodyParser.json());
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  const writeHead = res.writeHead;
+  res.writeHead = function patchedWriteHead(...args) {
+    if (!res.headersSent) res.setHeader('X-Response-Time-Ms', String(Date.now() - startedAt));
+    return writeHead.apply(this, args);
+  };
+  res.on('finish', () => {
+    const durationMs = Date.now() - startedAt;
+    if (durationMs > Number(process.env.POS_SLOW_REQUEST_MS || 1000)) {
+      console.warn(`Slow POS request ${req.method} ${req.originalUrl} ${durationMs}ms`);
+    }
+  });
+  next();
+});
 
 function getInvoiceVisibilityClause(role) {
   if (role === 'MANAGER_1') {
@@ -2530,7 +2545,10 @@ if (activeRestaurant) {
 }
 
 const path = require('path');
-app.use(express.static(path.join(__dirname,'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0,
+  etag: true
+}));
 
 
 // ========================

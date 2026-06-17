@@ -22,6 +22,18 @@ function checkJs(relativePath) {
   execFileSync(process.execPath, ['--check', file(relativePath)], { stdio: 'pipe' });
 }
 
+function walkFiles(relativePath, predicate) {
+  const start = file(relativePath);
+  const out = [];
+  for (const entry of fs.readdirSync(start, { withFileTypes: true })) {
+    const full = path.join(start, entry.name);
+    const rel = path.relative(root, full).replace(/\\/g, '/');
+    if (entry.isDirectory()) out.push(...walkFiles(rel, predicate));
+    if (entry.isFile() && predicate(rel)) out.push(rel);
+  }
+  return out;
+}
+
 [
   'pos-app/backend/server.js',
   'pos-app/backend/services/schema.js',
@@ -103,6 +115,14 @@ const saasMigrate = read('saas-backend/src/db/migrate.js');
 [
   'pos-app/backend/public/orders.html',
   'pos-app/backend/public/js/orders.js'
+].forEach((relativePath) => {
+  const content = read(relativePath);
+  assert(!content.includes('\u0000'), `Corrupted null bytes found in ${relativePath}`);
+});
+
+[
+  ...walkFiles('pos-app/backend/public', (name) => /\.(html|js|css)$/i.test(name)),
+  ...walkFiles('saas-backend/public', (name) => /\.(html|js|css)$/i.test(name))
 ].forEach((relativePath) => {
   const content = read(relativePath);
   assert(!content.includes('\u0000'), `Corrupted null bytes found in ${relativePath}`);

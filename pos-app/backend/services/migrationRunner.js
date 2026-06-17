@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { ensureRestaurantSchema } = require('./schema');
+const ensuredRestaurants = new Set();
 
 const migrations = [
   {
@@ -185,6 +186,11 @@ function ensureMigrationTable(db) {
 }
 
 function runMigrations(db, restaurantId) {
+  const cacheKey = String(restaurantId || '').trim();
+  if (cacheKey && ensuredRestaurants.has(cacheKey)) {
+    return { applied: [], backupPath: null, cached: true };
+  }
+
   ensureMigrationTable(db);
 
   const applied = new Set(db.prepare('SELECT id FROM schema_migrations').all().map((row) => row.id));
@@ -192,6 +198,7 @@ function runMigrations(db, restaurantId) {
 
   if (pending.length === 0) {
     ensureRestaurantSchema(db);
+    if (cacheKey) ensuredRestaurants.add(cacheKey);
     return { applied: [], backupPath: null };
   }
 
@@ -205,6 +212,8 @@ function runMigrations(db, restaurantId) {
     }
   })();
 
+  ensureRestaurantSchema(db);
+  if (cacheKey) ensuredRestaurants.add(cacheKey);
   return { applied: pending.map((migration) => migration.id), backupPath };
 }
 

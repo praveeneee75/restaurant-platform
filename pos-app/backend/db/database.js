@@ -22,7 +22,9 @@ function openDatabase(restaurantId) {
     'restaurant_' + cleanRestaurantId + '.db'
   );
 
-  console.log('🗄️ OPENING DATABASE:', dbPath);
+  if (process.env.POS_DB_DEBUG === '1') {
+    console.log('OPENING DATABASE:', dbPath);
+  }
 
   const db = new Database(dbPath);
   db.pragma('foreign_keys = ON');
