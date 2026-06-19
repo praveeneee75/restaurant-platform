@@ -4,9 +4,11 @@
   "private": true,
   "description": "White-label mobile shell for restaurant owner, captain and waiter users",
   "scripts": {
-    "start": "npx serve www",
-    "build:android": "npx cap sync android && cd android && gradlew assembleDebug",
-    "open:android": "npx cap open android"
+    "start": "node scripts/dev-server.js",
+    "start:3000": "node scripts/dev-server.js 3000",
+    "start:4300": "node scripts/dev-server.js 4300",
+    "build:android": "npx.cmd cap sync android && cd android && gradlew.bat assembleDebug",
+    "open:android": "npx.cmd cap open android"
   },
   "dependencies": {
     "@capacitor/android": "^7.0.0",

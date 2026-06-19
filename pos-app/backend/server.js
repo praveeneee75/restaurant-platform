@@ -1,7 +1,7 @@
-require('dotenv').config()
+﻿require('dotenv').config()
 
-console.log('🔥🔥🔥 SERVER.JS VERSION: 2026-01-25 A 🔥🔥🔥');
-console.log('🔥🔥🔥 ACTIVE DATABASE.JS – VERSION A 🔥🔥🔥');
+console.log('ðŸ”¥ðŸ”¥ðŸ”¥ SERVER.JS VERSION: 2026-01-25 A ðŸ”¥ðŸ”¥ðŸ”¥');
+console.log('ðŸ”¥ðŸ”¥ðŸ”¥ ACTIVE DATABASE.JS â€“ VERSION A ðŸ”¥ðŸ”¥ðŸ”¥');
 const express = require('express');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
@@ -967,7 +967,7 @@ function memberIdForCustomer(db, customerId) {
 // HEALTH CHECK
 // ========================
 app.get('/', (req, res) => {
-  res.send('POS backend is running');
+  res.redirect('/login.html');
 });
 
 // ========================
@@ -997,7 +997,7 @@ app.post('/activate', async (req, res) => {
       });
     }
 
-    // If valid → create local DB
+    // If valid â†’ create local DB
 setupDatabase(restaurantId);
 const db = openRestaurantDatabase(restaurantId);
 
@@ -1051,7 +1051,7 @@ app.post('/login', (req, res) => {
 
   const db = openRestaurantDatabase(restaurantId);
 
-  // 🔹 FIRST get the user
+  // ðŸ”¹ FIRST get the user
   const user = db.prepare(`
     SELECT id, name, username, pin, pin_hash, role
     FROM users
@@ -1071,7 +1071,7 @@ app.post('/login', (req, res) => {
     `).run(bcrypt.hashSync(pin, 10), user.id);
   }
 
-  // 🔹 If no user
+  // ðŸ”¹ If no user
   if (!pinMatches) {
     writeAudit(db, { role: 'UNKNOWN' }, 'FAILED_LOGIN', 'USER', null, null, { username }, { restaurantId, ipAddress: requestIp(req) });
     writeCompliance(db, 'FAILED_LOGIN', 'MEDIUM', `Failed login for ${username}`, 'USER', null);
@@ -1082,7 +1082,7 @@ app.post('/login', (req, res) => {
     });
   }
 
-  // 🔹 Force password change for default admin
+  // ðŸ”¹ Force password change for default admin
   const publicUser = { id: user.id, name: user.name, username: user.username, role: user.role };
 
   if (user.username === "admin" && pin === "1234") {
@@ -1094,7 +1094,7 @@ app.post('/login', (req, res) => {
     });
   }
 
-  // 🔹 Normal login
+  // ðŸ”¹ Normal login
   res.json({
     success: true,
     user: publicUser
@@ -1449,7 +1449,7 @@ app.post('/orders/create', (req, res) => {
 
   try {
     db.transaction(() => {
-      // 1️⃣ Create order
+      // 1ï¸âƒ£ Create order
       const orderResult = db.prepare(`
         INSERT INTO orders (order_type, table_no, status, paid_amount, payment_status, created_by)
         VALUES (?, ?, ?, ?, ?, ?)
@@ -1465,7 +1465,7 @@ app.post('/orders/create', (req, res) => {
       const orderId = orderResult.lastInsertRowid;
       let totalAmount = 0;
 
-      // 2️⃣ Process items
+      // 2ï¸âƒ£ Process items
       for (const line of items) {
         const item = db.prepare(`
           SELECT i.id, i.price, c.kitchen_id
@@ -1530,7 +1530,7 @@ app.get('/orders/:orderId/kots', (req, res) => {
   const db = openDatabase(restaurantId);
 
   try {
-    // 1️⃣ Fetch order
+    // 1ï¸âƒ£ Fetch order
     const order = db.prepare(`
       SELECT id, order_type, table_no, created_at
       FROM orders
@@ -1544,7 +1544,7 @@ app.get('/orders/:orderId/kots', (req, res) => {
       });
     }
 
-    // 2️⃣ Fetch items grouped by kitchen
+    // 2ï¸âƒ£ Fetch items grouped by kitchen
     const rows = db.prepare(`
       SELECT
         oi.kitchen_id,
@@ -1558,7 +1558,7 @@ app.get('/orders/:orderId/kots', (req, res) => {
       ORDER BY k.id
     `).all(orderId);
 
-    // 3️⃣ Group into KOTs
+    // 3ï¸âƒ£ Group into KOTs
     const kots = {};
 
     for (const row of rows) {
@@ -2670,7 +2670,7 @@ app.post('/orders/redeem-points', (req, res) => {
       VALUES (?, ?, ?, 'REDEEM')
     `).run(memberId, orderId, points);
 
-    // Apply as discount (₹ per point)
+    // Apply as discount (â‚¹ per point)
     db.prepare(`
       INSERT INTO discounts (order_id, type, value, value_type, applied_by)
       VALUES (?, 'MEMBERSHIP', ?, 'FLAT', ?)
@@ -2931,7 +2931,7 @@ app.post('/orders/create-basic', (req, res) => {
   try {
     db.exec('BEGIN TRANSACTION');
 
-    // 1️⃣ Create order
+    // 1ï¸âƒ£ Create order
     const orderResult = db.prepare(`
       INSERT INTO orders (order_type, table_no, status, created_by)
       VALUES ('DINE_IN', ?, 'OPEN', ?)
@@ -2942,7 +2942,7 @@ app.post('/orders/create-basic', (req, res) => {
 
     const orderId = orderResult.lastInsertRowid;
 
-    // 2️⃣ Insert items
+    // 2ï¸âƒ£ Insert items
     items.forEach(item => {
       const menuItem = db.prepare(`
         SELECT i.id, i.price, c.kitchen_id
@@ -2961,7 +2961,7 @@ app.post('/orders/create-basic', (req, res) => {
       `).run(orderId, menuItem.id, item.qty || item.quantity || 1, menuItem.kitchen_id, menuItem.price);
     });
 
-    // 3️⃣ Group items by kitchen
+    // 3ï¸âƒ£ Group items by kitchen
     const kitchenItems = db.prepare(`
       SELECT 
         oi.item_id,
@@ -2992,7 +2992,7 @@ app.post('/orders/create-basic', (req, res) => {
       });
     });
 
-    // 4️⃣ Create KOT print jobs
+    // 4ï¸âƒ£ Create KOT print jobs
     Object.keys(grouped).forEach(kitchenId => {
       const data = grouped[kitchenId];
 
@@ -8289,5 +8289,6 @@ app.get('/health', (req, res) => {
 // ========================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 POS backend running at http://localhost:${PORT}`);
+  console.log(`ðŸš€ POS backend running at http://localhost:${PORT}`);
 });
+
