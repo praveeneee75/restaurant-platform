@@ -437,7 +437,8 @@ async function migrate() {
       ('RESERVATIONS', 'Reservations', 'Table reservation management', 'SALES', 'ACTIVE'),
       ('CLOUD_REPORTING', 'Cloud Reporting', 'Owner remote summary reporting sync', 'REPORTING', 'ACTIVE'),
       ('MULTI_BRANCH', 'Multi Branch', 'Franchise and multi-location management placeholder', 'ENTERPRISE', 'ACTIVE'),
-      ('WHITE_LABEL', 'White Label', 'Partner branding and reseller management', 'ENTERPRISE', 'ACTIVE')
+      ('WHITE_LABEL', 'White Label', 'Partner branding and reseller management', 'ENTERPRISE', 'ACTIVE'),
+      ('MOBILE_APP', 'White-label Mobile App', 'Cross-platform owner, captain and waiter mobile app packaging', 'PREMIUM', 'ACTIVE')
     ON CONFLICT(code) DO NOTHING
   `);
 
@@ -452,6 +453,7 @@ async function migrate() {
     SELECT t.id, m.id, true, NOW()
     FROM tenants t
     CROSS JOIN modules m
+    WHERE m.code != 'MOBILE_APP'
     ON CONFLICT(tenant_id, module_id) DO NOTHING
   `);
 

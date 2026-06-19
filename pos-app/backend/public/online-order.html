@@ -3,28 +3,75 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Online Order</title>
+  <title>Online Ordering</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
-<body class="customer-screen">
-  <main class="customer-panel">
-    <h1 id="restaurantName">Online Order</h1>
-    <section class="editor-panel">
-      <label>Name<input id="customerName" required></label>
-      <label>Phone<input id="customerPhone" required></label>
-      <label>Order Type<select id="orderType"><option value="TAKEAWAY">Takeaway</option><option value="DELIVERY">Delivery</option></select></label>
-      <label>Delivery Address<input id="deliveryAddress"></label>
+<body class="online-body">
+  <main class="online-shell">
+    <header class="online-hero">
+      <div class="online-brand">
+        <img id="brandLogo" alt="" hidden>
+        <div>
+          <p class="online-kicker">Online Ordering</p>
+          <h1 id="restaurantName">Restaurant</h1>
+          <p id="restaurantMeta">Fresh food, direct from the restaurant.</p>
+        </div>
+      </div>
+      <div class="online-login-card">
+        <strong id="customerGreeting">Login with mobile OTP</strong>
+        <div class="online-login-grid">
+          <input id="customerPhone" placeholder="Mobile number" inputmode="tel" maxlength="10">
+          <button id="sendOtp" type="button">Send OTP</button>
+          <input id="customerOtp" placeholder="OTP" inputmode="numeric" maxlength="6">
+          <button id="verifyOtp" type="button">Verify</button>
+        </div>
+        <div id="registrationPanel" class="online-registration" hidden>
+          <input id="registrationName" placeholder="Your name for registration">
+          <button id="completeRegistration" type="button">Complete Registration</button>
+        </div>
+        <p id="authStatus"></p>
+      </div>
+    </header>
+
+    <section class="online-checkout-strip">
+      <label>Order type
+        <select id="orderType"></select>
+      </label>
+      <label id="deliveryAddressWrap">Delivery address
+        <input id="deliveryAddress" placeholder="Flat, street, area">
+      </label>
+      <label>Search menu
+        <input id="menuSearch" placeholder="Search dishes">
+      </label>
     </section>
-    <div class="toolbar" id="categoryBar"></div>
-    <section id="itemsGrid" class="menu-grid"></section>
-    <aside class="cart-panel">
-      <h2>Cart</h2>
-      <div id="cartItems"></div>
-      <strong id="cartTotal">0.00</strong>
-      <button id="placeOrder">Place Order</button>
-      <p id="orderStatus"></p>
-    </aside>
+
+    <section class="online-layout">
+      <aside class="online-categories" id="categoryBar"></aside>
+      <section class="online-menu-grid" id="itemsGrid"></section>
+      <aside class="online-cart">
+        <h2>Your Cart</h2>
+        <div id="cartList" class="online-cart-list"></div>
+        <div class="online-price-lines">
+          <p><span>Subtotal</span><strong id="subtotal">0.00</strong></p>
+          <p><span>Promo</span><strong id="promoDiscount">0.00</strong></p>
+          <p><span>Credit</span><strong id="creditDiscount">0.00</strong></p>
+          <p><span>Total</span><strong id="grandTotal">0.00</strong></p>
+        </div>
+        <div class="online-promo">
+          <input id="promoCode" placeholder="Promo code">
+          <button id="applyPromo" type="button">Apply</button>
+        </div>
+        <label class="check-row"><input id="useLoyaltyCredit" type="checkbox"> Use available loyalty credit</label>
+        <fieldset class="online-payments">
+          <legend>Payment</legend>
+          <div id="paymentMethods"></div>
+        </fieldset>
+        <button id="placeOrder" class="online-primary" type="button">Place Order</button>
+        <p id="orderStatus"></p>
+      </aside>
+    </section>
   </main>
+
   <script src="/js/online-order.js"></script>
 </body>
 </html>

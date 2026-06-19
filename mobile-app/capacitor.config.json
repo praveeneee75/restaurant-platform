@@ -1,0 +1,9 @@
+{
+  "appId": "com.restaurantplatform.whitelabel",
+  "appName": "Restaurant Mobile",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  }
+}

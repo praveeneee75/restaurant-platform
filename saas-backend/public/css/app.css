@@ -1,0 +1,144 @@
+* { box-sizing: border-box; }
+:root {
+  --bg: #f5f7fb;
+  --surface: #ffffff;
+  --border: #e2e8f0;
+  --text: #172033;
+  --muted: #64748b;
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --accent: #f59e0b;
+  --danger: #dc2626;
+  --shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+}
+body {
+  margin: 0 !important;
+  min-height: 100vh;
+  padding: 24px !important;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.10), transparent 30%),
+    var(--bg);
+  font-family: Inter, Segoe UI, Arial, sans-serif !important;
+}
+body > h2:first-child,
+body > h3:first-child {
+  margin-top: 0;
+}
+section,
+.login-panel {
+  margin: 0 0 18px;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+input,
+select,
+textarea {
+  min-height: 42px;
+  margin: 6px 6px 6px 0 !important;
+  padding: 10px 12px !important;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: white;
+  color: var(--text);
+  font: inherit;
+}
+button {
+  min-height: 40px;
+  margin: 6px 6px 6px 0;
+  padding: 10px 14px !important;
+  border: 0;
+  border-radius: 8px;
+  background: var(--primary);
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+}
+button:hover { background: var(--primary-dark); }
+table {
+  width: 100%;
+  overflow: hidden;
+  border-collapse: separate !important;
+  border-spacing: 0;
+  margin-top: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+}
+th,
+td {
+  padding: 12px !important;
+  border: 0 !important;
+  border-bottom: 1px solid #edf2f7 !important;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  background: #f8fafc !important;
+  color: #475569;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+.cards {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)) !important;
+  gap: 12px !important;
+  margin: 16px 0 !important;
+}
+.card {
+  padding: 16px !important;
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+}
+.card strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 24px !important;
+}
+body:has(#email):has(#password):not(:has(table)) {
+  display: grid;
+  place-items: center;
+  padding: 16px !important;
+}
+body:has(#email):has(#password):not(:has(table)) h2,
+body:has(#email):has(#password):not(:has(table)) #brandSupport,
+body:has(#email):has(#password):not(:has(table)) input,
+body:has(#email):has(#password):not(:has(table)) button,
+body:has(#email):has(#password):not(:has(table)) #msg {
+  width: min(380px, 100%);
+}
+body:has(#email):has(#password):not(:has(table)) h2 {
+  margin-bottom: 0;
+  padding: 24px 24px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+}
+body:has(#email):has(#password):not(:has(table)) #brandSupport,
+body:has(#email):has(#password):not(:has(table)) input,
+body:has(#email):has(#password):not(:has(table)) button,
+body:has(#email):has(#password):not(:has(table)) #msg {
+  margin: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding-left: 24px !important;
+  padding-right: 24px !important;
+}
+body:has(#email):has(#password):not(:has(table)) #msg {
+  padding-bottom: 24px !important;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0 0 12px 12px;
+}
+@media (max-width: 760px) {
+  body { padding: 12px !important; }
+  input, select, textarea, button { width: 100%; margin-right: 0 !important; }
+  table { display: block; overflow-x: auto; }
+}

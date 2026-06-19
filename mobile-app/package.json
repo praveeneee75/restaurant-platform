@@ -1,0 +1,17 @@
+{
+  "name": "restaurant-platform-mobile-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "White-label mobile shell for restaurant owner, captain and waiter users",
+  "scripts": {
+    "start": "npx serve www",
+    "build:android": "npx cap sync android && cd android && gradlew assembleDebug",
+    "open:android": "npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/core": "^7.0.0"
+  },
+  "devDependencies": {}
+}

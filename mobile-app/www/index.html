@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Restaurant Mobile</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="brand-panel">
+      <div class="logo" id="brandLogo">POS</div>
+      <div>
+        <p class="eyebrow">White-label restaurant app</p>
+        <h1 id="brandName">Restaurant Mobile</h1>
+        <p id="brandStatus">Configure server URLs to begin.</p>
+      </div>
+    </section>
+
+    <section class="config-panel">
+      <label>Restaurant ID
+        <input id="restaurantId" placeholder="RESTO87631">
+      </label>
+      <label>POS server URL
+        <input id="posUrl" placeholder="http://192.168.1.10:3000">
+      </label>
+      <label>SaaS server URL
+        <input id="saasUrl" placeholder="https://your-saas-domain.com">
+      </label>
+      <button id="saveConfig" type="button">Save & Check Premium Access</button>
+    </section>
+
+    <section class="role-grid">
+      <button data-role="owner" type="button">Owner Dashboard</button>
+      <button data-role="captain" type="button">Captain Ordering</button>
+      <button data-role="waiter" type="button">Waiter Ordering</button>
+      <button data-role="cashier" type="button">Cashier POS</button>
+    </section>
+
+    <section class="webview-panel" id="webviewPanel" hidden>
+      <header>
+        <strong id="activeRole">Mobile View</strong>
+        <button id="closeFrame" type="button">Close</button>
+      </header>
+      <iframe id="appFrame" title="Restaurant app view"></iframe>
+    </section>
+  </main>
+  <script src="js/app.js"></script>
+</body>
+</html>

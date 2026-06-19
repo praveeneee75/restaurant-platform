@@ -7,6 +7,7 @@ const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
 const axios = require('axios');
 const os = require('os');
+const zlib = require('zlib');
 
 const { setupDatabase } = require('./services/dbSetup');
 const { openDatabase } = require('./db/database');
@@ -299,6 +300,261 @@ function getAllSettings(db) {
   return settings;
 }
 
+function csvSetting(db, key, fallback = '') {
+  return getConfigValue(db, key, fallback)
+    .split(',')
+    .map((value) => value.trim().toUpperCase())
+    .filter(Boolean);
+}
+
+function onlineFallbackImage(itemName) {
+  const query = encodeURIComponent(`${itemName || 'restaurant food'} Indian food`);
+  return `https://source.unsplash.com/640x480/?${query}`;
+}
+
+function onlineBranding(db) {
+  const settings = getAllSettings(db);
+  return {
+    enabled: getBooleanConfig(db, 'online_order_enabled', false),
+    displayName: settings.restaurant_display_name || 'Restaurant',
+    legalName: settings.legal_name || '',
+    currency: settings.currency || 'INR',
+    logoPath: settings.online_logo_path || settings.logo_path || '',
+    theme: settings.online_theme || 'CLASSIC',
+    primaryColor: settings.online_primary_color || '#1f7a4d',
+    accentColor: settings.online_accent_color || '#f5b44b',
+    paymentMethods: csvSetting(db, 'online_payment_methods', 'UPI,CARD,COD,WALLET,NETBANKING'),
+    requireOtp: getBooleanConfig(db, 'online_require_otp', true),
+    allowLoyaltyCredit: getBooleanConfig(db, 'online_allow_loyalty_credit', true),
+    deliveryEnabled: getBooleanConfig(db, 'online_delivery_enabled', true),
+    takeawayEnabled: getBooleanConfig(db, 'online_takeaway_enabled', true),
+    minOrderAmount: getNumberConfig(db, 'online_min_order_amount', 0),
+    upiId: settings.upi_id || '',
+    phone: settings.phone || '',
+    email: settings.email || '',
+    address: [settings.address_line_1, settings.address_line_2, settings.city, settings.state].filter(Boolean).join(', ')
+  };
+}
+
+function assertOnlineOrderingEnabled(db) {
+  requireModule(db, 'ONLINE_ORDERING');
+  if (!getBooleanConfig(db, 'online_order_enabled', false)) {
+    const err = new Error('Online ordering is not enabled for this restaurant');
+    err.status = 403;
+    throw err;
+  }
+}
+
+function normalisePhone(value) {
+  return String(value || '').replace(/\D/g, '').slice(-10);
+}
+
+function onlineCreditBalance(db, customerId) {
+  if (!customerId) return 0;
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(balance), 0) AS balance
+    FROM online_customer_credits
+    WHERE customer_id = ? AND active = 1 AND (expires_at IS NULL OR DATETIME(expires_at) >= DATETIME('now'))
+  `).get(customerId);
+  return Number(row?.balance || 0);
+}
+
+function crc32(buffer) {
+  let table = crc32.table;
+  if (!table) {
+    table = Array.from({ length: 256 }, (_, index) => {
+      let c = index;
+      for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      return c >>> 0;
+    });
+    crc32.table = table;
+  }
+  let crc = 0xffffffff;
+  for (const byte of buffer) crc = table[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function dosDateTime(date = new Date()) {
+  const time = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+  const day = date.getDate();
+  const month = date.getMonth() + 1;
+  const year = Math.max(date.getFullYear() - 1980, 0);
+  return { date: (year << 9) | (month << 5) | day, time };
+}
+
+function buildZip(files) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  const stamp = dosDateTime();
+  files.forEach((file) => {
+    const name = Buffer.from(file.name.replace(/\\/g, '/'));
+    const data = Buffer.isBuffer(file.data) ? file.data : Buffer.from(String(file.data), 'utf8');
+    const compressed = zlib.deflateRawSync(data);
+    const crc = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0, 6);
+    local.writeUInt16LE(8, 8);
+    local.writeUInt16LE(stamp.time, 10);
+    local.writeUInt16LE(stamp.date, 12);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(compressed.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    localParts.push(local, name, compressed);
+
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0, 8);
+    central.writeUInt16LE(8, 10);
+    central.writeUInt16LE(stamp.time, 12);
+    central.writeUInt16LE(stamp.date, 14);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(compressed.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    centralParts.push(central, name);
+    offset += local.length + name.length + compressed.length;
+  });
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(files.length, 8);
+  end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(centralSize, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...localParts, ...centralParts, end]);
+}
+
+function xmlEscape(value) {
+  return String(value ?? '').replace(/[<>&'"]/g, (char) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[char]));
+}
+
+function sheetXml(rows, validations = '') {
+  const rowXml = rows.map((row, rowIndex) => {
+    const cells = row.map((value, columnIndex) => {
+      const ref = `${String.fromCharCode(65 + columnIndex)}${rowIndex + 1}`;
+      return `<c r="${ref}" t="inlineStr"><is><t>${xmlEscape(value)}</t></is></c>`;
+    }).join('');
+    return `<row r="${rowIndex + 1}">${cells}</row>`;
+  }).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rowXml}</sheetData>${validations}</worksheet>`;
+}
+
+function buildMenuInventoryTemplate() {
+  const menuRows = [
+    ['Validate Template', 'Fill rows below. Click Upload in POS Admin to run strict validation before import.'],
+    ['Item Name', 'Category', 'Kitchen', 'Price', 'Veg', 'Parcel', 'Online Enabled', 'Image URL', 'Online Description', 'Active'],
+    ['Masala Tea', 'Beverages', 'Tea Kitchen', '25', 'YES', 'YES', 'YES', '', 'Fresh masala tea', 'YES'],
+    ['Chicken Burger', 'Fast Food', 'Fast Food Kitchen', '180', 'NO', 'YES', 'YES', '', 'Chicken burger with bun', 'YES']
+  ];
+  const ingredientRows = [
+    ['Validate Template', 'Numeric columns must be numbers. Text in stock/cost fields is rejected during upload.'],
+    ['Ingredient Name', 'Unit', 'Current Stock', 'Low Stock Alert', 'Active'],
+    ['Milk', 'ml', '5000', '1000', 'YES'],
+    ['Tea Powder', 'g', '2000', '500', 'YES'],
+    ['Chicken', 'g', '10000', '2000', 'YES']
+  ];
+  const validations = '<dataValidations count="1"><dataValidation type="decimal" operator="greaterThanOrEqual" allowBlank="0" sqref="D3:D500"><formula1>0</formula1></dataValidation></dataValidations>';
+  const ingredientValidations = '<dataValidations count="1"><dataValidation type="decimal" operator="greaterThanOrEqual" allowBlank="0" sqref="C3:D500"><formula1>0</formula1></dataValidation></dataValidations>';
+  return buildZip([
+    { name: '[Content_Types].xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.ms-excel.sheet.macroEnabled.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>' },
+    { name: '_rels/.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+    { name: 'xl/_rels/workbook.xml.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>' },
+    { name: 'xl/workbook.xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Menu Items" sheetId="1" r:id="rId1"/><sheet name="Ingredients" sheetId="2" r:id="rId2"/></sheets></workbook>' },
+    { name: 'xl/worksheets/sheet1.xml', data: sheetXml(menuRows, validations) },
+    { name: 'xl/worksheets/sheet2.xml', data: sheetXml(ingredientRows, ingredientValidations) }
+  ]);
+}
+
+function readZipEntries(buffer) {
+  const entries = new Map();
+  let endOffset = buffer.length - 22;
+  while (endOffset >= 0 && buffer.readUInt32LE(endOffset) !== 0x06054b50) endOffset -= 1;
+  if (endOffset < 0) throw new Error('Invalid Excel file');
+  const count = buffer.readUInt16LE(endOffset + 10);
+  let offset = buffer.readUInt32LE(endOffset + 16);
+  for (let index = 0; index < count; index += 1) {
+    if (buffer.readUInt32LE(offset) !== 0x02014b50) throw new Error('Invalid Excel central directory');
+    const method = buffer.readUInt16LE(offset + 10);
+    const compressedSize = buffer.readUInt32LE(offset + 20);
+    const nameLength = buffer.readUInt16LE(offset + 28);
+    const extraLength = buffer.readUInt16LE(offset + 30);
+    const commentLength = buffer.readUInt16LE(offset + 32);
+    const localOffset = buffer.readUInt32LE(offset + 42);
+    const name = buffer.slice(offset + 46, offset + 46 + nameLength).toString('utf8');
+    const localNameLength = buffer.readUInt16LE(localOffset + 26);
+    const localExtraLength = buffer.readUInt16LE(localOffset + 28);
+    const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+    const compressed = buffer.slice(dataStart, dataStart + compressedSize);
+    const data = method === 8 ? zlib.inflateRawSync(compressed) : compressed;
+    entries.set(name, data.toString('utf8'));
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  return entries;
+}
+
+function decodeXml(value) {
+  return String(value || '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&');
+}
+
+function parseSharedStrings(entries) {
+  const xml = entries.get('xl/sharedStrings.xml');
+  if (!xml) return [];
+  return [...xml.matchAll(/<si[^>]*>([\s\S]*?)<\/si>/g)].map((match) => decodeXml([...match[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((t) => t[1]).join('')));
+}
+
+function columnNumber(ref) {
+  const letters = String(ref || '').replace(/\d/g, '');
+  return letters.split('').reduce((sum, letter) => sum * 26 + letter.charCodeAt(0) - 64, 0) - 1;
+}
+
+function parseWorksheet(entries, pathName) {
+  const xml = entries.get(pathName);
+  if (!xml) return [];
+  const shared = parseSharedStrings(entries);
+  return [...xml.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)].map((rowMatch) => {
+    const row = [];
+    [...rowMatch[1].matchAll(/<c([^>]*)>([\s\S]*?)<\/c>/g)].forEach((cellMatch) => {
+      const attrs = cellMatch[1];
+      const body = cellMatch[2];
+      const ref = /r="([^"]+)"/.exec(attrs)?.[1] || '';
+      const type = /t="([^"]+)"/.exec(attrs)?.[1] || '';
+      let value = '';
+      if (type === 's') value = shared[Number(/<v>([\s\S]*?)<\/v>/.exec(body)?.[1] || 0)] || '';
+      else if (type === 'inlineStr') value = decodeXml(/<t[^>]*>([\s\S]*?)<\/t>/.exec(body)?.[1] || '');
+      else value = decodeXml(/<v>([\s\S]*?)<\/v>/.exec(body)?.[1] || '');
+      row[columnNumber(ref)] = value;
+    });
+    return row.map((value) => String(value ?? '').trim());
+  });
+}
+
+function yesNo(value, fallback = true) {
+  const text = String(value ?? '').trim().toUpperCase();
+  if (!text) return fallback ? 1 : 0;
+  if (['YES', 'Y', 'TRUE', '1', 'ACTIVE'].includes(text)) return 1;
+  if (['NO', 'N', 'FALSE', '0', 'INACTIVE'].includes(text)) return 0;
+  throw new Error(`Expected YES/NO but found ${value}`);
+}
+
+function requiredNumber(value, label) {
+  if (String(value ?? '').trim() === '') throw new Error(`${label} is required`);
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) throw new Error(`${label} must be a number >= 0`);
+  return number;
+}
+
 function setConfigValues(db, settings) {
   const setValue = db.prepare(`
     INSERT INTO system_config (key, value, updated_at)
@@ -316,7 +572,8 @@ const DEFAULT_ENABLED_MODULES = [
   'RESERVATIONS',
   'CLOUD_REPORTING',
   'MULTI_BRANCH',
-  'WHITE_LABEL'
+  'WHITE_LABEL',
+  'ONLINE_ORDERING'
 ];
 
 function enabledModules(db) {
@@ -446,7 +703,12 @@ const SETTINGS_BOOLEAN_KEYS = new Set([
   'backup_enabled',
   'require_clock_in_before_order',
   'require_open_register_for_cash_payment',
-  'allow_cashier_register_close'
+  'allow_cashier_register_close',
+  'online_order_enabled',
+  'online_require_otp',
+  'online_allow_loyalty_credit',
+  'online_delivery_enabled',
+  'online_takeaway_enabled'
 ]);
 
 app.use('/inventory', moduleGate('INVENTORY'));
@@ -461,6 +723,7 @@ app.use('/reservations', moduleGate('RESERVATIONS'));
 app.use('/cloud-sync', moduleGate('CLOUD_REPORTING'));
 
 const SETTINGS_PERCENT_KEYS = new Set(['service_charge_percent']);
+const SETTINGS_NON_NEGATIVE_NUMBER_KEYS = new Set(['cash_discrepancy_threshold', 'online_min_order_amount']);
 
 function normaliseSettingsInput(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -491,10 +754,23 @@ function normaliseSettingsInput(input) {
       output[key] = String(interval);
       return;
     }
-    if (key === 'cash_discrepancy_threshold') {
+    if (SETTINGS_NON_NEGATIVE_NUMBER_KEYS.has(key)) {
       const threshold = Number(value);
-      if (!Number.isFinite(threshold) || threshold < 0) throw new Error('Cash discrepancy threshold must be numeric and >= 0');
+      if (!Number.isFinite(threshold) || threshold < 0) throw new Error(`${key} must be numeric and >= 0`);
       output[key] = String(threshold);
+      return;
+    }
+    if (key === 'online_theme') {
+      const theme = normaliseText(value).toUpperCase();
+      if (!['CLASSIC', 'MODERN', 'BOLD'].includes(theme)) throw new Error('Online theme is invalid');
+      output[key] = theme;
+      return;
+    }
+    if (key === 'online_payment_methods') {
+      const methods = String(value || '').split(',').map((method) => method.trim().toUpperCase()).filter(Boolean);
+      const allowedMethods = new Set(['UPI', 'CARD', 'COD', 'WALLET', 'NETBANKING']);
+      if (methods.length === 0 || methods.some((method) => !allowedMethods.has(method))) throw new Error('Online payment methods are invalid');
+      output[key] = [...new Set(methods)].join(',');
       return;
     }
     if (key === 'invoice_reset_frequency') {
@@ -2805,7 +3081,9 @@ app.get('/admin/bootstrap', (req, res) => {
         ORDER BY c.name
       `).all(includeInactive),
       items: db.prepare(`
-        SELECT i.id, i.name, i.category_id, i.price, i.is_veg, i.allow_parcel, i.active, c.name AS category_name, k.name AS kitchen_name
+        SELECT i.id, i.name, i.category_id, i.price, i.is_veg, i.allow_parcel, i.active,
+               i.image_url, i.online_description, i.online_enabled,
+               c.name AS category_name, k.name AS kitchen_name
         FROM items i
         LEFT JOIN categories c ON c.id = i.category_id
         LEFT JOIN kitchens k ON k.id = c.kitchen_id
@@ -2866,6 +3144,89 @@ app.post('/expenses/save', (req, res) => {
     const expense = db.prepare('SELECT * FROM expenses WHERE id = ?').get(result.lastInsertRowid);
     writeAudit(db, actor, 'CREATE', 'EXPENSE', result.lastInsertRowid, null, expense);
     res.json({ success: true, expense });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/imports/menu-inventory/template.xlsm', (req, res) => {
+  const workbook = buildMenuInventoryTemplate();
+  res.setHeader('Content-Type', 'application/vnd.ms-excel.sheet.macroEnabled.12');
+  res.setHeader('Content-Disposition', 'attachment; filename="restaurant-menu-inventory-template.xlsm"');
+  res.send(workbook);
+});
+
+app.post('/imports/menu-inventory/upload', express.raw({ type: '*/*', limit: '10mb' }), (req, res) => {
+  const { restaurantId, role } = req.query;
+  if (!restaurantId || !canManage(role || '')) return res.status(400).json({ success: false, message: 'Restaurant and owner/manager permission are required' });
+  if (!Buffer.isBuffer(req.body) || req.body.length === 0) return res.status(400).json({ success: false, message: 'Excel file is required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const entries = readZipEntries(req.body);
+    const menuRows = parseWorksheet(entries, 'xl/worksheets/sheet1.xml').slice(2).filter((row) => row.some(Boolean));
+    const ingredientRows = parseWorksheet(entries, 'xl/worksheets/sheet2.xml').slice(2).filter((row) => row.some(Boolean));
+    const errors = [];
+    const imported = db.transaction(() => {
+      let kitchens = 0;
+      let categories = 0;
+      let items = 0;
+      let ingredients = 0;
+      for (const [index, row] of menuRows.entries()) {
+        try {
+          const [itemName, categoryName, kitchenName, price, veg, parcel, onlineEnabled, imageUrl, onlineDescription, active] = row;
+          if (!hasText(itemName) || !hasText(categoryName) || !hasText(kitchenName)) throw new Error('Item name, category and kitchen are required');
+          const itemPrice = requiredNumber(price, 'Price');
+          let kitchen = db.prepare('SELECT id FROM kitchens WHERE LOWER(name) = LOWER(?) AND active = 1 LIMIT 1').get(normaliseText(kitchenName));
+          if (!kitchen) {
+            const result = db.prepare('INSERT INTO kitchens (name, active) VALUES (?, 1)').run(normaliseText(kitchenName));
+            kitchen = { id: result.lastInsertRowid };
+            kitchens += 1;
+          }
+          let category = db.prepare('SELECT id FROM categories WHERE LOWER(name) = LOWER(?) AND active = 1 LIMIT 1').get(normaliseText(categoryName));
+          if (!category) {
+            const result = db.prepare('INSERT INTO categories (name, kitchen_id, active) VALUES (?, ?, 1)').run(normaliseText(categoryName), kitchen.id);
+            category = { id: result.lastInsertRowid };
+            categories += 1;
+          }
+          const existing = db.prepare('SELECT id FROM items WHERE LOWER(name) = LOWER(?) AND active = 1 LIMIT 1').get(normaliseText(itemName));
+          if (existing) {
+            db.prepare('UPDATE items SET category_id = ?, price = ?, is_veg = ?, allow_parcel = ?, online_enabled = ?, image_url = ?, online_description = ?, active = ? WHERE id = ?')
+              .run(category.id, itemPrice, yesNo(veg, true), yesNo(parcel, true), yesNo(onlineEnabled, true), normaliseText(imageUrl), normaliseText(onlineDescription), yesNo(active, true), existing.id);
+          } else {
+            db.prepare('INSERT INTO items (name, category_id, price, is_veg, allow_parcel, online_enabled, image_url, online_description, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+              .run(normaliseText(itemName), category.id, itemPrice, yesNo(veg, true), yesNo(parcel, true), yesNo(onlineEnabled, true), normaliseText(imageUrl), normaliseText(onlineDescription), yesNo(active, true));
+          }
+          items += 1;
+        } catch (err) {
+          errors.push(`Menu row ${index + 3}: ${err.message}`);
+        }
+      }
+      for (const [index, row] of ingredientRows.entries()) {
+        try {
+          const [name, unit, currentStock, lowStockAlert, active] = row;
+          if (!hasText(name) || !hasText(unit)) throw new Error('Ingredient name and unit are required');
+          const stock = requiredNumber(currentStock || 0, 'Current Stock');
+          const lowStock = requiredNumber(lowStockAlert || 0, 'Low Stock Alert');
+          const existing = db.prepare('SELECT id FROM ingredients WHERE LOWER(name) = LOWER(?) AND active = 1 LIMIT 1').get(normaliseText(name));
+          if (existing) {
+            db.prepare('UPDATE ingredients SET unit = ?, current_stock = ?, low_stock_alert = ?, active = ? WHERE id = ?')
+              .run(normaliseText(unit), stock, lowStock, yesNo(active, true), existing.id);
+          } else {
+            db.prepare('INSERT INTO ingredients (name, unit, current_stock, low_stock_alert, active) VALUES (?, ?, ?, ?, ?)')
+              .run(normaliseText(name), normaliseText(unit), stock, lowStock, yesNo(active, true));
+          }
+          ingredients += 1;
+        } catch (err) {
+          errors.push(`Ingredient row ${index + 3}: ${err.message}`);
+        }
+      }
+      if (errors.length > 0) throw new Error(errors.join('\n'));
+      return { kitchens, categories, items, ingredients };
+    })();
+    writeAudit(db, { role }, 'IMPORT', 'MENU_INVENTORY', null, null, imported);
+    res.json({ success: true, imported });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -3249,7 +3610,7 @@ app.post('/payments/intent', (req, res) => {
     const provider = db.prepare('SELECT * FROM payment_providers WHERE code = ? AND active = 1').get(String(providerCode).toUpperCase());
     if (!provider) throw new Error('Payment provider not configured');
     const reference = `PI-${Date.now()}`;
-    const result = db.prepare('INSERT INTO payment_transactions (provider_code, order_id, amount, currency, status, provider_reference, request_payload) VALUES (?, ?, ?, ?, "PENDING", ?, ?)').run(provider.code, isPositiveId(orderId) ? orderId : null, Number(amount), currency || 'INR', reference, JSON.stringify(req.body));
+    const result = db.prepare("INSERT INTO payment_transactions (provider_code, order_id, amount, currency, status, provider_reference, request_payload) VALUES (?, ?, ?, ?, 'PENDING', ?, ?)").run(provider.code, isPositiveId(orderId) ? orderId : null, Number(amount), currency || 'INR', reference, JSON.stringify(req.body));
     res.json({ success: true, transactionId: result.lastInsertRowid, providerReference: reference, status: 'PENDING' });
   } catch (err) {
     sendError(res, err);
@@ -3348,6 +3709,38 @@ app.get('/diagnostics', (req, res) => {
       backup: { lastBackupAt: backup.last_backup_at || null, enabled: backup.backup_enabled === '1' },
       printer: { pendingPrintJobs, status: pendingPrintJobs > 0 ? 'PENDING' : 'OK' },
       license,
+      modules: enabledModules(db)
+    });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/mobile-app/config', (req, res) => {
+  const { restaurantId } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requireModule(db, 'MOBILE_APP');
+    const settings = getAllSettings(db);
+    res.json({
+      success: true,
+      app: {
+        name: settings.restaurant_display_name || 'Restaurant POS',
+        legalName: settings.legal_name || '',
+        logoPath: settings.logo_path || settings.online_logo_path || '',
+        primaryColor: settings.online_primary_color || '#2563eb',
+        accentColor: settings.online_accent_color || '#f59e0b',
+        currency: settings.currency || 'INR'
+      },
+      roles: {
+        owner: '/owner-mobile.html',
+        captain: '/waiter.html',
+        waiter: '/waiter.html',
+        cashier: '/pos-live.html'
+      },
       modules: enabledModules(db)
     });
   } catch (err) {
@@ -3510,7 +3903,7 @@ app.post('/admin/categories/delete', (req, res) => {
 });
 
 app.post('/admin/items/save', (req, res) => {
-  const { restaurantId, actor, id, name, categoryId, price, isVeg, allowParcel, active } = req.body;
+  const { restaurantId, actor, id, name, categoryId, price, isVeg, allowParcel, active, imageUrl, onlineDescription, onlineEnabled } = req.body;
   if (!restaurantId || !hasText(name) || !isPositiveId(categoryId) || !isValidAmount(price) || !canManage(actor?.role)) return res.status(400).json({ success: false, message: 'Item name, category, valid price and manager permission are required' });
 
   const db = openRestaurantDatabase(restaurantId);
@@ -3518,10 +3911,10 @@ app.post('/admin/items/save', (req, res) => {
     if (activeNameExists(db, 'items', 'name', name, id)) throw new Error('Item name already exists');
     const oldValue = id ? db.prepare('SELECT * FROM items WHERE id = ?').get(id) : null;
     const result = id
-      ? db.prepare('UPDATE items SET name = ?, category_id = ?, price = ?, is_veg = ?, allow_parcel = ?, active = ? WHERE id = ?')
-          .run(name, categoryId, price, isVeg ? 1 : 0, allowParcel === false ? 0 : 1, active === false ? 0 : 1, id)
-      : db.prepare('INSERT INTO items (name, category_id, price, is_veg, allow_parcel, active) VALUES (?, ?, ?, ?, ?, 1)')
-          .run(name, categoryId, price, isVeg ? 1 : 0, allowParcel === false ? 0 : 1);
+      ? db.prepare('UPDATE items SET name = ?, category_id = ?, price = ?, is_veg = ?, allow_parcel = ?, active = ?, image_url = ?, online_description = ?, online_enabled = ? WHERE id = ?')
+          .run(name, categoryId, price, isVeg ? 1 : 0, allowParcel === false ? 0 : 1, active === false ? 0 : 1, normaliseText(imageUrl), normaliseText(onlineDescription), onlineEnabled === false ? 0 : 1, id)
+      : db.prepare('INSERT INTO items (name, category_id, price, is_veg, allow_parcel, active, image_url, online_description, online_enabled) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)')
+          .run(name, categoryId, price, isVeg ? 1 : 0, allowParcel === false ? 0 : 1, normaliseText(imageUrl), normaliseText(onlineDescription), onlineEnabled === false ? 0 : 1);
     const newValue = db.prepare('SELECT * FROM items WHERE id = ?').get(id || result.lastInsertRowid);
     writeAudit(db, actor, id ? 'UPDATE' : 'CREATE', 'ITEM', id || result.lastInsertRowid, oldValue, newValue);
     if (id && oldValue && Number(oldValue.price) !== Number(newValue.price)) {
@@ -3955,14 +4348,25 @@ app.get('/online/menu', (req, res) => {
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    assertOnlineOrderingEnabled(db);
+    const branding = onlineBranding(db);
+    const configuredMethods = new Set(branding.paymentMethods);
     res.json({
       success: true,
-      restaurant: {
-        displayName: getConfigValue(db, 'restaurant_display_name', 'Restaurant POS'),
-        currency: getConfigValue(db, 'currency', 'INR')
-      },
+      restaurant: branding,
+      paymentMethods: db.prepare('SELECT code, label FROM online_payment_methods WHERE active = 1 ORDER BY sort_order, label')
+        .all()
+        .filter((method) => configuredMethods.has(method.code)),
       categories: db.prepare('SELECT id, name FROM categories WHERE active = 1 ORDER BY name').all(),
-      items: db.prepare('SELECT id, name, category_id, price FROM items WHERE active = 1 ORDER BY name').all()
+      items: db.prepare(`
+        SELECT id, name, category_id, price, is_veg, image_url, online_description
+        FROM items
+        WHERE active = 1 AND COALESCE(online_enabled, 1) = 1
+        ORDER BY name
+      `).all().map((item) => ({
+        ...item,
+        image_url: item.image_url || onlineFallbackImage(item.name)
+      }))
     });
   } catch (err) {
     sendError(res, err);
@@ -3971,18 +4375,117 @@ app.get('/online/menu', (req, res) => {
   }
 });
 
+app.post('/online/auth/request-otp', (req, res) => {
+  const { restaurantId, phone } = req.body;
+  const cleanPhone = normalisePhone(phone);
+  if (!restaurantId || cleanPhone.length !== 10) return res.status(400).json({ success: false, message: 'Valid mobile number is required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    assertOnlineOrderingEnabled(db);
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    db.prepare(`
+      INSERT INTO online_otps (phone, otp_code, expires_at)
+      VALUES (?, ?, DATETIME('now', '+10 minutes'))
+    `).run(cleanPhone, otp);
+    queueNotification(db, 'ONLINE_OTP', 'SMS', cleanPhone, { otp });
+    res.json({ success: true, message: 'OTP sent', devOtp: process.env.NODE_ENV === 'production' ? undefined : otp });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/online/auth/verify-otp', (req, res) => {
+  const { restaurantId, phone, otp, name } = req.body;
+  const cleanPhone = normalisePhone(phone);
+  if (!restaurantId || cleanPhone.length !== 10 || !/^\d{6}$/.test(String(otp || ''))) {
+    return res.status(400).json({ success: false, message: 'Valid mobile number and OTP are required' });
+  }
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    assertOnlineOrderingEnabled(db);
+    const row = db.prepare(`
+      SELECT * FROM online_otps
+      WHERE phone = ? AND otp_code = ? AND verified_at IS NULL AND DATETIME(expires_at) >= DATETIME('now')
+      ORDER BY id DESC LIMIT 1
+    `).get(cleanPhone, String(otp));
+    if (!row) throw new Error('Invalid or expired OTP');
+    const existing = db.prepare('SELECT * FROM customers WHERE phone = ? AND active = 1 LIMIT 1').get(cleanPhone);
+    if (!existing && !hasText(name)) {
+      return res.json({ success: true, requiresRegistration: true, message: 'Name required for new customer registration' });
+    }
+    db.prepare('UPDATE online_otps SET verified_at = CURRENT_TIMESTAMP WHERE id = ?').run(row.id);
+    const customerId = existing?.id || db.prepare('INSERT INTO customers (name, phone) VALUES (?, ?)').run(normaliseText(name), cleanPhone).lastInsertRowid;
+    if (existing && hasText(name) && !hasText(existing.name)) db.prepare('UPDATE customers SET name = ? WHERE id = ?').run(normaliseText(name), existing.id);
+    const customer = customerWithBalance(db, db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId));
+    res.json({ success: true, customer: { ...customer, creditBalance: onlineCreditBalance(db, customerId) } });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/online/promo/validate', (req, res) => {
+  const { restaurantId, code, total } = req.body;
+  if (!restaurantId || !hasText(code)) return res.status(400).json({ success: false, message: 'Promo code required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    assertOnlineOrderingEnabled(db);
+    const promo = db.prepare(`
+      SELECT * FROM promo_codes
+      WHERE UPPER(code) = UPPER(?) AND active = 1
+        AND (valid_from IS NULL OR DATE(valid_from) <= DATE('now'))
+        AND (valid_to IS NULL OR DATE(valid_to) >= DATE('now'))
+      LIMIT 1
+    `).get(normaliseText(code));
+    if (!promo) throw new Error('Invalid promo code');
+    const subtotal = Number(total || 0);
+    if (Number(promo.min_order_amount || 0) > subtotal) throw new Error(`Minimum order amount is ${promo.min_order_amount}`);
+    const discountType = promo.discount_type || promo.value_type || 'RUPEES';
+    const discountValue = Number(promo.discount_value || promo.value || 0);
+    const discount = discountType === 'PERCENT'
+      ? Math.min(subtotal * discountValue / 100, subtotal)
+      : Math.min(discountValue, subtotal);
+    res.json({ success: true, promo: { code: promo.code, discountType, discountValue, discount } });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
 app.post('/online/orders/place', (req, res) => {
-  const { restaurantId, orderType, customerName, customerPhone, deliveryAddress, items } = req.body;
+  const { restaurantId, orderType, customerName, customerPhone, deliveryAddress, items, paymentMethod, promoCode, redeemPoints, useCredit } = req.body;
   const selectedOrderType = normaliseOrderType(orderType || 'TAKEAWAY');
-  if (!restaurantId || !['TAKEAWAY', 'DELIVERY', 'ONLINE_ORDER'].includes(selectedOrderType) || !hasText(customerName) || !hasText(customerPhone) || !Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ success: false, message: 'Customer, order type and items are required' });
+  if (!restaurantId || !['TAKEAWAY', 'DELIVERY', 'ONLINE_ORDER'].includes(selectedOrderType) || !hasText(customerPhone) || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ success: false, message: 'Mobile number, order type and items are required' });
   }
   if (selectedOrderType === 'DELIVERY' && !hasText(deliveryAddress)) return res.status(400).json({ success: false, message: 'Delivery address required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    assertOnlineOrderingEnabled(db);
+    const branding = onlineBranding(db);
+    const cleanPhone = normalisePhone(customerPhone);
+    if (cleanPhone.length !== 10) throw new Error('Valid mobile number is required');
+    if (branding.requireOtp) {
+      const verified = db.prepare(`
+        SELECT id FROM online_otps
+        WHERE phone = ? AND verified_at IS NOT NULL AND DATETIME(verified_at) >= DATETIME('now', '-30 minutes')
+        ORDER BY id DESC LIMIT 1
+      `).get(cleanPhone);
+      if (!verified) throw new Error('OTP verification is required before placing an online order');
+    }
+    if (selectedOrderType === 'DELIVERY' && !branding.deliveryEnabled) throw new Error('Delivery is not enabled');
+    if (selectedOrderType === 'TAKEAWAY' && !branding.takeawayEnabled) throw new Error('Takeaway is not enabled');
+    const allowedPayments = new Set(branding.paymentMethods);
+    const selectedPayment = String(paymentMethod || (allowedPayments.has('COD') ? 'COD' : [...allowedPayments][0] || 'COD')).toUpperCase();
+    if (!allowedPayments.has(selectedPayment)) throw new Error('Selected payment method is not available');
     const saved = db.transaction(() => {
-      const existingCustomer = db.prepare('SELECT id FROM customers WHERE phone = ? AND active = 1').get(normaliseText(customerPhone));
-      const customerId = existingCustomer?.id || db.prepare('INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)').run(normaliseText(customerName), normaliseText(customerPhone), normaliseText(deliveryAddress) || null).lastInsertRowid;
+      const existingCustomer = db.prepare('SELECT id, name FROM customers WHERE phone = ? AND active = 1').get(cleanPhone);
+      if (!existingCustomer && !hasText(customerName)) throw new Error('Please register your name before placing the first order');
+      const customerId = existingCustomer?.id || db.prepare('INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)').run(normaliseText(customerName), cleanPhone, normaliseText(deliveryAddress) || null).lastInsertRowid;
       const order = db.prepare(`
         INSERT INTO orders (order_type, table_no, status, total_amount, payment_status, customer_id, delivery_fee, order_source)
         VALUES (?, ?, 'OPEN', 0, 'UNPAID', ?, 0, 'ONLINE')
@@ -3994,20 +4497,69 @@ app.post('/online/orders/place', (req, res) => {
         const item = db.prepare(`
           SELECT i.id, i.price, c.kitchen_id
           FROM items i JOIN categories c ON c.id = i.category_id
-          WHERE i.id = ? AND i.active = 1
+          WHERE i.id = ? AND i.active = 1 AND COALESCE(i.online_enabled, 1) = 1
         `).get(line.itemId);
         if (!item) throw new Error('Menu item not found');
         db.prepare('INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price) VALUES (?, ?, ?, ?, ?)').run(order.lastInsertRowid, item.id, quantity, item.kitchen_id, item.price);
         total += Number(item.price || 0) * quantity;
       });
-      db.prepare('UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(total, order.lastInsertRowid);
+      if (total < branding.minOrderAmount) throw new Error(`Minimum order amount is ${branding.minOrderAmount}`);
+      let discount = 0;
+      if (hasText(promoCode)) {
+        const promo = db.prepare(`
+          SELECT * FROM promo_codes
+          WHERE UPPER(code) = UPPER(?) AND active = 1
+            AND (valid_from IS NULL OR DATE(valid_from) <= DATE('now'))
+            AND (valid_to IS NULL OR DATE(valid_to) >= DATE('now'))
+          LIMIT 1
+        `).get(normaliseText(promoCode));
+        if (!promo) throw new Error('Invalid promo code');
+        if (Number(promo.min_order_amount || 0) > total) throw new Error(`Minimum order amount is ${promo.min_order_amount}`);
+        const discountType = promo.discount_type || promo.value_type || 'RUPEES';
+        const discountValue = Number(promo.discount_value || promo.value || 0);
+        discount = discountType === 'PERCENT'
+          ? Math.min(total * discountValue / 100, total)
+          : Math.min(discountValue, total);
+        db.prepare("INSERT INTO discounts (order_id, type, value, value_type, applied_by, promo_code) VALUES (?, 'PROMO', ?, ?, 'ONLINE', ?)")
+          .run(order.lastInsertRowid, discountValue, discountType, promo.code);
+      }
+      let creditDiscount = 0;
+      const redeem = Number(redeemPoints || 0);
+      if (branding.allowLoyaltyCredit && redeem > 0) {
+        const balance = customerLoyaltyBalance(db, customerId);
+        if (!Number.isInteger(redeem) || redeem > balance) throw new Error('Invalid loyalty credit amount');
+        creditDiscount = Math.min(redeem * getSettingNumber(db, 'loyalty_point_value', 1), total - discount);
+        db.prepare("INSERT INTO loyalty_points (member_id, customer_id, order_id, points, type, note) VALUES (?, ?, ?, ?, 'REDEEM', ?)")
+          .run(memberIdForCustomer(db, customerId), customerId, order.lastInsertRowid, redeem, 'Redeemed on online order');
+      }
+      if (branding.allowLoyaltyCredit && useCredit) {
+        const credit = Math.min(onlineCreditBalance(db, customerId), total - discount - creditDiscount);
+        if (credit > 0) {
+          creditDiscount += credit;
+          db.prepare(`
+            UPDATE online_customer_credits
+            SET balance = MAX(balance - ?, 0)
+            WHERE id = (
+              SELECT id FROM online_customer_credits
+              WHERE customer_id = ? AND active = 1 AND balance > 0 AND (expires_at IS NULL OR DATETIME(expires_at) >= DATETIME('now'))
+              ORDER BY expires_at IS NULL, expires_at, id LIMIT 1
+            )
+          `).run(credit, customerId);
+        }
+      }
+      const payable = Math.max(total - discount - creditDiscount, 0);
+      db.prepare('UPDATE orders SET total_amount = ?, loyalty_discount = ?, redeemed_points = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(payable, creditDiscount, redeem, order.lastInsertRowid);
       if (selectedOrderType === 'DELIVERY') {
-        db.prepare('INSERT INTO delivery_orders (order_id, customer_id, delivery_address, delivery_phone, delivery_status) VALUES (?, ?, ?, ?, "RECEIVED")').run(order.lastInsertRowid, customerId, normaliseText(deliveryAddress), normaliseText(customerPhone));
+        db.prepare("INSERT INTO delivery_orders (order_id, customer_id, delivery_address, delivery_phone, delivery_status) VALUES (?, ?, ?, ?, 'RECEIVED')").run(order.lastInsertRowid, customerId, normaliseText(deliveryAddress), cleanPhone);
+      }
+      if (selectedPayment !== 'COD' && payable > 0) {
+        db.prepare("INSERT INTO payment_transactions (provider_code, order_id, amount, currency, status, provider_reference, request_payload) VALUES (?, ?, ?, ?, 'PENDING', ?, ?)")
+          .run(selectedPayment, order.lastInsertRowid, payable, branding.currency, `ONLINE-${Date.now()}`, JSON.stringify({ source: 'ONLINE_ORDER', selectedPayment }));
       }
       createKotJobs(db, order.lastInsertRowid);
-      queueNotification(db, 'ORDER_CONFIRMATION', 'SMS', normaliseText(customerPhone), { orderId: order.lastInsertRowid, total });
-      writeAudit(db, { role: 'ONLINE' }, 'CREATE', 'ORDER', order.lastInsertRowid, null, { orderSource: 'ONLINE', total });
-      return { orderId: order.lastInsertRowid, total };
+      queueNotification(db, 'ORDER_CONFIRMATION', 'SMS', cleanPhone, { orderId: order.lastInsertRowid, total: payable });
+      writeAudit(db, { role: 'ONLINE' }, 'CREATE', 'ORDER', order.lastInsertRowid, null, { orderSource: 'ONLINE', total: payable, paymentMethod: selectedPayment });
+      return { orderId: order.lastInsertRowid, total: payable, subtotal: total, discount, creditDiscount, paymentMethod: selectedPayment };
     })();
     res.json({ success: true, ...saved });
   } catch (err) {
@@ -4721,7 +5273,19 @@ app.get('/delivery/partners', (req, res) => {
 });
 
 app.post('/delivery/partners/save', (req, res) => {
-  const { restaurantId, actor, id, name, phone } = req.body;
+  const {
+    restaurantId,
+    actor,
+    id,
+    name,
+    phone,
+    providerCode,
+    integrationType,
+    apiBaseUrl,
+    merchantId,
+    externalStoreId,
+    integrationEnabled
+  } = req.body;
   if (!restaurantId || !canManage(actor?.role) || !hasText(name)) {
     return res.status(400).json({ success: false, message: 'Partner name and permission are required' });
   }
@@ -4732,6 +5296,10 @@ app.post('/delivery/partners/save', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     const saved = db.transaction(() => {
+      const safeProvider = normaliseText(providerCode || name).toUpperCase().replace(/[^A-Z0-9_]/g, '_').slice(0, 40);
+      const safeIntegrationType = ['MANUAL', 'API', 'WEBHOOK', 'AGGREGATOR'].includes(normaliseText(integrationType).toUpperCase())
+        ? normaliseText(integrationType).toUpperCase()
+        : 'MANUAL';
       const oldValue = isPositiveId(id) ? db.prepare('SELECT * FROM delivery_partners WHERE id = ?').get(id) : null;
       const duplicate = db.prepare(`
         SELECT id FROM delivery_partners
@@ -4741,9 +5309,17 @@ app.post('/delivery/partners/save', (req, res) => {
       if (duplicate) throw new Error('Delivery partner already exists');
       let partnerId = id;
       if (isPositiveId(id)) {
-        db.prepare('UPDATE delivery_partners SET name = ?, phone = ? WHERE id = ?').run(normaliseText(name), normaliseText(phone) || null, id);
+        db.prepare(`
+          UPDATE delivery_partners
+          SET name = ?, phone = ?, provider_code = ?, integration_type = ?, api_base_url = ?,
+              merchant_id = ?, external_store_id = ?, integration_enabled = ?
+          WHERE id = ?
+        `).run(normaliseText(name), normaliseText(phone) || null, safeProvider, safeIntegrationType, normaliseText(apiBaseUrl), normaliseText(merchantId), normaliseText(externalStoreId), integrationEnabled ? 1 : 0, id);
       } else {
-        partnerId = db.prepare('INSERT INTO delivery_partners (name, phone) VALUES (?, ?)').run(normaliseText(name), normaliseText(phone) || null).lastInsertRowid;
+        partnerId = db.prepare(`
+          INSERT INTO delivery_partners (name, phone, provider_code, integration_type, api_base_url, merchant_id, external_store_id, integration_enabled)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(normaliseText(name), normaliseText(phone) || null, safeProvider, safeIntegrationType, normaliseText(apiBaseUrl), normaliseText(merchantId), normaliseText(externalStoreId), integrationEnabled ? 1 : 0).lastInsertRowid;
       }
       const newValue = db.prepare('SELECT * FROM delivery_partners WHERE id = ?').get(partnerId);
       writeAudit(db, actor, isPositiveId(id) ? 'UPDATE' : 'CREATE', 'DELIVERY_PARTNER', partnerId, oldValue, newValue);
@@ -4801,7 +5377,13 @@ app.get('/orders/live', (req, res) => {
         d.delivery_status,
         d.expected_delivery_time,
         d.delivery_partner_id,
-        dp.name AS delivery_partner_name
+        d.external_order_id,
+        d.tracking_url,
+        d.partner_status,
+        d.last_partner_status_at,
+        dp.name AS delivery_partner_name,
+        dp.provider_code AS delivery_provider_code,
+        dp.integration_enabled AS delivery_integration_enabled
       FROM orders o
       LEFT JOIN customers c ON c.id = o.customer_id
       LEFT JOIN delivery_orders d ON d.order_id = o.id
@@ -4872,6 +5454,32 @@ app.post('/orders/assign-delivery-partner', (req, res) => {
     writeOrderStatusHistory(db, actor, orderId, 'PARTNER_ASSIGNED', 'DELIVERY', `Partner ${deliveryPartnerId} assigned`);
     const newValue = db.prepare('SELECT * FROM delivery_orders WHERE order_id = ?').get(orderId);
     writeAudit(db, actor, 'UPDATE', 'DELIVERY_ORDER', oldValue.id, oldValue, newValue);
+    res.json({ success: true, deliveryOrder: newValue });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/orders/delivery-tracking', (req, res) => {
+  const { restaurantId, actor, orderId, externalOrderId, trackingUrl, partnerStatus, partnerPayload } = req.body;
+  if (!restaurantId || !isPositiveId(orderId) || !canManage(actor?.role)) {
+    return res.status(400).json({ success: false, message: 'Order and manager permission are required' });
+  }
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const oldValue = db.prepare('SELECT * FROM delivery_orders WHERE order_id = ?').get(orderId);
+    if (!oldValue) return res.status(404).json({ success: false, message: 'Delivery order not found' });
+    const safeStatus = normaliseText(partnerStatus || oldValue.partner_status || oldValue.delivery_status).toUpperCase();
+    db.prepare(`
+      UPDATE delivery_orders
+      SET external_order_id = ?, tracking_url = ?, partner_status = ?, partner_payload = ?, last_partner_status_at = CURRENT_TIMESTAMP
+      WHERE order_id = ?
+    `).run(normaliseText(externalOrderId), normaliseText(trackingUrl), safeStatus, JSON.stringify(partnerPayload || {}), orderId);
+    writeOrderStatusHistory(db, actor, orderId, safeStatus, 'DELIVERY_PARTNER', 'Delivery partner tracking updated');
+    const newValue = db.prepare('SELECT * FROM delivery_orders WHERE order_id = ?').get(orderId);
+    writeAudit(db, actor, 'UPDATE', 'DELIVERY_TRACKING', oldValue.id, oldValue, newValue);
     res.json({ success: true, deliveryOrder: newValue });
   } catch (err) {
     sendError(res, err);

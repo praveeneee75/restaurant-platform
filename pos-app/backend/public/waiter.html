@@ -3,13 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Waiter Ordering</title>
+  <meta name="theme-color" content="#0f766e">
+  <title>Captain Ordering</title>
+  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/css/waiter.css">
 </head>
 <body>
   <header class="waiter-top">
     <div>
-      <h1>Waiter POS</h1>
+      <h1>Captain Ordering</h1>
       <p id="waiterStatus">Loading...</p>
     </div>
     <button id="refreshWaiter" type="button">Refresh</button>
@@ -41,5 +43,10 @@
   </main>
 
   <script src="/js/waiter.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    }
+  </script>
 </body>
 </html>

@@ -193,7 +193,7 @@ function renderAdmin() {
   kitchensTable.innerHTML = kitchens.map((k) => `<tr><td>${esc(k.name)}</td><td>${esc(k.printer_name || "")}</td><td>${k.active ? "Active" : "Inactive"}</td><td>${actions("kitchen", k.id)}</td></tr>`).join("");
   categoriesTable.innerHTML = categories.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.kitchen_name || "")}</td><td>${c.active ? "Active" : "Inactive"}</td><td>${actions("category", c.id)}</td></tr>`).join("");
   const term = (itemSearch?.value || "").toLowerCase();
-  itemsTable.innerHTML = items.filter((i) => !term || i.name.toLowerCase().includes(term)).map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.category_name || "")}</td><td>${money(i.price)}</td><td>${i.active ? "Active" : "Inactive"}</td><td>${actions("item", i.id)}</td></tr>`).join("");
+  itemsTable.innerHTML = items.filter((i) => !term || i.name.toLowerCase().includes(term)).map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td><td>${i.active ? "Active" : "Inactive"}${Number(i.online_enabled ?? 1) ? "" : " / Hidden online"}</td><td>${actions("item", i.id)}</td></tr>`).join("");
   usersTable.innerHTML = users.map((u) => `<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${esc(u.role)}</td><td>${u.active ? "Active" : "Disabled"}</td><td><button class="mini-btn" data-edit-user="${u.id}" type="button">Edit</button><button class="danger-btn" data-disable-user="${u.id}" type="button">Disable</button></td></tr>`).join("");
   tablesTable.innerHTML = tables.map((t) => `<tr><td>${esc(t.table_name)}</td><td>${esc(t.status)}</td><td>${actions("table", t.id)}</td></tr>`).join("");
   qrLinksTable.innerHTML = tables.map((t) => {
@@ -395,8 +395,11 @@ function editItem(id) {
   itemName.value = row.name || "";
   itemCategory.value = row.category_id || "";
   itemPrice.value = row.price ?? 0;
+  itemOnlineDescription.value = row.online_description || "";
+  itemImageUrl.value = row.image_url || "";
   itemVeg.checked = Number(row.is_veg ?? 1) === 1;
   itemParcel.checked = Number(row.allow_parcel ?? 1) === 1;
+  itemOnlineEnabled.checked = Number(row.online_enabled ?? 1) === 1;
   itemActive.checked = Number(row.active) !== 0;
   focusFirstInput(itemForm);
 }
@@ -573,6 +576,20 @@ function renderSettings() {
   setChecked(settingRequireOpenRegisterForCashPayment, settings.require_open_register_for_cash_payment);
   setChecked(settingAllowCashierRegisterClose, settings.allow_cashier_register_close);
   settingCashDiscrepancyThreshold.value = settings.cash_discrepancy_threshold || "0";
+  setChecked(settingOnlineOrderEnabled, settings.online_order_enabled);
+  settingOnlineStorefrontSlug.value = settings.online_storefront_slug || "";
+  settingOnlineTheme.value = settings.online_theme || "CLASSIC";
+  settingOnlinePrimaryColor.value = settings.online_primary_color || "#1f7a4d";
+  settingOnlineAccentColor.value = settings.online_accent_color || "#f5b44b";
+  settingOnlineLogoPath.value = settings.online_logo_path || "";
+  const enabledOnlineMethods = new Set(String(settings.online_payment_methods || "UPI,CARD,COD,WALLET,NETBANKING").split(",").map((method) => method.trim().toUpperCase()));
+  document.querySelectorAll(".online-payment-method").forEach((input) => { input.checked = enabledOnlineMethods.has(input.value); });
+  setChecked(settingOnlineRequireOtp, settings.online_require_otp);
+  setChecked(settingOnlineAllowLoyaltyCredit, settings.online_allow_loyalty_credit);
+  setChecked(settingOnlineDeliveryEnabled, settings.online_delivery_enabled);
+  setChecked(settingOnlineTakeawayEnabled, settings.online_takeaway_enabled);
+  settingOnlineMinOrderAmount.value = settings.online_min_order_amount || "0";
+  onlineStorefrontLink.href = `/online-order.html?restaurantId=${encodeURIComponent(restaurantId)}`;
   settingsStatus.textContent = "Settings loaded";
 }
 
@@ -621,7 +638,19 @@ function collectSettings() {
     backup_interval_minutes: settingBackupIntervalMinutes.value,
     require_open_register_for_cash_payment: checkedValue(settingRequireOpenRegisterForCashPayment),
     allow_cashier_register_close: checkedValue(settingAllowCashierRegisterClose),
-    cash_discrepancy_threshold: settingCashDiscrepancyThreshold.value
+    cash_discrepancy_threshold: settingCashDiscrepancyThreshold.value,
+    online_order_enabled: checkedValue(settingOnlineOrderEnabled),
+    online_storefront_slug: settingOnlineStorefrontSlug.value,
+    online_theme: settingOnlineTheme.value,
+    online_primary_color: settingOnlinePrimaryColor.value,
+    online_accent_color: settingOnlineAccentColor.value,
+    online_logo_path: settingOnlineLogoPath.value,
+    online_payment_methods: [...document.querySelectorAll(".online-payment-method:checked")].map((input) => input.value).join(","),
+    online_require_otp: checkedValue(settingOnlineRequireOtp),
+    online_allow_loyalty_credit: checkedValue(settingOnlineAllowLoyaltyCredit),
+    online_delivery_enabled: checkedValue(settingOnlineDeliveryEnabled),
+    online_takeaway_enabled: checkedValue(settingOnlineTakeawayEnabled),
+    online_min_order_amount: settingOnlineMinOrderAmount.value
   };
 }
 
@@ -656,7 +685,7 @@ runDemoReset.addEventListener("click", async () => {
 
 kitchenForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/kitchens/save", { id: kitchenId.value || null, name: kitchenName.value, printerName: kitchenPrinter.value, active: kitchenActive.checked }); kitchenForm.reset(); kitchenActive.checked = true; await loadAdmin(); });
 categoryForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/categories/save", { id: categoryId.value || null, name: categoryName.value, kitchenId: categoryKitchen.value, active: categoryActive.checked }); categoryForm.reset(); categoryActive.checked = true; await loadAdmin(); });
-itemForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, isVeg: itemVeg.checked, allowParcel: itemParcel.checked, active: itemActive.checked }); itemForm.reset(); itemActive.checked = true; await loadAdmin(); });
+itemForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, onlineDescription: itemOnlineDescription.value, imageUrl: itemImageUrl.value, isVeg: itemVeg.checked, allowParcel: itemParcel.checked, onlineEnabled: itemOnlineEnabled.checked, active: itemActive.checked }); itemForm.reset(); itemActive.checked = true; itemOnlineEnabled.checked = true; await loadAdmin(); });
 userForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/users/save", { id: userId.value || null, name: userName.value, username: userUsername.value, pin: userPin.value, role: userRole.value, active: userActive.checked }); userForm.reset(); userActive.checked = true; await loadAdmin(); });
 tableForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/tables/save", { id: tableId.value || null, tableName: tableName.value, status: tableStatus.value }); tableForm.reset(); await loadAdmin(); });
 reservationForm.addEventListener("submit", async (e) => {
@@ -704,6 +733,31 @@ stockForm.addEventListener("submit", async (e) => {
   await loadInventory();
 });
 recipeForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/inventory/recipes/save", { itemId: recipeMenuItem.value, ingredientId: recipeIngredient.value, quantityPerItem: recipeQty.value }); recipeForm.reset(); await loadInventory(); });
+
+uploadMenuInventoryTemplate.addEventListener("click", async () => {
+  const file = menuInventoryImportFile.files?.[0];
+  if (!file) {
+    menuInventoryImportStatus.textContent = "Choose an .xlsm or .xlsx template first";
+    return;
+  }
+  try {
+    menuInventoryImportStatus.textContent = "Validating and importing template...";
+    const res = await fetch(`/imports/menu-inventory/upload?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}`, {
+      method: "POST",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: await file.arrayBuffer()
+    });
+    const data = await res.json();
+    if (!res.ok || data.success === false) throw new Error(data.message || "Import failed");
+    const imported = data.imported || {};
+    menuInventoryImportStatus.textContent = `Imported ${imported.items || 0} menu items and ${imported.ingredients || 0} ingredients`;
+    menuInventoryImportFile.value = "";
+    await Promise.all([loadAdmin(), loadInventory()]);
+  } catch (err) {
+    menuInventoryImportStatus.textContent = err.message;
+    alert(err.message);
+  }
+});
 
 modifierGroupForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/modifiers/groups/save", { id: modifierGroupId.value || null, name: modifierGroupName.value, minSelect: modifierGroupMin.value, maxSelect: modifierGroupMax.value, required: modifierGroupRequired.checked }); modifierGroupForm.reset(); await loadModifiers(); });
 modifierOptionForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/modifiers/options/save", { id: modifierOptionId.value || null, groupId: modifierOptionGroup.value, name: modifierOptionName.value, priceDelta: modifierOptionPrice.value }); modifierOptionForm.reset(); await loadModifiers(); });

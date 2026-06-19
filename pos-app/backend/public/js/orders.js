@@ -38,7 +38,7 @@ function renderPartners() {
     <div class="partner-row">
       <div>
         <strong>${esc(partner.name)}</strong>
-        <small>${esc(partner.phone || "")}</small>
+        <small>${esc(partner.provider_code || "IN_HOUSE")} | ${esc(partner.integration_type || "MANUAL")} | ${partner.integration_enabled ? "Enabled" : "Manual only"}</small>
       </div>
       <div class="toolbar">
         <button type="button" class="secondary-btn" data-edit-partner="${partner.id}">Edit</button>
@@ -72,6 +72,10 @@ function renderOrders() {
       ${order.customer_name || order.customer_phone ? `<p><strong>Customer:</strong> ${esc(order.customer_name || "")} ${esc(order.customer_phone || "")}</p>` : ""}
       ${order.delivery_address ? `<p><strong>Delivery:</strong> ${esc(order.delivery_address)}</p>` : ""}
       ${order.delivery_status ? `<p><strong>Delivery status:</strong> ${esc(order.delivery_status)}</p>` : ""}
+      ${order.delivery_partner_name ? `<p><strong>Partner:</strong> ${esc(order.delivery_partner_name)} ${order.delivery_provider_code ? `(${esc(order.delivery_provider_code)})` : ""}</p>` : ""}
+      ${order.partner_status ? `<p><strong>Partner status:</strong> ${esc(order.partner_status)} <small>${esc(order.last_partner_status_at || "")}</small></p>` : ""}
+      ${order.external_order_id ? `<p><strong>External order:</strong> ${esc(order.external_order_id)}</p>` : ""}
+      ${order.tracking_url ? `<p><a href="${esc(order.tracking_url)}" target="_blank">Open delivery tracking</a></p>` : ""}
       <div class="order-management-row">
         <select data-status-order="${order.id}">
           ${["RECEIVED", "ACCEPTED", "PREPARING", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"].map((status) => `<option value="${status}" ${status === (order.delivery_status || order.status) ? "selected" : ""}>${status}</option>`).join("")}
@@ -84,6 +88,16 @@ function renderOrders() {
         <button type="button" data-assign-partner="${order.id}">Assign Partner</button>
         <button type="button" class="secondary-btn" data-reopen-order="${order.id}">Reopen</button>
       </div>
+      ${order.delivery_status ? `
+        <div class="tracking-row">
+          <input data-external-order="${order.id}" value="${esc(order.external_order_id || "")}" placeholder="Swiggy/Zomato order ID">
+          <input data-tracking-url="${order.id}" value="${esc(order.tracking_url || "")}" placeholder="Tracking URL">
+          <select data-partner-status="${order.id}">
+            ${["PLACED", "ACCEPTED", "RIDER_ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY", "DELIVERED", "FAILED", "CANCELLED"].map((status) => `<option value="${status}" ${status === (order.partner_status || "") ? "selected" : ""}>${status}</option>`).join("")}
+          </select>
+          <button type="button" class="secondary-btn" data-update-tracking="${order.id}">Save Tracking</button>
+        </div>
+      ` : ""}
     </article>
   `).join("") || "<p>No live orders found.</p>";
   ordersStatus.textContent = `${orders.length} live order${orders.length === 1 ? "" : "s"} shown`;
@@ -120,7 +134,13 @@ partnerForm.addEventListener("submit", async (event) => {
   await postJson("/delivery/partners/save", {
     id: partnerId.value || null,
     name: partnerName.value,
-    phone: partnerPhone.value
+    phone: partnerPhone.value,
+    providerCode: partnerProviderCode.value,
+    integrationType: partnerIntegrationType.value,
+    apiBaseUrl: partnerApiBaseUrl.value,
+    merchantId: partnerMerchantId.value,
+    externalStoreId: partnerExternalStoreId.value,
+    integrationEnabled: partnerIntegrationEnabled.checked
   });
   partnerForm.reset();
   await loadOrders();
@@ -137,6 +157,12 @@ document.addEventListener("click", async (event) => {
       partnerId.value = partner.id;
       partnerName.value = partner.name || "";
       partnerPhone.value = partner.phone || "";
+      partnerProviderCode.value = partner.provider_code || "IN_HOUSE";
+      partnerIntegrationType.value = partner.integration_type || "MANUAL";
+      partnerApiBaseUrl.value = partner.api_base_url || "";
+      partnerMerchantId.value = partner.merchant_id || "";
+      partnerExternalStoreId.value = partner.external_store_id || "";
+      partnerIntegrationEnabled.checked = Number(partner.integration_enabled || 0) === 1;
       partnerName.focus();
       return;
     }
@@ -167,6 +193,16 @@ document.addEventListener("click", async (event) => {
     }
     if (button.dataset.reopenOrder) {
       await postJson("/orders/reopen", { orderId: id });
+      await loadOrders();
+      return;
+    }
+    if (button.dataset.updateTracking) {
+      await postJson("/orders/delivery-tracking", {
+        orderId: id,
+        externalOrderId: document.querySelector(`[data-external-order="${id}"]`).value,
+        trackingUrl: document.querySelector(`[data-tracking-url="${id}"]`).value,
+        partnerStatus: document.querySelector(`[data-partner-status="${id}"]`).value
+      });
       await loadOrders();
     }
   } catch (err) {

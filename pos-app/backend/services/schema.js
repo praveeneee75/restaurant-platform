@@ -65,8 +65,20 @@ const DEFAULT_SYSTEM_SETTINGS = {
   last_cloud_sync_at: '',
   last_cloud_sync_status: '',
   last_cloud_sync_message: '',
-  enabled_modules: ''
-  ,
+  enabled_modules: '',
+  online_order_enabled: '0',
+  online_storefront_slug: '',
+  online_theme: 'CLASSIC',
+  online_primary_color: '#1f7a4d',
+  online_accent_color: '#f5b44b',
+  online_logo_path: '',
+  online_payment_methods: 'UPI,CARD,COD,WALLET,NETBANKING',
+  online_require_otp: '1',
+  online_allow_loyalty_credit: '1',
+  online_default_image_mode: 'AI',
+  online_delivery_enabled: '1',
+  online_takeaway_enabled: '1',
+  online_min_order_amount: '0',
   fraud_large_discount_threshold: '500',
   fraud_refund_count_threshold: '5',
   fraud_void_count_threshold: '5',
@@ -150,6 +162,18 @@ function ensureRestaurantSchema(db) {
       FOREIGN KEY (kitchen_id) REFERENCES kitchens(id)
     );
 
+    CREATE TABLE IF NOT EXISTS discounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      value REAL NOT NULL,
+      value_type TEXT NOT NULL,
+      applied_by TEXT,
+      promo_code TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (order_id) REFERENCES orders(id)
+    );
+
     CREATE TABLE IF NOT EXISTS audit_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       action TEXT NOT NULL,
@@ -172,6 +196,7 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'audit_logs', 'user_id INTEGER');
   addColumn(db, 'audit_logs', 'user_role TEXT');
   addColumn(db, 'audit_logs', 'ip_address TEXT');
+  addColumn(db, 'discounts', 'promo_code TEXT');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS compliance_events (
@@ -194,6 +219,9 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'kitchens', 'printer_id INTEGER');
   addColumn(db, 'categories', 'active INTEGER DEFAULT 1');
   addColumn(db, 'items', 'active INTEGER DEFAULT 1');
+  addColumn(db, 'items', 'image_url TEXT');
+  addColumn(db, 'items', 'online_description TEXT');
+  addColumn(db, 'items', 'online_enabled INTEGER DEFAULT 1');
 
   // Phase 6: split payments use the same payments ledger with card/UPI metadata.
   addColumn(db, 'payments', 'reference_no TEXT');
@@ -292,10 +320,65 @@ function ensureRestaurantSchema(db) {
       FOREIGN KEY (order_id) REFERENCES orders(id)
     );
 
+    CREATE TABLE IF NOT EXISTS promo_codes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT UNIQUE NOT NULL,
+      value REAL DEFAULT 0,
+      value_type TEXT DEFAULT 'RUPEES',
+      discount_value REAL DEFAULT 0,
+      discount_type TEXT DEFAULT 'RUPEES',
+      min_order_amount REAL DEFAULT 0,
+      valid_from DATE,
+      valid_to DATE,
+      active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS online_otps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone TEXT NOT NULL,
+      otp_code TEXT NOT NULL,
+      purpose TEXT DEFAULT 'LOGIN',
+      expires_at DATETIME NOT NULL,
+      verified_at DATETIME,
+      attempts INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS online_payment_methods (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      active INTEGER DEFAULT 1,
+      sort_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS online_customer_credits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      credit_type TEXT NOT NULL DEFAULT 'RUPEES',
+      amount REAL DEFAULT 0,
+      percent REAL DEFAULT 0,
+      balance REAL DEFAULT 0,
+      note TEXT,
+      active INTEGER DEFAULT 1,
+      expires_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (customer_id) REFERENCES customers(id)
+    );
+
     CREATE TABLE IF NOT EXISTS delivery_partners (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       phone TEXT,
+      provider_code TEXT,
+      integration_type TEXT DEFAULT 'MANUAL',
+      api_base_url TEXT,
+      merchant_id TEXT,
+      external_store_id TEXT,
+      integration_enabled INTEGER DEFAULT 0,
+      last_sync_at DATETIME,
       active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -309,6 +392,11 @@ function ensureRestaurantSchema(db) {
       delivery_partner_id INTEGER,
       delivery_fee REAL DEFAULT 0,
       delivery_status TEXT DEFAULT 'RECEIVED',
+      external_order_id TEXT,
+      tracking_url TEXT,
+      partner_status TEXT,
+      last_partner_status_at DATETIME,
+      partner_payload TEXT,
       expected_delivery_time DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (order_id) REFERENCES orders(id),
@@ -354,11 +442,40 @@ function ensureRestaurantSchema(db) {
 
   addColumn(db, 'loyalty_points', 'customer_id INTEGER');
   addColumn(db, 'loyalty_points', 'note TEXT');
+  addColumn(db, 'delivery_partners', 'provider_code TEXT');
+  addColumn(db, 'delivery_partners', "integration_type TEXT DEFAULT 'MANUAL'");
+  addColumn(db, 'delivery_partners', 'api_base_url TEXT');
+  addColumn(db, 'delivery_partners', 'merchant_id TEXT');
+  addColumn(db, 'delivery_partners', 'external_store_id TEXT');
+  addColumn(db, 'delivery_partners', 'integration_enabled INTEGER DEFAULT 0');
+  addColumn(db, 'delivery_partners', 'last_sync_at DATETIME');
+  addColumn(db, 'delivery_orders', 'external_order_id TEXT');
+  addColumn(db, 'delivery_orders', 'tracking_url TEXT');
+  addColumn(db, 'delivery_orders', 'partner_status TEXT');
+  addColumn(db, 'delivery_orders', 'last_partner_status_at DATETIME');
+  addColumn(db, 'delivery_orders', 'partner_payload TEXT');
+  addColumn(db, 'promo_codes', 'discount_value REAL DEFAULT 0');
+  addColumn(db, 'promo_codes', "discount_type TEXT DEFAULT 'RUPEES'");
+  addColumn(db, 'promo_codes', 'min_order_amount REAL DEFAULT 0');
+  addColumn(db, 'promo_codes', 'valid_from DATE');
+  addColumn(db, 'promo_codes', 'valid_to DATE');
   const settingsCount = db.prepare("SELECT COUNT(*) AS count FROM settings WHERE key IN ('loyalty_earn_amount', 'loyalty_point_value')").get().count;
   if (settingsCount < 2) {
     db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_earn_amount', '100')").run();
     db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_point_value', '1')").run();
   }
+  const insertOnlinePayment = db.prepare(`
+    INSERT INTO online_payment_methods (code, label, active, sort_order)
+    VALUES (?, ?, 1, ?)
+    ON CONFLICT(code) DO NOTHING
+  `);
+  [
+    ['UPI', 'UPI / QR', 1],
+    ['CARD', 'Credit / Debit Card', 2],
+    ['COD', 'Pay at Counter / Cash on Delivery', 3],
+    ['WALLET', 'Wallet', 4],
+    ['NETBANKING', 'Net Banking', 5]
+  ].forEach((method) => insertOnlinePayment.run(...method));
 
   // Backup settings and logs are local to the POS restaurant database so offline stores can manage backups.
   db.exec(`

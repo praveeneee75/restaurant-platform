@@ -94,8 +94,11 @@
         <label>Item name<input id="itemName" required></label>
         <label>Category<select id="itemCategory" required></select></label>
         <label>Price<input id="itemPrice" type="number" step="0.01" min="0" required></label>
+        <label>Online description<input id="itemOnlineDescription" placeholder="Short customer-facing description"></label>
+        <label>Online image URL<input id="itemImageUrl" placeholder="Leave blank for automatic food image"></label>
         <label class="check-row"><input id="itemVeg" type="checkbox" checked> Veg</label>
         <label class="check-row"><input id="itemParcel" type="checkbox" checked> Parcel</label>
+        <label class="check-row"><input id="itemOnlineEnabled" type="checkbox" checked> Show on online ordering page</label>
         <label class="check-row"><input id="itemActive" type="checkbox" checked> Active</label>
         <button>Save Item</button>
       </form>
@@ -144,6 +147,16 @@
       </div>
 
       <div class="inventory-panel active" id="inventory-suppliers">
+        <div class="editor-panel">
+          <h3>Excel Menu & Inventory Import</h3>
+          <p>Download the .xlsm template, fill menu items and ingredients, then upload it here. Upload validation rejects missing required fields and text in numeric columns.</p>
+          <div class="toolbar">
+            <a class="secondary-btn" href="/imports/menu-inventory/template.xlsm">Download Excel Template</a>
+            <input id="menuInventoryImportFile" type="file" accept=".xlsm,.xlsx">
+            <button id="uploadMenuInventoryTemplate" type="button">Upload Template</button>
+          </div>
+          <p id="menuInventoryImportStatus"></p>
+        </div>
         <form class="editor-panel" id="supplierForm">
           <input type="hidden" id="supplierId">
           <label>Supplier name<input id="supplierName" required></label>
@@ -425,6 +438,36 @@
             <label class="check-row"><input id="settingRequireOpenRegisterForCashPayment" type="checkbox"> Require open register for cash payment</label>
             <label class="check-row"><input id="settingAllowCashierRegisterClose" type="checkbox"> Allow cashier register close without discrepancy</label>
             <label>Cash discrepancy threshold<input id="settingCashDiscrepancyThreshold" type="number" min="0" step="0.01"></label>
+          </article>
+
+          <article>
+            <h3>Online Ordering</h3>
+            <label class="check-row"><input id="settingOnlineOrderEnabled" type="checkbox"> Enable premium online ordering</label>
+            <label>Storefront slug<input id="settingOnlineStorefrontSlug" placeholder="restaurant-name"></label>
+            <label>Theme
+              <select id="settingOnlineTheme">
+                <option value="CLASSIC">Classic</option>
+                <option value="MODERN">Modern</option>
+                <option value="BOLD">Bold</option>
+              </select>
+            </label>
+            <label>Primary color<input id="settingOnlinePrimaryColor" type="color"></label>
+            <label>Accent color<input id="settingOnlineAccentColor" type="color"></label>
+            <label>Online logo path / URL<input id="settingOnlineLogoPath"></label>
+            <fieldset class="checkbox-group">
+              <legend>Customer payment methods</legend>
+              <label class="check-row"><input class="online-payment-method" type="checkbox" value="UPI"> UPI / QR</label>
+              <label class="check-row"><input class="online-payment-method" type="checkbox" value="CARD"> Card</label>
+              <label class="check-row"><input class="online-payment-method" type="checkbox" value="COD"> Cash / Pay at Counter</label>
+              <label class="check-row"><input class="online-payment-method" type="checkbox" value="WALLET"> Wallet</label>
+              <label class="check-row"><input class="online-payment-method" type="checkbox" value="NETBANKING"> Net Banking</label>
+            </fieldset>
+            <label class="check-row"><input id="settingOnlineRequireOtp" type="checkbox"> Require mobile OTP</label>
+            <label class="check-row"><input id="settingOnlineAllowLoyaltyCredit" type="checkbox"> Allow loyalty/credit redemption</label>
+            <label class="check-row"><input id="settingOnlineDeliveryEnabled" type="checkbox"> Enable delivery</label>
+            <label class="check-row"><input id="settingOnlineTakeawayEnabled" type="checkbox"> Enable takeaway</label>
+            <label>Minimum order amount<input id="settingOnlineMinOrderAmount" type="number" min="0" step="0.01"></label>
+            <p><a id="onlineStorefrontLink" href="/online-order.html" target="_blank">Open online ordering page</a></p>
           </article>
         </div>
 

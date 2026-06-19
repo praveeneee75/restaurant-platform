@@ -26,6 +26,23 @@
         <input type="hidden" id="partnerId">
         <input id="partnerName" placeholder="Partner name" required>
         <input id="partnerPhone" placeholder="Phone">
+        <select id="partnerProviderCode">
+          <option value="IN_HOUSE">In-house</option>
+          <option value="SWIGGY">Swiggy</option>
+          <option value="ZOMATO">Zomato</option>
+          <option value="DUNZO">Dunzo</option>
+          <option value="CUSTOM">Custom</option>
+        </select>
+        <select id="partnerIntegrationType">
+          <option value="MANUAL">Manual</option>
+          <option value="API">API</option>
+          <option value="WEBHOOK">Webhook</option>
+          <option value="AGGREGATOR">Aggregator</option>
+        </select>
+        <input id="partnerApiBaseUrl" placeholder="API base URL">
+        <input id="partnerMerchantId" placeholder="Merchant ID">
+        <input id="partnerExternalStoreId" placeholder="Store ID">
+        <label class="check-row"><input id="partnerIntegrationEnabled" type="checkbox"> Integration enabled</label>
         <button>Save Partner</button>
       </form>
       <div id="partnersList"></div>
