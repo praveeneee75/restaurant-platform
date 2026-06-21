@@ -27,10 +27,41 @@
   </section>
 
   <section>
-    <h3>Create Restaurant</h3>
-    <input id="restaurantName" placeholder="Restaurant Name">
-    <input id="expiryDate" type="date">
-    <button onclick="createRestaurant()">Create</button>
+    <h3>Create Customer</h3>
+    <div class="wizard-steps" aria-label="Create customer steps">
+      <button id="createStep1Tab" class="active" type="button" onclick="showCreateStep(1)">1. Restaurant</button>
+      <button id="createStep2Tab" type="button" onclick="showCreateStep(2)">2. Location</button>
+      <button id="createStep3Tab" type="button" onclick="showCreateStep(3)">3. License</button>
+    </div>
+    <div class="wizard-panel active" id="createStep1">
+      <label>Restaurant name<input id="restaurantName" placeholder="Palmsy Arumuganeri"></label>
+      <label>Owner/business contact<input id="restaurantContact" placeholder="Owner or manager name"></label>
+      <div class="wizard-actions">
+        <button type="button" onclick="showCreateStep(2)">Next</button>
+      </div>
+    </div>
+    <div class="wizard-panel" id="createStep2">
+      <label>Country<input id="restaurantCountry" placeholder="India" value="India"></label>
+      <label>Currency<select id="restaurantCurrency"><option value="INR">INR</option><option value="USD">USD</option><option value="AUD">AUD</option></select></label>
+      <label>POS URL for mobile app<input id="restaurantMobilePosUrl" placeholder="http://localhost:3000"></label>
+      <div class="wizard-actions">
+        <button type="button" onclick="showCreateStep(1)">Back</button>
+        <button type="button" onclick="showCreateStep(3)">Next</button>
+      </div>
+    </div>
+    <div class="wizard-panel" id="createStep3">
+      <label>License package<select id="createPlan"></select></label>
+      <label>Start date<input id="createStartDate" type="date"></label>
+      <label>Expiry override<input id="expiryDate" type="date"></label>
+      <label>Payment amount<input id="createPaymentAmount" type="number" min="0" step="0.01" placeholder="0.00"></label>
+      <label>Payment mode<select id="createPaymentMode"><option>CASH</option><option>UPI</option><option>BANK</option><option>CARD</option></select></label>
+      <input id="createPaymentRef" placeholder="Payment reference optional">
+      <div id="createReview" class="wizard-review"></div>
+      <div class="wizard-actions">
+        <button type="button" onclick="showCreateStep(2)">Back</button>
+        <button type="button" onclick="createRestaurant()">Create Customer</button>
+      </div>
+    </div>
     <p id="createMsg"></p>
   </section>
 

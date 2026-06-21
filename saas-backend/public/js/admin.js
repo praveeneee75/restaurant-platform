@@ -218,7 +218,16 @@ async function resetOwnerPassword() {
 async function loadSubscriptions() {
   try {
     const [plans, summary] = await Promise.all([api("/subscriptions/plans"), api("/subscriptions/summary")]);
-    subscriptionPlan.innerHTML = plans.plans.map((plan) => `<option value="${plan.code}">${plan.code} (${plan.duration_days} days)</option>`).join("");
+    const planOptions = plans.plans.map((plan) => {
+      const modules = (plan.included_modules || []).join(", ");
+      return `<option value="${plan.code}" data-days="${plan.duration_days}" data-modules="${modules}">${plan.code} (${plan.duration_days} days)</option>`;
+    }).join("");
+    subscriptionPlan.innerHTML = planOptions;
+    if (window.createPlan) {
+      createPlan.innerHTML = planOptions;
+      if ([...createPlan.options].some((option) => option.value === "PREMIUM")) createPlan.value = "PREMIUM";
+      updateCreateReview();
+    }
     syncPartnerPlanOptions();
     document.querySelector("#subscriptionTable tbody").innerHTML = summary.subscriptions.map((row) => `
       <tr>
@@ -731,20 +740,59 @@ async function updateLicense(code) {
   }
 }
 
+function showCreateStep(step) {
+  [1, 2, 3].forEach((index) => {
+    document.getElementById(`createStep${index}`)?.classList.toggle("active", index === step);
+    document.getElementById(`createStep${index}Tab`)?.classList.toggle("active", index === step);
+  });
+  updateCreateReview();
+}
+
+function updateCreateReview() {
+  if (!window.createReview) return;
+  const plan = createPlan?.selectedOptions?.[0];
+  createReview.innerHTML = `
+    <strong>${restaurantName.value.trim() || "New restaurant"}</strong>
+    <span>${restaurantCountry.value.trim() || "India"} / ${restaurantCurrency.value || "INR"}</span>
+    <span>Package: ${createPlan.value || "Select package"}${plan?.dataset.modules ? ` with ${plan.dataset.modules}` : ""}</span>
+    <span>Expiry: ${expiryDate.value || "Calculated from package duration"}</span>
+  `;
+}
+
 async function createRestaurant() {
   try {
+    if (!restaurantName.value.trim()) {
+      showCreateStep(1);
+      createMsg.innerText = "Restaurant name is required.";
+      return;
+    }
     const data = await api("/tenants/create", {
       method: "POST",
       body: JSON.stringify({
-        name: document.getElementById("restaurantName").value,
-        expiryDate: document.getElementById("expiryDate").value
+        name: restaurantName.value.trim(),
+        country: restaurantCountry.value.trim(),
+        currency: restaurantCurrency.value,
+        mobilePosUrl: restaurantMobilePosUrl.value.trim(),
+        expiryDate: expiryDate.value,
+        planCode: createPlan.value,
+        startsAt: createStartDate.value,
+        paymentAmount: createPaymentAmount.value,
+        paymentMode: createPaymentMode.value,
+        referenceNo: createPaymentRef.value.trim()
       })
     });
-    document.getElementById("createMsg").innerText = `Restaurant Created
+    document.getElementById("createMsg").innerText = `Customer Created
 
 Restaurant ID: ${data.restaurantCode}
 License Key: ${data.licenseKey}`;
+    restaurantName.value = "";
+    restaurantContact.value = "";
+    restaurantMobilePosUrl.value = "";
+    createPaymentAmount.value = "";
+    createPaymentRef.value = "";
+    showCreateStep(1);
     loadTenants();
+    loadSubscriptions();
   } catch (err) {
     document.getElementById("createMsg").innerText = err.message;
   }
@@ -816,6 +864,11 @@ async function activateRelease(id) {
 reportFromDate.value = monthStartIso();
 reportToDate.value = todayIso();
 subscriptionStart.value = todayIso();
+if (window.createStartDate) createStartDate.value = todayIso();
+[window.restaurantName, window.restaurantCountry, window.restaurantCurrency, window.expiryDate, window.createPlan].forEach((element) => {
+  element?.addEventListener("input", updateCreateReview);
+  element?.addEventListener("change", updateCreateReview);
+});
 partnerSelect?.addEventListener("change", () => {
   loadPartnerUsers();
   loadPartnerBranding();

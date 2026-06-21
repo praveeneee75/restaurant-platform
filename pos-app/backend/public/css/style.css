@@ -29,6 +29,22 @@ body {
   font-family: Inter, Segoe UI, Arial, sans-serif;
 }
 
+.active-restaurant {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  margin: 4px 0 0;
+  padding: 4px 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
 button,
 input,
 select,

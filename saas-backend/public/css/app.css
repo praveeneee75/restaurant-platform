@@ -239,6 +239,71 @@ th {
   line-height: 1.35;
 }
 
+.wizard-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.wizard-steps button {
+  margin: 0;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.wizard-steps button.active {
+  background: var(--primary);
+  color: #fff;
+}
+
+.wizard-panel {
+  display: none;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: end;
+}
+
+.wizard-panel.active {
+  display: grid;
+}
+
+.wizard-panel label {
+  display: grid;
+  align-items: stretch;
+  min-height: 0;
+  color: #475569;
+  font-weight: 800;
+}
+
+.wizard-panel input,
+.wizard-panel select {
+  width: 100%;
+  margin-right: 0 !important;
+}
+
+.wizard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.wizard-review {
+  display: grid;
+  gap: 4px;
+  min-height: 80px;
+  padding: 12px;
+  border: 1px solid #dbe4ee;
+  border-radius: var(--radius);
+  background: #f8fafc;
+  color: var(--muted);
+}
+
+.wizard-review strong {
+  color: var(--text);
+}
+
 .auth-page {
   display: flex;
   align-items: center;

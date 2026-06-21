@@ -1093,7 +1093,15 @@ app.post('/login', (req, res) => {
   try {
     const auth = authenticateUserWithPin(db, restaurantId, username, pin, req);
     if (!auth) return res.status(401).json({ success: false, message: 'Invalid credentials' });
-    res.json({ success: true, forcePasswordChange: auth.forcePasswordChange, user: auth.user });
+    res.json({
+      success: true,
+      forcePasswordChange: auth.forcePasswordChange,
+      user: auth.user,
+      restaurant: {
+        id: restaurantId,
+        name: getConfigValue(db, 'restaurant_display_name', restaurantId)
+      }
+    });
   } finally {
     db.close();
   }
@@ -1114,7 +1122,15 @@ app.post('/mobile-app/login', (req, res) => {
     }
     const auth = authenticateUserWithPin(db, restaurantId, username, pin, req);
     if (!auth) return res.status(401).json({ success: false, message: 'Invalid credentials' });
-    res.json({ success: true, forcePasswordChange: auth.forcePasswordChange, user: auth.user });
+    res.json({
+      success: true,
+      forcePasswordChange: auth.forcePasswordChange,
+      user: auth.user,
+      restaurant: {
+        id: restaurantId,
+        name: getConfigValue(db, 'restaurant_display_name', restaurantId)
+      }
+    });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -3092,6 +3108,10 @@ app.get('/admin/bootstrap', (req, res) => {
   try {
     res.json({
       success: true,
+      restaurant: {
+        id: restaurantId,
+        name: getConfigValue(db, 'restaurant_display_name', restaurantId)
+      },
       kitchens: db.prepare("SELECT id, name, printer_name, printer_id, active FROM kitchens WHERE (? = 'true' OR active = 1) ORDER BY name").all(includeInactive),
       categories: db.prepare(`
         SELECT c.id, c.name, c.kitchen_id, c.active, k.name AS kitchen_name
@@ -3751,6 +3771,7 @@ app.get('/mobile-app/config', (req, res) => {
       success: true,
       app: {
         enabled: true,
+        restaurantId,
         name: settings.restaurant_display_name || 'Restaurant POS',
         legalName: settings.legal_name || '',
         logoPath: settings.logo_path || settings.online_logo_path || '',
@@ -4152,6 +4173,10 @@ app.get('/pos/bootstrap', (req, res) => {
   try {
     res.json({
       success: true,
+      restaurant: {
+        id: restaurantId,
+        name: getConfigValue(db, 'restaurant_display_name', restaurantId)
+      },
       tables: db.prepare(`
         SELECT t.*,
                CASE WHEN r.id IS NOT NULL AND t.status = 'AVAILABLE' THEN 'RESERVED' ELSE t.status END AS status,
@@ -4197,6 +4222,8 @@ app.get('/pos/bootstrap', (req, res) => {
       deliveryPartners: db.prepare('SELECT id, name, phone FROM delivery_partners WHERE active = 1 ORDER BY name').all(),
       enabledModules: enabledModules(db),
       settings: {
+        restaurantId,
+        restaurantName: getConfigValue(db, 'restaurant_display_name', restaurantId),
         currency: getConfigValue(db, 'currency', 'INR'),
         defaultOrderType: getConfigValue(db, 'default_order_type', 'DINE_IN'),
         allowDiscount: getBooleanConfig(db, 'allow_discount', true),

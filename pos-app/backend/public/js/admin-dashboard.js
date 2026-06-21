@@ -44,6 +44,11 @@ function fillSelect(element, rows, label = "name") {
 
 async function loadAdmin() {
   state.admin = await fetchJson(`/admin/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`);
+  if (window.activeRestaurantName) {
+    const restaurantName = state.admin.restaurant?.name || restaurantId;
+    activeRestaurantName.textContent = `${restaurantName} active`;
+    document.title = `${restaurantName} Admin`;
+  }
   renderAdmin();
   applyModuleGuards();
 }

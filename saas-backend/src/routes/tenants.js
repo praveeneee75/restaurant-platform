@@ -6,13 +6,27 @@ const { publicError } = require('../config');
 
 const router = express.Router();
 
+async function enablePlanModules(client, tenantId, planId) {
+  await client.query(`
+    INSERT INTO tenant_modules (tenant_id, module_id, enabled, activated_at, deactivated_at)
+    SELECT $1, module_id, true, NOW(), NULL
+    FROM subscription_plan_modules
+    WHERE plan_id = $2 AND included = true
+    ON CONFLICT(tenant_id, module_id) DO UPDATE SET
+      enabled = true,
+      activated_at = NOW(),
+      deactivated_at = NULL
+  `, [tenantId, planId]);
+}
+
 router.post('/create', authenticate, async (req, res) => {
-  const { name, country, currency, expiryDate, mobilePosUrl } = req.body;
+  const { name, country, currency, expiryDate, mobilePosUrl, planCode, startsAt, paymentAmount, paymentMode, referenceNo } = req.body;
 
   if (!name) {
     return res.status(400).json({ success: false, message: 'Restaurant name required' });
   }
 
+  const client = await pool.connect();
   try {
     const restaurantCode = `RESTO${Math.floor(10000 + Math.random() * 90000)}`;
     const tenantId = uuidv4();
@@ -20,30 +34,53 @@ router.post('/create', authenticate, async (req, res) => {
     const syncToken = uuidv4();
     const expiresAt = expiryDate || null;
 
-    await pool.query('BEGIN');
-    await pool.query(
+    await client.query('BEGIN');
+    await client.query(
       `INSERT INTO tenants (id, restaurant_code, name, country, currency, mobile_pos_url)
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [tenantId, restaurantCode, name, country || null, currency || null, mobilePosUrl || null]
     );
-    await pool.query(
+    await client.query(
       `INSERT INTO licenses (tenant_id, license_key, sync_token, expires_at, status)
        VALUES ($1, $2, $3, COALESCE($4::timestamptz, NOW() + INTERVAL '1 year'), 'ACTIVE')`,
       [tenantId, licenseKey, syncToken, expiresAt]
     );
-    await pool.query('COMMIT');
+    let subscription = null;
+    if (planCode) {
+      const plan = await client.query('SELECT * FROM subscription_plans WHERE code = $1 AND active = true', [planCode]);
+      if (plan.rowCount === 0) throw new Error('Selected license package not found');
+      const startDate = startsAt || new Date().toISOString().slice(0, 10);
+      const sub = await client.query(`
+        INSERT INTO subscriptions (tenant_id, plan_id, status, starts_at, expires_at)
+        VALUES ($1, $2, 'ACTIVE', $3::date, $3::date + ($4::int * INTERVAL '1 day'))
+        RETURNING *
+      `, [tenantId, plan.rows[0].id, startDate, plan.rows[0].duration_days]);
+      subscription = sub.rows[0];
+      await client.query('UPDATE licenses SET status = $1, expires_at = $2 WHERE tenant_id = $3', ['ACTIVE', subscription.expires_at, tenantId]);
+      await enablePlanModules(client, tenantId, plan.rows[0].id);
+      if (Number(paymentAmount || 0) > 0) {
+        await client.query(`
+          INSERT INTO subscription_payments (subscription_id, tenant_id, amount, payment_mode, reference_no)
+          VALUES ($1, $2, $3, $4, $5)
+        `, [subscription.id, tenantId, paymentAmount, paymentMode || null, referenceNo || null]);
+      }
+    }
+    await client.query('COMMIT');
 
     res.json({
       success: true,
       restaurantCode,
       restaurantId: restaurantCode,
       licenseKey,
-      syncToken
+      syncToken,
+      subscription
     });
   } catch (err) {
-    await pool.query('ROLLBACK').catch(() => {});
+    await client.query('ROLLBACK').catch(() => {});
     console.error('TENANT CREATE ERROR:', err.message);
     res.status(500).json({ success: false, message: publicError(err) });
+  } finally {
+    client.release();
   }
 });
 

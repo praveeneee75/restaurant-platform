@@ -22,7 +22,9 @@ const state = {
 
 function setBrand(app) {
   if (!app) return;
-  brandName.textContent = app.name || "Restaurant Mobile";
+  const selectedName = state.restaurant?.name || app.name || localStorage.getItem("restaurantName") || "Restaurant";
+  brandName.textContent = app.name || selectedName || "Restaurant Mobile";
+  activeRestaurantName.textContent = selectedName ? `${selectedName} active` : "No restaurant selected";
   brandStatus.textContent = app.enabled ? "Premium mobile app enabled" : "Mobile app access disabled";
   document.documentElement.style.setProperty("--primary", app.primaryColor || "#2563eb");
   document.documentElement.style.setProperty("--accent", app.accentColor || "#f59e0b");
@@ -76,6 +78,7 @@ async function loadRestaurants() {
     if (previous && state.restaurants.some((restaurant) => restaurant.restaurantId === previous)) {
       restaurantSelect.value = previous;
       state.restaurant = selectedRestaurant();
+      activeRestaurantName.textContent = `${state.restaurant.name} active`;
       await checkPremiumAccess(state.restaurant);
     }
     loginStatus.textContent = state.restaurants.length ? "Login with your POS username and PIN." : "No restaurant has active mobile access.";
@@ -120,10 +123,13 @@ async function login() {
       })
     });
     state.user = data.user;
+    if (data.restaurant?.name) state.restaurant.name = data.restaurant.name;
     localStorage.setItem("restaurantId", state.restaurant.restaurantId);
+    localStorage.setItem("restaurantName", state.restaurant.name);
     localStorage.setItem("posUrl", base);
     localStorage.setItem("user", JSON.stringify(data.user));
-    loginStatus.textContent = `Logged in as ${data.user.role}`;
+    activeRestaurantName.textContent = `${state.restaurant.name} active`;
+    loginStatus.textContent = `Logged in to ${state.restaurant.name} as ${data.user.role}`;
     showRoleGrid(data.user.role);
   } catch (err) {
     loginStatus.textContent = err.message;
@@ -134,6 +140,8 @@ restaurantSelect.addEventListener("change", async () => {
   state.restaurant = selectedRestaurant();
   if (!state.restaurant) return;
   localStorage.setItem("restaurantId", state.restaurant.restaurantId);
+  localStorage.setItem("restaurantName", state.restaurant.name);
+  activeRestaurantName.textContent = `${state.restaurant.name} active`;
   try {
     await checkPremiumAccess(state.restaurant);
     loginStatus.textContent = "Login with your POS username and PIN.";

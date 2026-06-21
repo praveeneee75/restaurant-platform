@@ -95,6 +95,11 @@ function applyBootstrap(data) {
   if (!state.categories.some((category) => category.id === state.selectedCategoryId)) {
     state.selectedCategoryId = state.categories[0]?.id || null;
   }
+  if (window.activeRestaurantName) {
+    const restaurantName = state.settings.restaurantName || restaurantId;
+    activeRestaurantName.textContent = `${restaurantName} active`;
+    document.title = `${restaurantName} POS`;
+  }
   deliveryPartner.innerHTML = `<option value="">Delivery partner</option>` + state.deliveryPartners.map((partner) => `<option value="${partner.id}">${esc(partner.name)}</option>`).join("");
   if (selectedPartnerId) deliveryPartner.value = selectedPartnerId;
   if (!state.orderId && data.settings?.defaultOrderType && orderType.value === "DINE_IN") {
