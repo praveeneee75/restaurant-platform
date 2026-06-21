@@ -79,6 +79,8 @@ const DEFAULT_ROLE_PERMISSIONS = {
   KITCHEN: ['kitchen.kds.view', 'kitchen.status.update']
 };
 
+const seededPermissionDbs = new WeakSet();
+
 function ensurePermissionTables(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS roles (
@@ -111,6 +113,7 @@ function ensurePermissionTables(db) {
 }
 
 function seedDefaultPermissions(db) {
+  if (seededPermissionDbs.has(db)) return;
   ensurePermissionTables(db);
   const insertRole = db.prepare('INSERT OR IGNORE INTO roles (name, description) VALUES (?, ?)');
   DEFAULT_ROLES.forEach(([name, description]) => insertRole.run(name, description));
@@ -130,6 +133,7 @@ function seedDefaultPermissions(db) {
       upsert.run(roles[role], permissionId, codes.includes(code) ? 1 : 0);
     });
   });
+  seededPermissionDbs.add(db);
 }
 
 function hasPermission(db, role, permissionCode) {

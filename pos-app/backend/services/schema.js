@@ -546,6 +546,11 @@ function ensureRestaurantSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_cloud_sync_queue_status ON cloud_sync_queue(status, created_at);
     CREATE INDEX IF NOT EXISTS idx_cloud_sync_queue_entity ON cloud_sync_queue(entity_type, entity_id);
     CREATE INDEX IF NOT EXISTS idx_saas_online_order_imports_local ON saas_online_order_imports(local_order_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_filters ON audit_logs(action, entity_type, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_compliance_events_type_date ON compliance_events(event_type, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_compliance_events_severity_date ON compliance_events(severity, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_device_sessions_active_seen ON device_sessions(active, last_seen_at DESC);
 
     CREATE TABLE IF NOT EXISTS reservations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

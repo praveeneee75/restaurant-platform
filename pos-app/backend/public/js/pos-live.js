@@ -100,6 +100,11 @@ function applyBootstrap(data) {
     activeRestaurantName.textContent = `${restaurantName} active`;
     document.title = `${restaurantName} POS`;
   }
+  if (state.settings.restaurantId && state.settings.restaurantId !== restaurantId) {
+    localStorage.setItem("restaurantId", state.settings.restaurantId);
+    window.location.replace(`/pos-live.html?restaurantId=${encodeURIComponent(state.settings.restaurantId)}`);
+    return;
+  }
   deliveryPartner.innerHTML = `<option value="">Delivery partner</option>` + state.deliveryPartners.map((partner) => `<option value="${partner.id}">${esc(partner.name)}</option>`).join("");
   if (selectedPartnerId) deliveryPartner.value = selectedPartnerId;
   if (!state.orderId && data.settings?.defaultOrderType && orderType.value === "DINE_IN") {

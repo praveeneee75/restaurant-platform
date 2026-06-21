@@ -8,6 +8,8 @@ const bcrypt = require('bcrypt');
 const axios = require('axios');
 const os = require('os');
 const zlib = require('zlib');
+const fs = require('fs');
+const path = require('path');
 
 const { setupDatabase } = require('./services/dbSetup');
 const { openDatabase } = require('./db/database');
@@ -28,6 +30,8 @@ const {
 
 
 const app = express();
+const restaurantDbCache = new Map();
+const missingRestaurantWarnings = new Set();
 app.use(bodyParser.json());
 app.use((req, res, next) => {
   const startedAt = Date.now();
@@ -82,8 +86,30 @@ function isValidPin(pin) {
 }
 
 function openRestaurantDatabase(restaurantId) {
-  const db = openDatabase(restaurantId);
-  runMigrations(db, restaurantId);
+  const requestedRestaurantId = String(restaurantId || '').trim();
+  const dataDir = path.join(__dirname, '../data');
+  const requestedPath = path.join(dataDir, `restaurant_${requestedRestaurantId}.db`);
+  let activeRestaurantId = requestedRestaurantId;
+  if (requestedRestaurantId && !fs.existsSync(requestedPath)) {
+    const singleRestaurantId = getSingleRestaurantId();
+    if (singleRestaurantId) {
+      activeRestaurantId = singleRestaurantId;
+      const warningKey = `${requestedRestaurantId}->${singleRestaurantId}`;
+      if (!missingRestaurantWarnings.has(warningKey)) {
+        missingRestaurantWarnings.add(warningKey);
+        console.warn(`Requested restaurant DB ${requestedRestaurantId} not found. Using ${singleRestaurantId}.`);
+      }
+    }
+  }
+  if (restaurantDbCache.has(activeRestaurantId)) {
+    return restaurantDbCache.get(activeRestaurantId);
+  }
+  const db = openDatabase(activeRestaurantId);
+  db.__restaurantId = activeRestaurantId;
+  runMigrations(db, activeRestaurantId);
+  db.__realClose = db.close.bind(db);
+  db.close = () => {};
+  restaurantDbCache.set(activeRestaurantId, db);
   return db;
 }
 
@@ -1098,8 +1124,8 @@ app.post('/login', (req, res) => {
       forcePasswordChange: auth.forcePasswordChange,
       user: auth.user,
       restaurant: {
-        id: restaurantId,
-        name: getConfigValue(db, 'restaurant_display_name', restaurantId)
+        id: db.__restaurantId || restaurantId,
+        name: getConfigValue(db, 'restaurant_display_name', db.__restaurantId || restaurantId)
       }
     });
   } finally {
@@ -1127,8 +1153,8 @@ app.post('/mobile-app/login', (req, res) => {
       forcePasswordChange: auth.forcePasswordChange,
       user: auth.user,
       restaurant: {
-        id: restaurantId,
-        name: getConfigValue(db, 'restaurant_display_name', restaurantId)
+        id: db.__restaurantId || restaurantId,
+        name: getConfigValue(db, 'restaurant_display_name', db.__restaurantId || restaurantId)
       }
     });
   } catch (err) {
@@ -2855,7 +2881,6 @@ if (activeRestaurant) {
   }
 }
 
-const path = require('path');
 app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0,
   etag: true
@@ -3109,8 +3134,8 @@ app.get('/admin/bootstrap', (req, res) => {
     res.json({
       success: true,
       restaurant: {
-        id: restaurantId,
-        name: getConfigValue(db, 'restaurant_display_name', restaurantId)
+        id: db.__restaurantId || restaurantId,
+        name: getConfigValue(db, 'restaurant_display_name', db.__restaurantId || restaurantId)
       },
       kitchens: db.prepare("SELECT id, name, printer_name, printer_id, active FROM kitchens WHERE (? = 'true' OR active = 1) ORDER BY name").all(includeInactive),
       categories: db.prepare(`
@@ -3771,7 +3796,7 @@ app.get('/mobile-app/config', (req, res) => {
       success: true,
       app: {
         enabled: true,
-        restaurantId,
+        restaurantId: db.__restaurantId || restaurantId,
         name: settings.restaurant_display_name || 'Restaurant POS',
         legalName: settings.legal_name || '',
         logoPath: settings.logo_path || settings.online_logo_path || '',
@@ -4174,8 +4199,8 @@ app.get('/pos/bootstrap', (req, res) => {
     res.json({
       success: true,
       restaurant: {
-        id: restaurantId,
-        name: getConfigValue(db, 'restaurant_display_name', restaurantId)
+        id: db.__restaurantId || restaurantId,
+        name: getConfigValue(db, 'restaurant_display_name', db.__restaurantId || restaurantId)
       },
       tables: db.prepare(`
         SELECT t.*,
@@ -4222,8 +4247,8 @@ app.get('/pos/bootstrap', (req, res) => {
       deliveryPartners: db.prepare('SELECT id, name, phone FROM delivery_partners WHERE active = 1 ORDER BY name').all(),
       enabledModules: enabledModules(db),
       settings: {
-        restaurantId,
-        restaurantName: getConfigValue(db, 'restaurant_display_name', restaurantId),
+        restaurantId: db.__restaurantId || restaurantId,
+        restaurantName: getConfigValue(db, 'restaurant_display_name', db.__restaurantId || restaurantId),
         currency: getConfigValue(db, 'currency', 'INR'),
         defaultOrderType: getConfigValue(db, 'default_order_type', 'DINE_IN'),
         allowDiscount: getBooleanConfig(db, 'allow_discount', true),

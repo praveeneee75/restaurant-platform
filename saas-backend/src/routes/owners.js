@@ -78,6 +78,7 @@ router.get('/dashboard', authenticateOwner, async (req, res) => {
       LEFT JOIN LATERAL (
         SELECT * FROM subscriptions WHERE tenant_id = t.id ORDER BY created_at DESC LIMIT 1
       ) s ON true
+      LEFT JOIN subscription_plans p ON p.id = s.plan_id
       LEFT JOIN pos_heartbeats hb ON hb.restaurant_code = t.restaurant_code
       WHERE ro.owner_user_id = $1 AND ro.active = true
       ORDER BY t.name

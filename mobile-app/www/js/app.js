@@ -55,6 +55,10 @@ async function checkPremiumAccess(restaurant) {
   if (!restaurant?.restaurantId) throw new Error("Select a restaurant.");
   const base = restaurantPosUrl(restaurant);
   const data = await fetchJson(`${base}/mobile-app/config?restaurantId=${encodeURIComponent(restaurant.restaurantId)}`);
+  if (data.app?.restaurantId && data.app.restaurantId !== restaurant.restaurantId) {
+    restaurant.restaurantId = data.app.restaurantId;
+    localStorage.setItem("restaurantId", restaurant.restaurantId);
+  }
   setBrand(data.app);
   return data;
 }

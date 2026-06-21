@@ -49,6 +49,11 @@ async function loadAdmin() {
     activeRestaurantName.textContent = `${restaurantName} active`;
     document.title = `${restaurantName} Admin`;
   }
+  if (state.admin.restaurant?.id && state.admin.restaurant.id !== restaurantId) {
+    localStorage.setItem("restaurantId", state.admin.restaurant.id);
+    window.location.replace(`/admin.html?restaurantId=${encodeURIComponent(state.admin.restaurant.id)}`);
+    return;
+  }
   renderAdmin();
   applyModuleGuards();
 }
