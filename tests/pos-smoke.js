@@ -9,7 +9,7 @@ const { openDatabase } = require(path.join(posRoot, 'backend/db/database'));
 require(path.join(posRoot, 'backend/server'));
 
 const port = Number(process.env.PORT);
-const restaurantId = process.env.POS_SMOKE_RESTAURANT_ID || 'RESTO87631';
+const restaurantId = process.env.POS_SMOKE_RESTAURANT_ID || 'RESTOPALMSY';
 const actor = { role: 'OWNER', name: 'Smoke Test' };
 
 function request(method, targetPath, body) {

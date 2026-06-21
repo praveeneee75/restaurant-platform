@@ -1,6 +1,6 @@
 const params = new URLSearchParams(window.location.search);
-const restaurantId = params.get("restaurantId") || localStorage.getItem("restaurantId") || "RESTO87631";
-localStorage.setItem("restaurantId", restaurantId);
+let restaurantId = params.get("restaurantId") || localStorage.getItem("restaurantId") || "";
+if (restaurantId) localStorage.setItem("restaurantId", restaurantId);
 
 const user = JSON.parse(localStorage.getItem("user") || '{"role":"OWNER","name":"Owner"}');
 const actor = { id: user.id || null, name: user.name || user.username || user.role || "Owner", role: user.role || "OWNER" };
@@ -14,6 +14,15 @@ async function fetchJson(url) {
   const data = await res.json();
   if (!res.ok || data.success === false) throw new Error(data.message || "Request failed");
   return data;
+}
+
+async function ensureRestaurantId() {
+  if (restaurantId) return restaurantId;
+  const data = await fetchJson("/system/info");
+  restaurantId = data.activeRestaurantId || "";
+  if (!restaurantId) throw new Error("POS is not activated.");
+  localStorage.setItem("restaurantId", restaurantId);
+  return restaurantId;
 }
 
 async function postJson(url, body = {}) {
@@ -116,6 +125,7 @@ function renderReport() {
 
 async function loadOrders() {
   ordersStatus.textContent = "Loading orders...";
+  await ensureRestaurantId();
   const [ordersData, partnersData, reportData] = await Promise.all([
     fetchJson(`/orders/live?restaurantId=${encodeURIComponent(restaurantId)}`),
     fetchJson(`/delivery/partners?restaurantId=${encodeURIComponent(restaurantId)}&includeInactive=false`),

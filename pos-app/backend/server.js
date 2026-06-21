@@ -31,7 +31,6 @@ const {
 
 const app = express();
 const restaurantDbCache = new Map();
-const missingRestaurantWarnings = new Set();
 app.use(bodyParser.json());
 app.use((req, res, next) => {
   const startedAt = Date.now();
@@ -94,11 +93,6 @@ function openRestaurantDatabase(restaurantId) {
     const singleRestaurantId = getSingleRestaurantId();
     if (singleRestaurantId) {
       activeRestaurantId = singleRestaurantId;
-      const warningKey = `${requestedRestaurantId}->${singleRestaurantId}`;
-      if (!missingRestaurantWarnings.has(warningKey)) {
-        missingRestaurantWarnings.add(warningKey);
-        console.warn(`Requested restaurant DB ${requestedRestaurantId} not found. Using ${singleRestaurantId}.`);
-      }
     }
   }
   if (restaurantDbCache.has(activeRestaurantId)) {
