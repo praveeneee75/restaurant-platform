@@ -6,10 +6,14 @@ process.env.POS_HEARTBEAT_DISABLED = '1';
 
 const posRoot = path.join(__dirname, '..', 'pos-app');
 const { openDatabase } = require(path.join(posRoot, 'backend/db/database'));
+const { getSingleRestaurantId } = require(path.join(posRoot, 'backend/utils/restaurantScanner'));
 require(path.join(posRoot, 'backend/server'));
 
 const port = Number(process.env.PORT);
-const restaurantId = process.env.POS_SMOKE_RESTAURANT_ID || 'RESTOPALMSY';
+const restaurantId = process.env.POS_SMOKE_RESTAURANT_ID || getSingleRestaurantId();
+if (!restaurantId) {
+  throw new Error('No active local restaurant DB found for POS smoke test');
+}
 const actor = { role: 'OWNER', name: 'Smoke Test' };
 
 function request(method, targetPath, body) {

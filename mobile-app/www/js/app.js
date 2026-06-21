@@ -69,7 +69,7 @@ async function loadRestaurants() {
     const data = await fetchJson(`${MOBILE_DIRECTORY_URL}/mobile/restaurants`);
     state.restaurants = (data.restaurants || []).map((restaurant) => ({
       restaurantId: restaurant.restaurantId || restaurant.restaurant_id || restaurant.restaurant_code,
-      name: restaurant.name || "Restaurant",
+      name: restaurant.name || restaurant.restaurantName || restaurant.restaurant_name || restaurant.displayName || restaurant.display_name || "Restaurant",
       posUrl: restaurant.posUrl || restaurant.pos_url || "",
       currency: restaurant.currency || "INR"
     })).filter((restaurant) => restaurant.restaurantId);
@@ -82,6 +82,13 @@ async function loadRestaurants() {
     if (previous && state.restaurants.some((restaurant) => restaurant.restaurantId === previous)) {
       restaurantSelect.value = previous;
       state.restaurant = selectedRestaurant();
+      activeRestaurantName.textContent = `${state.restaurant.name} active`;
+      await checkPremiumAccess(state.restaurant);
+    } else if (state.restaurants.length === 1) {
+      state.restaurant = state.restaurants[0];
+      restaurantSelect.value = state.restaurant.restaurantId;
+      localStorage.setItem("restaurantId", state.restaurant.restaurantId);
+      localStorage.setItem("restaurantName", state.restaurant.name);
       activeRestaurantName.textContent = `${state.restaurant.name} active`;
       await checkPremiumAccess(state.restaurant);
     }

@@ -1,7 +1,7 @@
-﻿require('dotenv').config()
+require('dotenv').config()
 
-console.log('ðŸ”¥ðŸ”¥ðŸ”¥ SERVER.JS VERSION: 2026-01-25 A ðŸ”¥ðŸ”¥ðŸ”¥');
-console.log('ðŸ”¥ðŸ”¥ðŸ”¥ ACTIVE DATABASE.JS â€“ VERSION A ðŸ”¥ðŸ”¥ðŸ”¥');
+console.log('🔥🔥🔥 SERVER.JS VERSION: 2026-01-25 A 🔥🔥🔥');
+console.log('🔥🔥🔥 ACTIVE DATABASE.JS – VERSION A 🔥🔥🔥');
 const express = require('express');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
@@ -89,11 +89,17 @@ function openRestaurantDatabase(restaurantId) {
   const dataDir = path.join(__dirname, '../data');
   const requestedPath = path.join(dataDir, `restaurant_${requestedRestaurantId}.db`);
   let activeRestaurantId = requestedRestaurantId;
-  if (requestedRestaurantId && !fs.existsSync(requestedPath)) {
+  const requestedDbValid = requestedRestaurantId
+    && fs.existsSync(requestedPath)
+    && fs.statSync(requestedPath).size > 50000;
+  if (!requestedDbValid) {
     const singleRestaurantId = getSingleRestaurantId();
     if (singleRestaurantId) {
       activeRestaurantId = singleRestaurantId;
     }
+  }
+  if (!activeRestaurantId) {
+    throw new Error('restaurantId is required');
   }
   if (restaurantDbCache.has(activeRestaurantId)) {
     return restaurantDbCache.get(activeRestaurantId);
@@ -1018,7 +1024,7 @@ app.post('/activate', async (req, res) => {
       });
     }
 
-    // If valid â†’ create local DB
+    // If valid → create local DB
 setupDatabase(restaurantId);
 const db = openRestaurantDatabase(restaurantId);
 
@@ -1185,7 +1191,7 @@ app.post('/users/create', (req, res) => {
     });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     db.prepare(`
@@ -1256,7 +1262,7 @@ app.post('/kitchens/create', (req, res) => {
     });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     db.prepare(`
@@ -1292,7 +1298,7 @@ app.get('/kitchens/list', (req, res) => {
     });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
 
@@ -1328,7 +1334,7 @@ app.post('/items/delete',(req,res)=>{
 
 const { restaurantId,itemId } = req.body
 
-const db=openDatabase(restaurantId)
+const db=openRestaurantDatabase(restaurantId)
 
 db.prepare(`
 UPDATE items
@@ -1347,7 +1353,7 @@ app.post('/items/update',(req,res)=>{
 
 const { restaurantId,itemId,name,price } = req.body
 
-const db=openDatabase(restaurantId)
+const db=openRestaurantDatabase(restaurantId)
 
 db.prepare(`
 UPDATE items
@@ -1383,7 +1389,7 @@ app.post('/categories/create', (req, res) => {
     });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     db.prepare(`
@@ -1435,7 +1441,7 @@ app.post('/items/create', (req, res) => {
     });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     db.prepare(`
@@ -1504,7 +1510,7 @@ app.post('/orders/create', (req, res) => {
 
   try {
     db.transaction(() => {
-      // 1ï¸âƒ£ Create order
+      // 1️⃣ Create order
       const orderResult = db.prepare(`
         INSERT INTO orders (order_type, table_no, status, paid_amount, payment_status, created_by)
         VALUES (?, ?, ?, ?, ?, ?)
@@ -1520,7 +1526,7 @@ app.post('/orders/create', (req, res) => {
       const orderId = orderResult.lastInsertRowid;
       let totalAmount = 0;
 
-      // 2ï¸âƒ£ Process items
+      // 2️⃣ Process items
       for (const line of items) {
         const item = db.prepare(`
           SELECT i.id, i.price, c.kitchen_id
@@ -1582,10 +1588,10 @@ app.get('/orders/:orderId/kots', (req, res) => {
     });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
-    // 1ï¸âƒ£ Fetch order
+    // 1️⃣ Fetch order
     const order = db.prepare(`
       SELECT id, order_type, table_no, created_at
       FROM orders
@@ -1599,7 +1605,7 @@ app.get('/orders/:orderId/kots', (req, res) => {
       });
     }
 
-    // 2ï¸âƒ£ Fetch items grouped by kitchen
+    // 2️⃣ Fetch items grouped by kitchen
     const rows = db.prepare(`
       SELECT
         oi.kitchen_id,
@@ -1613,7 +1619,7 @@ app.get('/orders/:orderId/kots', (req, res) => {
       ORDER BY k.id
     `).all(orderId);
 
-    // 3ï¸âƒ£ Group into KOTs
+    // 3️⃣ Group into KOTs
     const kots = {};
 
     for (const row of rows) {
@@ -1967,7 +1973,7 @@ app.get('/reports/sales', (req, res) => {
   }
 
   const visibilityClause = getInvoiceVisibilityClause(role);
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     const rows = db.prepare(`
@@ -2016,7 +2022,7 @@ app.get('/reports/sales/daily', (req, res) => {
   }
 
   const visibilityClause = getInvoiceVisibilityClause(role);
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     const row = db.prepare(`
@@ -2062,7 +2068,7 @@ app.get('/reports/sales/weekly-legacy', (req, res) => {
   }
 
   const visibilityClause = getInvoiceVisibilityClause(role);
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     const rows = db.prepare(`
@@ -2111,7 +2117,7 @@ app.get('/reports/sales/weekly', (req, res) => {
   }
 
   const visibilityClause = getInvoiceVisibilityClause(role);
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     const rows = db.prepare(`
@@ -2165,7 +2171,7 @@ app.get('/reports/revenue/tax', (req, res) => {
   }
 
   const taxVisibilityClause = getTaxVisibilityClause(role);
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     const row = db.prepare(`
@@ -2227,7 +2233,7 @@ app.post('/expenses/add', (req, res) => {
     });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     db.prepare(`
@@ -2274,7 +2280,7 @@ app.get('/reports/expenses', (req, res) => {
     });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     const rows = db.prepare(`
@@ -2327,7 +2333,7 @@ app.get('/reports/profit', (req, res) => {
   }
 
   const taxVisibilityClause = getTaxVisibilityClause(role);
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     const incomeRow = db.prepare(`
@@ -2395,7 +2401,7 @@ app.post('/orders/change-table', (req, res) => {
     });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     const order = db.prepare(`
@@ -2455,7 +2461,7 @@ app.post('/orders/merge', (req, res) => {
     });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     db.transaction(() => {
@@ -2523,7 +2529,7 @@ app.get('/print-jobs/pending', (req, res) => {
     });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     const jobs = db.prepare(`
@@ -2569,7 +2575,7 @@ app.post('/print-jobs/update', (req, res) => {
     });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     db.prepare(`
@@ -2626,7 +2632,7 @@ app.post('/print-jobs/reprint', (req, res) => {
     });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     db.prepare(`
@@ -2667,7 +2673,7 @@ app.post('/members/add', (req, res) => {
     return res.status(400).json({ success: false, message: 'Missing fields' });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     db.prepare(`
@@ -2725,7 +2731,7 @@ app.post('/orders/redeem-points', (req, res) => {
       VALUES (?, ?, ?, 'REDEEM')
     `).run(memberId, orderId, points);
 
-    // Apply as discount (â‚¹ per point)
+    // Apply as discount (₹ per point)
     db.prepare(`
       INSERT INTO discounts (order_id, type, value, value_type, applied_by)
       VALUES (?, 'MEMBERSHIP', ?, 'FLAT', ?)
@@ -2748,7 +2754,7 @@ app.post('/orders/redeem-points', (req, res) => {
 
 
 async function checkLicenseDaily(restaurantId) {
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   db.exec(`
   CREATE TABLE IF NOT EXISTS license_status (
@@ -2894,7 +2900,7 @@ app.get('/categories/list', (req, res) => {
     });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     const categories = db.prepare(`
@@ -2933,7 +2939,7 @@ app.get('/items/list', (req, res) => {
     });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     const items = categoryId
@@ -2980,12 +2986,12 @@ app.post('/orders/create-basic', (req, res) => {
     });
   }
 
-  const db = openDatabase(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
 
   try {
     db.exec('BEGIN TRANSACTION');
 
-    // 1ï¸âƒ£ Create order
+    // 1️⃣ Create order
     const orderResult = db.prepare(`
       INSERT INTO orders (order_type, table_no, status, created_by)
       VALUES ('DINE_IN', ?, 'OPEN', ?)
@@ -2996,7 +3002,7 @@ app.post('/orders/create-basic', (req, res) => {
 
     const orderId = orderResult.lastInsertRowid;
 
-    // 2ï¸âƒ£ Insert items
+    // 2️⃣ Insert items
     items.forEach(item => {
       const menuItem = db.prepare(`
         SELECT i.id, i.price, c.kitchen_id
@@ -3015,7 +3021,7 @@ app.post('/orders/create-basic', (req, res) => {
       `).run(orderId, menuItem.id, item.qty || item.quantity || 1, menuItem.kitchen_id, menuItem.price);
     });
 
-    // 3ï¸âƒ£ Group items by kitchen
+    // 3️⃣ Group items by kitchen
     const kitchenItems = db.prepare(`
       SELECT 
         oi.item_id,
@@ -3046,7 +3052,7 @@ app.post('/orders/create-basic', (req, res) => {
       });
     });
 
-    // 4ï¸âƒ£ Create KOT print jobs
+    // 4️⃣ Create KOT print jobs
     Object.keys(grouped).forEach(kitchenId => {
       const data = grouped[kitchenId];
 
@@ -3100,7 +3106,7 @@ if (!restaurantId || !username || !isValidPin(newPin)) {
   })
 }
 
-const db = openDatabase(restaurantId)
+const db = openRestaurantDatabase(restaurantId)
 
 db.prepare(`
 UPDATE users
@@ -8595,6 +8601,6 @@ app.get('/health', (req, res) => {
 // ========================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`ðŸš€ POS backend running at http://localhost:${PORT}`);
+  console.log(`🚀 POS backend running at http://localhost:${PORT}`);
 });
 
