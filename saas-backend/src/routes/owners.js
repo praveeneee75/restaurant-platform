@@ -61,7 +61,11 @@ router.get('/dashboard', authenticateOwner, async (req, res) => {
   try {
     const restaurants = await pool.query(`
       SELECT t.id, t.name, t.restaurant_code,
+             l.license_key,
              l.status AS license_status,
+             l.expires_at AS license_expires_at,
+             p.code AS package_code,
+             p.name AS package_name,
              s.status AS subscription_status,
              s.expires_at AS subscription_expires_at,
              GREATEST((s.expires_at::date - CURRENT_DATE), 0) AS days_remaining,
@@ -78,7 +82,26 @@ router.get('/dashboard', authenticateOwner, async (req, res) => {
       WHERE ro.owner_user_id = $1 AND ro.active = true
       ORDER BY t.name
     `, [req.owner.id]);
-    res.json({ success: true, restaurants: restaurants.rows });
+    const organizations = await pool.query(`
+      SELECT o.id, o.name,
+             COUNT(DISTINCT t.id) AS branch_count,
+             COALESCE(SUM(today.net_sales), 0) AS today_net_sales,
+             COALESCE(SUM(today.orders_count), 0) AS today_orders,
+             COALESCE(SUM(monthly.net_sales), 0) AS month_net_sales,
+             COALESCE(SUM(monthly.orders_count), 0) AS month_orders,
+             COALESCE(SUM(CASE WHEN hb.last_heartbeat_at > NOW() - INTERVAL '10 minutes' THEN 1 ELSE 0 END), 0) AS online_branches
+      FROM restaurant_owners ro
+      JOIN organization_restaurants org_rest ON org_rest.tenant_id = ro.tenant_id AND org_rest.active = true
+      JOIN organizations o ON o.id = org_rest.organization_id
+      JOIN tenants t ON t.id = org_rest.tenant_id
+      LEFT JOIN tenant_daily_reports today ON today.tenant_id = t.id AND today.report_date = CURRENT_DATE
+      LEFT JOIN tenant_daily_reports monthly ON monthly.tenant_id = t.id AND monthly.report_date >= DATE_TRUNC('month', CURRENT_DATE)
+      LEFT JOIN pos_heartbeats hb ON hb.restaurant_code = t.restaurant_code
+      WHERE ro.owner_user_id = $1 AND ro.active = true
+      GROUP BY o.id
+      ORDER BY o.name
+    `, [req.owner.id]);
+    res.json({ success: true, restaurants: restaurants.rows, organizations: organizations.rows });
   } catch (err) {
     console.error('OWNER DASHBOARD ERROR:', err.message);
     res.status(500).json({ success: false, message: publicError(err) });

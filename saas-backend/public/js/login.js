@@ -43,7 +43,7 @@ async function login() {
     // Save JWT token
     localStorage.setItem("adminToken", data.token);
 
-    // Redirect to SaaS admin dashboard
+    // Redirect to K'Master POS admin dashboard
     window.location.href = "/admin.html";
 
   } catch (err) {

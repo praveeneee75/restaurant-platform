@@ -7,7 +7,7 @@ const { publicError } = require('../config');
 const router = express.Router();
 
 router.post('/create', authenticate, async (req, res) => {
-  const { name, country, currency, expiryDate } = req.body;
+  const { name, country, currency, expiryDate, mobilePosUrl } = req.body;
 
   if (!name) {
     return res.status(400).json({ success: false, message: 'Restaurant name required' });
@@ -22,9 +22,9 @@ router.post('/create', authenticate, async (req, res) => {
 
     await pool.query('BEGIN');
     await pool.query(
-      `INSERT INTO tenants (id, restaurant_code, name, country, currency)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [tenantId, restaurantCode, name, country || null, currency || null]
+      `INSERT INTO tenants (id, restaurant_code, name, country, currency, mobile_pos_url)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [tenantId, restaurantCode, name, country || null, currency || null, mobilePosUrl || null]
     );
     await pool.query(
       `INSERT INTO licenses (tenant_id, license_key, sync_token, expires_at, status)
@@ -53,6 +53,7 @@ router.get('/list', authenticate, async (req, res) => {
       SELECT
         t.name,
         t.restaurant_code,
+        t.mobile_pos_url,
         l.license_key,
         l.expires_at,
         l.status,
@@ -104,6 +105,30 @@ router.post('/update-license', authenticate, async (req, res) => {
     res.json({ success: true, message: 'License updated' });
   } catch (err) {
     console.error('LICENSE UPDATE ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.post('/update-mobile-url', authenticate, async (req, res) => {
+  const { restaurantCode, mobilePosUrl } = req.body;
+
+  if (!restaurantCode) {
+    return res.status(400).json({ success: false, message: 'restaurantCode required' });
+  }
+
+  try {
+    const result = await pool.query(
+      'UPDATE tenants SET mobile_pos_url = $1 WHERE restaurant_code = $2',
+      [mobilePosUrl || null, restaurantCode]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ success: false, message: 'Restaurant not found' });
+    }
+
+    res.json({ success: true, message: 'Mobile POS URL updated' });
+  } catch (err) {
+    console.error('TENANT MOBILE URL UPDATE ERROR:', err.message);
     res.status(500).json({ success: false, message: publicError(err) });
   }
 });

@@ -30,10 +30,16 @@ body {
 button {
   border: 0;
   border-radius: 10px;
+  max-width: 100%;
+  min-width: 0;
   padding: 11px 13px;
   background: var(--primary);
   color: white;
   font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-align: center;
+  white-space: normal;
 }
 .waiter-top button { background: white; color: var(--primary); }
 .waiter-layout {
@@ -89,6 +95,7 @@ button {
   display: flex;
   gap: 6px;
   align-items: center;
+  flex-wrap: wrap;
 }
 .qty-controls button { min-width: 38px; padding: 8px; }
 .actions {

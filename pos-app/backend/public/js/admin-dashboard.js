@@ -576,6 +576,7 @@ function renderSettings() {
   setChecked(settingRequireOpenRegisterForCashPayment, settings.require_open_register_for_cash_payment);
   setChecked(settingAllowCashierRegisterClose, settings.allow_cashier_register_close);
   settingCashDiscrepancyThreshold.value = settings.cash_discrepancy_threshold || "0";
+  setChecked(settingMobileAppEnabled, settings.mobile_app_enabled);
   setChecked(settingOnlineOrderEnabled, settings.online_order_enabled);
   settingOnlineStorefrontSlug.value = settings.online_storefront_slug || "";
   settingOnlineTheme.value = settings.online_theme || "CLASSIC";
@@ -639,6 +640,7 @@ function collectSettings() {
     require_open_register_for_cash_payment: checkedValue(settingRequireOpenRegisterForCashPayment),
     allow_cashier_register_close: checkedValue(settingAllowCashierRegisterClose),
     cash_discrepancy_threshold: settingCashDiscrepancyThreshold.value,
+    mobile_app_enabled: checkedValue(settingMobileAppEnabled),
     online_order_enabled: checkedValue(settingOnlineOrderEnabled),
     online_storefront_slug: settingOnlineStorefrontSlug.value,
     online_theme: settingOnlineTheme.value,

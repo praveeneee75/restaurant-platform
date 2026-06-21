@@ -56,14 +56,20 @@ button,
   align-items: center;
   justify-content: center;
   gap: 8px;
+  max-width: 100%;
   min-height: 40px;
+  min-width: 0;
   padding: 10px 14px;
   border: 0;
   border-radius: 8px;
   background: var(--primary);
   color: white;
   font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-align: center;
   text-decoration: none;
+  white-space: normal;
   cursor: pointer;
 }
 
@@ -164,7 +170,8 @@ button:hover,
 
 .nav-btn,
 .nav-link {
-  display: block;
+  display: inline-flex;
+  align-items: center;
   width: 100%;
   margin: 0;
   padding: 9px 10px;
@@ -174,6 +181,9 @@ button:hover,
   color: white;
   text-align: left;
   text-decoration: none;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .nav-btn.active,
@@ -339,11 +349,13 @@ button:hover,
 .item-tile,
 .category-strip button {
   position: relative;
+  min-width: 0;
   padding: 14px;
   border: 1px solid #dfe3e8;
   background: white;
   color: #172033;
   text-align: left;
+  overflow-wrap: anywhere;
 }
 
 .table-tile.active,
@@ -392,7 +404,7 @@ button:hover,
 
 .category-strip {
   grid-auto-flow: column;
-  grid-auto-columns: minmax(120px, max-content);
+  grid-auto-columns: minmax(120px, 180px);
   overflow-x: auto;
 }
 
@@ -466,8 +478,29 @@ button:hover,
 
 .cart-actions {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+
+.cart-actions button,
+.kds-actions button,
+.online-login-grid button,
+.online-registration button,
+.online-promo button,
+.online-primary,
+.online-item button,
+.online-categories button,
+.qty-controls button {
+  min-width: 0;
+  max-width: 100%;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-align: center;
+  white-space: normal;
+}
+
+.qty-controls {
+  flex-wrap: wrap;
 }
 
 .modal-backdrop {
@@ -832,6 +865,9 @@ button:hover,
   color: white;
   background: var(--online-primary, #1f7a4d);
   font-weight: 800;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .online-registration {
@@ -1165,7 +1201,8 @@ button:hover,
 
   .category-strip button {
     flex: 0 0 auto;
-    min-width: 120px;
+    width: min(150px, 70vw);
+    min-width: 0;
   }
 
   .item-grid {

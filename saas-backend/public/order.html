@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>K'Master POS Online Ordering</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/css/app.css?v=kmaster-ui">
+</head>
+<body>
+  <h2>K'Master POS Online Ordering</h2>
+  <section>
+    <h3>Select Branch</h3>
+    <select id="storefrontSelect"></select>
+    <button id="loadMenuBtn">Load Menu</button>
+    <p id="orderStatus">Choose a branch to start.</p>
+  </section>
+  <section>
+    <h3>Menu</h3>
+    <div id="menuItems" class="cards"></div>
+  </section>
+  <section>
+    <h3>Cart</h3>
+    <table>
+      <thead><tr><th>Item</th><th>Qty</th><th>Total</th></tr></thead>
+      <tbody id="cartRows"></tbody>
+    </table>
+    <div class="cards">
+      <div class="card">Total<strong id="cartTotal">0.00</strong></div>
+    </div>
+    <select id="orderType"><option value="TAKEAWAY">Takeaway</option><option value="DELIVERY">Delivery</option></select>
+    <input id="customerName" placeholder="Customer name">
+    <input id="customerPhone" placeholder="Mobile number">
+    <textarea id="deliveryAddress" placeholder="Delivery address"></textarea>
+    <select id="paymentMode"><option value="COD">Pay at restaurant / COD</option><option value="UPI">UPI</option><option value="CARD">Card</option></select>
+    <button id="placeOrderBtn">Place Order</button>
+  </section>
+  <script src="/js/order.js"></script>
+</body>
+</html>

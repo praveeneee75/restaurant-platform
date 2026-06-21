@@ -10,3 +10,4 @@ print-agent/logs/
 .npm-cache/
 mobile-app/android/
 mobile-app/ios/
+tmp-ui-shots/

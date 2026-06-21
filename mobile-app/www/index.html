@@ -13,21 +13,22 @@
       <div>
         <p class="eyebrow">White-label restaurant app</p>
         <h1 id="brandName">Restaurant Mobile</h1>
-        <p id="brandStatus">Configure server URLs to begin.</p>
+        <p id="brandStatus">Select your restaurant and sign in.</p>
       </div>
     </section>
 
-    <section class="config-panel">
-      <label>Restaurant ID
-        <input id="restaurantId" placeholder="RESTO87631">
+    <section class="login-panel">
+      <label>Restaurant
+        <select id="restaurantSelect"></select>
       </label>
-      <label>POS server URL
-        <input id="posUrl" placeholder="http://192.168.1.10:3000">
+      <label>Username
+        <input id="username" autocomplete="username" placeholder="admin">
       </label>
-      <label>SaaS server URL
-        <input id="saasUrl" placeholder="https://your-saas-domain.com">
+      <label>PIN
+        <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="4 digit PIN">
       </label>
-      <button id="saveConfig" type="button">Save & Check Premium Access</button>
+      <button id="loginButton" type="button">Login</button>
+      <p id="loginStatus" class="status-line">Loading restaurants...</p>
     </section>
 
     <section class="role-grid">

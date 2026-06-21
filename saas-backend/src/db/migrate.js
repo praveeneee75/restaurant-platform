@@ -18,6 +18,7 @@ async function migrate() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS mobile_pos_url TEXT');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS licenses (
@@ -333,6 +334,17 @@ async function migrate() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS subscription_plan_modules (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      plan_id UUID NOT NULL REFERENCES subscription_plans(id) ON DELETE CASCADE,
+      module_id UUID NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+      included BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(plan_id, module_id)
+    )
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS module_usage_logs (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
       tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
@@ -407,6 +419,78 @@ async function migrate() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS online_storefronts (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL,
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      slug TEXT UNIQUE NOT NULL,
+      display_name TEXT NOT NULL,
+      description TEXT,
+      active BOOLEAN NOT NULL DEFAULT true,
+      delivery_enabled BOOLEAN NOT NULL DEFAULT true,
+      takeaway_enabled BOOLEAN NOT NULL DEFAULT true,
+      min_order_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      delivery_fee NUMERIC(12,2) NOT NULL DEFAULT 0,
+      service_area TEXT,
+      opening_time TEXT,
+      closing_time TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS online_menu_snapshots (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      source TEXT NOT NULL DEFAULT 'POS',
+      payload JSONB NOT NULL,
+      synced_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS online_orders (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL,
+      storefront_id UUID REFERENCES online_storefronts(id) ON DELETE SET NULL,
+      order_no TEXT UNIQUE NOT NULL,
+      order_type TEXT NOT NULL,
+      customer_name TEXT NOT NULL,
+      customer_phone TEXT NOT NULL,
+      customer_email TEXT,
+      delivery_address TEXT,
+      payment_mode TEXT NOT NULL DEFAULT 'COD',
+      payment_status TEXT NOT NULL DEFAULT 'UNPAID',
+      order_status TEXT NOT NULL DEFAULT 'PLACED',
+      subtotal NUMERIC(12,2) NOT NULL DEFAULT 0,
+      discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      delivery_fee NUMERIC(12,2) NOT NULL DEFAULT 0,
+      tax_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      total_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      notes TEXT,
+      pos_pulled_at TIMESTAMPTZ,
+      pos_order_id TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS online_order_items (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      online_order_id UUID NOT NULL REFERENCES online_orders(id) ON DELETE CASCADE,
+      item_id TEXT,
+      item_name TEXT NOT NULL,
+      quantity NUMERIC(12,3) NOT NULL DEFAULT 1,
+      unit_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+      line_total NUMERIC(12,2) NOT NULL DEFAULT 0,
+      notes TEXT
+    )
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS support_notes (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
       tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
@@ -421,10 +505,17 @@ async function migrate() {
     INSERT INTO subscription_plans (code, name, duration_days, price)
     VALUES
       ('TRIAL', 'Trial', 14, 0),
+      ('BASIC', 'Basic POS', 365, 0),
+      ('STANDARD', 'Standard POS', 365, 0),
+      ('PREMIUM', 'Premium POS', 365, 0),
+      ('ENTERPRISE', 'Enterprise POS', 365, 0),
       ('MONTHLY', 'Monthly', 30, 0),
       ('QUARTERLY', 'Quarterly', 90, 0),
       ('YEARLY', 'Yearly', 365, 0)
-    ON CONFLICT(code) DO NOTHING
+    ON CONFLICT(code) DO UPDATE SET
+      name = EXCLUDED.name,
+      duration_days = EXCLUDED.duration_days,
+      active = true
   `);
 
   await pool.query(`
@@ -438,6 +529,7 @@ async function migrate() {
       ('CLOUD_REPORTING', 'Cloud Reporting', 'Owner remote summary reporting sync', 'REPORTING', 'ACTIVE'),
       ('MULTI_BRANCH', 'Multi Branch', 'Franchise and multi-location management placeholder', 'ENTERPRISE', 'ACTIVE'),
       ('WHITE_LABEL', 'White Label', 'Partner branding and reseller management', 'ENTERPRISE', 'ACTIVE'),
+      ('ONLINE_ORDERING', 'Online Ordering', 'Customer web ordering for takeaway, delivery and prepaid/cash orders', 'SALES', 'ACTIVE'),
       ('MOBILE_APP', 'White-label Mobile App', 'Cross-platform owner, captain and waiter mobile app packaging', 'PREMIUM', 'ACTIVE')
     ON CONFLICT(code) DO NOTHING
   `);
@@ -446,6 +538,40 @@ async function migrate() {
     INSERT INTO module_pricing (module_id, billing_cycle, price, currency)
     SELECT id, 'MONTHLY', 0, 'INR' FROM modules
     ON CONFLICT(module_id, billing_cycle, currency) DO NOTHING
+  `);
+
+  await pool.query(`
+    WITH plan_modules(plan_code, module_code) AS (
+      VALUES
+        ('BASIC', 'KDS'),
+        ('STANDARD', 'KDS'),
+        ('STANDARD', 'INVENTORY'),
+        ('STANDARD', 'LOYALTY'),
+        ('PREMIUM', 'KDS'),
+        ('PREMIUM', 'INVENTORY'),
+        ('PREMIUM', 'LOYALTY'),
+        ('PREMIUM', 'QR_ORDERING'),
+        ('PREMIUM', 'RESERVATIONS'),
+        ('PREMIUM', 'CLOUD_REPORTING'),
+        ('PREMIUM', 'ONLINE_ORDERING'),
+        ('PREMIUM', 'MOBILE_APP'),
+        ('ENTERPRISE', 'KDS'),
+        ('ENTERPRISE', 'INVENTORY'),
+        ('ENTERPRISE', 'LOYALTY'),
+        ('ENTERPRISE', 'QR_ORDERING'),
+        ('ENTERPRISE', 'RESERVATIONS'),
+        ('ENTERPRISE', 'CLOUD_REPORTING'),
+        ('ENTERPRISE', 'ONLINE_ORDERING'),
+        ('ENTERPRISE', 'MOBILE_APP'),
+        ('ENTERPRISE', 'MULTI_BRANCH'),
+        ('ENTERPRISE', 'WHITE_LABEL')
+    )
+    INSERT INTO subscription_plan_modules (plan_id, module_id, included)
+    SELECT p.id, m.id, true
+    FROM plan_modules pm
+    JOIN subscription_plans p ON p.code = pm.plan_code
+    JOIN modules m ON m.code = pm.module_code
+    ON CONFLICT(plan_id, module_id) DO UPDATE SET included = true
   `);
 
   await pool.query(`
@@ -484,6 +610,11 @@ async function migrate() {
   await pool.query('CREATE INDEX IF NOT EXISTS idx_organization_restaurants_org ON organization_restaurants(organization_id, active)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_organization_restaurants_tenant ON organization_restaurants(tenant_id)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_branch_groups_org ON branch_groups(organization_id, active)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_subscription_plan_modules_plan ON subscription_plan_modules(plan_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_online_storefronts_tenant ON online_storefronts(tenant_id, active)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_online_menu_snapshots_tenant ON online_menu_snapshots(tenant_id, synced_at DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_online_orders_tenant_status ON online_orders(tenant_id, order_status, created_at DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_online_orders_org_created ON online_orders(organization_id, created_at DESC)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_support_notes_restaurant ON support_notes(restaurant_code, created_at DESC)');
 
   if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {

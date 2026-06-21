@@ -8,12 +8,58 @@ router.use(authenticate);
 
 router.get('/plans', async (_req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM subscription_plans WHERE active = true ORDER BY duration_days');
+    const result = await pool.query(`
+      SELECT p.*,
+             COALESCE(
+               JSON_AGG(m.code ORDER BY m.code) FILTER (WHERE m.code IS NOT NULL),
+               '[]'
+             ) AS included_modules
+      FROM subscription_plans p
+      LEFT JOIN subscription_plan_modules spm ON spm.plan_id = p.id AND spm.included = true
+      LEFT JOIN modules m ON m.id = spm.module_id AND m.status = 'ACTIVE'
+      WHERE p.active = true
+      GROUP BY p.id
+      ORDER BY
+        CASE p.code
+          WHEN 'TRIAL' THEN 0
+          WHEN 'BASIC' THEN 1
+          WHEN 'STANDARD' THEN 2
+          WHEN 'PREMIUM' THEN 3
+          WHEN 'ENTERPRISE' THEN 4
+          ELSE 10
+        END,
+        p.duration_days
+    `);
     res.json({ success: true, plans: result.rows });
   } catch (err) {
     res.status(500).json({ success: false, message: publicError(err) });
   }
 });
+
+async function applyPlanModules(client, tenantId, planId) {
+  await client.query(`
+    INSERT INTO tenant_modules (tenant_id, module_id, enabled, activated_at, deactivated_at)
+    SELECT $1, module_id, true, NOW(), NULL
+    FROM subscription_plan_modules
+    WHERE plan_id = $2 AND included = true
+    ON CONFLICT(tenant_id, module_id) DO UPDATE SET
+      enabled = true,
+      activated_at = NOW(),
+      deactivated_at = NULL
+  `, [tenantId, planId]);
+
+  await client.query(`
+    UPDATE tenant_modules
+    SET enabled = false, deactivated_at = NOW()
+    WHERE tenant_id = $1
+      AND module_id NOT IN (
+        SELECT module_id
+        FROM subscription_plan_modules
+        WHERE plan_id = $2 AND included = true
+      )
+      AND module_id IN (SELECT id FROM modules WHERE code != 'WHITE_LABEL')
+  `, [tenantId, planId]);
+}
 
 router.post('/assign', async (req, res) => {
   const { restaurantCode, planCode, startsAt, paymentAmount, paymentMode, referenceNo } = req.body || {};
@@ -31,6 +77,7 @@ router.post('/assign', async (req, res) => {
       RETURNING *
     `, [tenant.rows[0].id, plan.rows[0].id, startDate, plan.rows[0].duration_days]);
     await client.query('UPDATE licenses SET status = $1, expires_at = $2 WHERE tenant_id = $3', ['ACTIVE', sub.rows[0].expires_at, tenant.rows[0].id]);
+    await applyPlanModules(client, tenant.rows[0].id, plan.rows[0].id);
     if (Number(paymentAmount || 0) > 0) {
       await client.query(`
         INSERT INTO subscription_payments (subscription_id, tenant_id, amount, payment_mode, reference_no)

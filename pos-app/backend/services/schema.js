@@ -65,7 +65,13 @@ const DEFAULT_SYSTEM_SETTINGS = {
   last_cloud_sync_at: '',
   last_cloud_sync_status: '',
   last_cloud_sync_message: '',
+  mobile_app_enabled: '0',
   enabled_modules: '',
+  license_package_code: '',
+  license_package_name: '',
+  update_latest_version: '',
+  update_minimum_version: '',
+  update_mandatory: '0',
   online_order_enabled: '0',
   online_storefront_slug: '',
   online_theme: 'CLASSIC',
@@ -525,8 +531,21 @@ function ensureRestaurantSchema(db) {
       message TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS saas_online_order_imports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      saas_order_id TEXT NOT NULL UNIQUE,
+      saas_order_no TEXT,
+      local_order_id INTEGER,
+      status TEXT NOT NULL DEFAULT 'IMPORTED',
+      payload TEXT,
+      imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME,
+      FOREIGN KEY (local_order_id) REFERENCES orders(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_cloud_sync_queue_status ON cloud_sync_queue(status, created_at);
     CREATE INDEX IF NOT EXISTS idx_cloud_sync_queue_entity ON cloud_sync_queue(entity_type, entity_id);
+    CREATE INDEX IF NOT EXISTS idx_saas_online_order_imports_local ON saas_online_order_imports(local_order_id);
 
     CREATE TABLE IF NOT EXISTS reservations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

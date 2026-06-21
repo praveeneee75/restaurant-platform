@@ -1,21 +1,32 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>SaaS Admin Login</title>
-  <link rel="stylesheet" href="/css/app.css">
+  <title>K'Master POS Admin Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/css/app.css?v=kmaster-ui">
 </head>
-<body>
-
-<h2 id="loginTitle">SaaS Admin Login</h2>
-<p id="brandSupport"></p>
-
-<input id="email" placeholder="Email">
-<input id="password" type="password" placeholder="Password">
-<button onclick="login()">Login</button>
-
-<p id="msg"></p>
-
-<script src="/js/login.js"></script>
-
+<body class="auth-page">
+  <main class="auth-shell">
+    <section class="auth-panel">
+      <div class="auth-brand">
+        <span class="brand-mark">K</span>
+        <div>
+          <p class="eyebrow">K'Master POS</p>
+          <h1 id="loginTitle">Admin Login</h1>
+        </div>
+      </div>
+      <p id="brandSupport" class="auth-support"></p>
+      <div class="auth-fields">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="username" placeholder="admin@example.com">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" placeholder="Password">
+        <button class="primary-action" onclick="login()">Login</button>
+      </div>
+      <p id="msg" class="form-message"></p>
+    </section>
+  </main>
+  <script src="/js/login.js"></script>
 </body>
 </html>
+

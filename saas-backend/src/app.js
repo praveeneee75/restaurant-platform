@@ -27,7 +27,7 @@ app.use((req, res, next) => {
   res.on('finish', () => {
     const durationMs = Date.now() - startedAt;
     if (durationMs > Number(process.env.SAAS_SLOW_REQUEST_MS || 1000)) {
-      console.warn(`Slow SaaS request ${req.method} ${req.originalUrl} ${durationMs}ms`);
+      console.warn(`Slow K'Master POS request ${req.method} ${req.originalUrl} ${durationMs}ms`);
     }
   });
   next();
@@ -45,7 +45,7 @@ app.use(express.json());
 app.get('/health', async (req, res) => {
   const health = {
     success: true,
-    app: 'SaaS Backend',
+    app: "K'Master POS",
     environment: config.nodeEnv,
     database: { status: 'UNKNOWN' },
     timestamp: new Date().toISOString()
@@ -85,13 +85,14 @@ app.get('/test-db', async (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('SaaS backend running');
+  res.send("K'Master POS backend running");
 });
 
 app.use('/auth', authRoutes);
 app.use('/tenants', tenantRoutes);
 app.use('/license', require('./routes/license'));
 app.use('/updates', require('./routes/updates'));
+app.use('/online-ordering', require('./routes/onlineOrdering'));
 app.use('/sync', require('./routes/sync'));
 app.use('/owner/reports', require('./routes/ownerReports'));
 app.use('/owners', require('./routes/owners'));
@@ -99,11 +100,12 @@ app.use('/subscriptions', require('./routes/subscriptions'));
 app.use('/monitoring', require('./routes/monitoring'));
 app.use('/partners', require('./routes/partners'));
 app.use('/modules', require('./routes/modules'));
+app.use('/mobile', require('./routes/mobile'));
 app.use('/tenants', require('./routes/tenantModules'));
 app.use('/organizations', require('./routes/organizations'));
 
 app.listen(config.port, () => {
-  console.log(`SaaS backend running on port ${config.port}`);
+  console.log(`K'Master POS backend running on port ${config.port}`);
   pool.query('SELECT 1')
     .then(() => {
       healthCache.checkedAt = Date.now();

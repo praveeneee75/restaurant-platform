@@ -704,6 +704,7 @@ const SETTINGS_BOOLEAN_KEYS = new Set([
   'require_clock_in_before_order',
   'require_open_register_for_cash_payment',
   'allow_cashier_register_close',
+  'mobile_app_enabled',
   'online_order_enabled',
   'online_require_otp',
   'online_allow_loyalty_credit',
@@ -1014,6 +1015,14 @@ db.prepare(`
 if (response.data.syncToken) {
   setConfigValues(db, { cloud_sync_token: response.data.syncToken });
 }
+setConfigValues(db, {
+  restaurant_display_name: response.data.restaurantName || getConfigValue(db, 'restaurant_display_name', 'Restaurant POS'),
+  license_package_code: response.data.packageCode || '',
+  license_package_name: response.data.packageName || '',
+  update_latest_version: response.data.updatePolicy?.latestVersion || '',
+  update_minimum_version: response.data.updatePolicy?.minimumVersion || '',
+  update_mandatory: response.data.updatePolicy?.mandatory ? '1' : '0'
+});
 cacheEnabledModules(db, response.data.enabledModules);
 
 db.close();
@@ -1038,20 +1047,7 @@ db.close();
 // ========================
 // LOGIN
 // ========================
-app.post('/login', (req, res) => {
-
-  const { restaurantId, username, pin } = req.body;
-
-  if (!restaurantId || !username || !pin) {
-    return res.status(400).json({
-      success: false,
-      message: 'Missing login details'
-    });
-  }
-
-  const db = openRestaurantDatabase(restaurantId);
-
-  // ðŸ”¹ FIRST get the user
+function authenticateUserWithPin(db, restaurantId, username, pin, req) {
   const user = db.prepare(`
     SELECT id, name, username, pin, pin_hash, role
     FROM users
@@ -1071,36 +1067,59 @@ app.post('/login', (req, res) => {
     `).run(bcrypt.hashSync(pin, 10), user.id);
   }
 
-  // ðŸ”¹ If no user
   if (!pinMatches) {
     writeAudit(db, { role: 'UNKNOWN' }, 'FAILED_LOGIN', 'USER', null, null, { username }, { restaurantId, ipAddress: requestIp(req) });
     writeCompliance(db, 'FAILED_LOGIN', 'MEDIUM', `Failed login for ${username}`, 'USER', null);
-    db.close();
-    return res.status(401).json({
+    return null;
+  }
+
+  return {
+    forcePasswordChange: user.username === 'admin' && pin === '1234',
+    user: { id: user.id, name: user.name, username: user.username, role: user.role }
+  };
+}
+
+app.post('/login', (req, res) => {
+  const { restaurantId, username, pin } = req.body;
+
+  if (!restaurantId || !username || !pin) {
+    return res.status(400).json({
       success: false,
-      message: 'Invalid credentials'
+      message: 'Missing login details'
     });
   }
 
-  // ðŸ”¹ Force password change for default admin
-  const publicUser = { id: user.id, name: user.name, username: user.username, role: user.role };
-
-  if (user.username === "admin" && pin === "1234") {
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const auth = authenticateUserWithPin(db, restaurantId, username, pin, req);
+    if (!auth) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    res.json({ success: true, forcePasswordChange: auth.forcePasswordChange, user: auth.user });
+  } finally {
     db.close();
-    return res.json({
-      success: true,
-      forcePasswordChange: true,
-      user: publicUser
-    });
+  }
+});
+
+app.post('/mobile-app/login', (req, res) => {
+  const { restaurantId, username, pin } = req.body;
+
+  if (!restaurantId || !username || !pin) {
+    return res.status(400).json({ success: false, message: 'Missing login details' });
   }
 
-  // ðŸ”¹ Normal login
-  res.json({
-    success: true,
-    user: publicUser
-  });
-  db.close();
-
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requireModule(db, 'MOBILE_APP');
+    if (!getBooleanConfig(db, 'mobile_app_enabled', false)) {
+      return res.status(403).json({ success: false, message: 'Mobile app is disabled in POS admin' });
+    }
+    const auth = authenticateUserWithPin(db, restaurantId, username, pin, req);
+    if (!auth) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    res.json({ success: true, forcePasswordChange: auth.forcePasswordChange, user: auth.user });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
 });
 
 // ========================
@@ -3724,10 +3743,14 @@ app.get('/mobile-app/config', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     requireModule(db, 'MOBILE_APP');
+    if (!getBooleanConfig(db, 'mobile_app_enabled', false)) {
+      return res.status(403).json({ success: false, message: 'Mobile app is disabled in POS admin' });
+    }
     const settings = getAllSettings(db);
     res.json({
       success: true,
       app: {
+        enabled: true,
         name: settings.restaurant_display_name || 'Restaurant POS',
         legalName: settings.legal_name || '',
         logoPath: settings.logo_path || settings.online_logo_path || '',
@@ -7731,6 +7754,191 @@ async function sendDailyReportToSaas(db, restaurantId, payload) {
   return response.data;
 }
 
+function saasCredentials(db, restaurantId) {
+  const license = db.prepare('SELECT license_key FROM license_status WHERE restaurant_id = ?').get(restaurantId);
+  const syncToken = getConfigValue(db, 'cloud_sync_token', '');
+  if (!syncToken && !license?.license_key) throw new Error('SaaS sync token or license key is required');
+  return { licenseKey: license?.license_key || null, syncToken: syncToken || null };
+}
+
+function buildOnlineMenuPayload(db) {
+  return {
+    restaurant: onlineBranding(db),
+    paymentMethods: db.prepare('SELECT code, label FROM online_payment_methods WHERE active = 1 ORDER BY sort_order, label').all(),
+    categories: db.prepare('SELECT id, name FROM categories WHERE active = 1 ORDER BY name').all(),
+    items: db.prepare(`
+      SELECT id, name, category_id, price, is_veg, image_url, online_description
+      FROM items
+      WHERE active = 1 AND COALESCE(online_enabled, 1) = 1
+      ORDER BY name
+    `).all().map((item) => ({
+      ...item,
+      image_url: item.image_url || onlineFallbackImage(item.name)
+    }))
+  };
+}
+
+async function publishOnlineMenuToSaas(restaurantId) {
+  const saasUrl = process.env.SAAS_URL;
+  if (!saasUrl) throw new Error('SAAS_URL is not configured');
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    assertOnlineOrderingEnabled(db);
+    const credentials = saasCredentials(db, restaurantId);
+    const settings = getAllSettings(db);
+    const response = await axios.post(`${saasUrl.replace(/\/$/, '')}/online-ordering/pos/menu-sync`, {
+      restaurantId,
+      ...credentials,
+      storefront: {
+        slug: settings.online_storefront_slug || restaurantId.toLowerCase(),
+        displayName: settings.restaurant_display_name || settings.legal_name || 'Restaurant',
+        description: settings.online_description || '',
+        deliveryEnabled: getBooleanConfig(db, 'online_delivery_enabled', true),
+        takeawayEnabled: getBooleanConfig(db, 'online_takeaway_enabled', true),
+        minOrderAmount: getNumberConfig(db, 'online_min_order_amount', 0),
+        deliveryFee: getNumberConfig(db, 'online_delivery_fee', 0),
+        serviceArea: settings.online_service_area || ''
+      },
+      menu: buildOnlineMenuPayload(db)
+    }, { timeout: 10000 });
+    if (!response.data?.success) throw new Error(response.data?.message || 'Online menu sync failed');
+    setConfigValues(db, { online_last_menu_sync_at: new Date().toISOString(), online_storefront_slug: response.data.slug || settings.online_storefront_slug || '' });
+    return response.data;
+  } finally {
+    db.close();
+  }
+}
+
+async function pullSaasOnlineOrders(restaurantId) {
+  const saasUrl = process.env.SAAS_URL;
+  if (!saasUrl) throw new Error('SAAS_URL is not configured');
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    assertOnlineOrderingEnabled(db);
+    const credentials = saasCredentials(db, restaurantId);
+    const response = await axios.post(`${saasUrl.replace(/\/$/, '')}/online-ordering/pos/orders/pull`, {
+      restaurantId,
+      ...credentials,
+      limit: 50
+    }, { timeout: 10000 });
+    if (!response.data?.success) throw new Error(response.data?.message || 'Online order pull failed');
+    return response.data;
+  } finally {
+    db.close();
+  }
+}
+
+async function updateSaasOnlineOrderStatus(restaurantId, orderId, status, posOrderId) {
+  const saasUrl = process.env.SAAS_URL;
+  if (!saasUrl) throw new Error('SAAS_URL is not configured');
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const credentials = saasCredentials(db, restaurantId);
+    const response = await axios.post(`${saasUrl.replace(/\/$/, '')}/online-ordering/pos/orders/status`, {
+      restaurantId,
+      ...credentials,
+      orderId,
+      status,
+      posOrderId: posOrderId ? String(posOrderId) : null
+    }, { timeout: 10000 });
+    if (!response.data?.success) throw new Error(response.data?.message || 'Online order status update failed');
+    return response.data;
+  } finally {
+    db.close();
+  }
+}
+
+function importSaasOnlineOrderLocal(db, restaurantId, actor, saasOrder) {
+  const existing = db.prepare('SELECT * FROM saas_online_order_imports WHERE saas_order_id = ?').get(saasOrder.id);
+  if (existing?.local_order_id) {
+    return { imported: false, orderId: existing.local_order_id, duplicate: true };
+  }
+
+  const selectedOrderType = normaliseOrderType(saasOrder.order_type) || 'TAKEAWAY';
+  const customerPhone = normalisePhone(saasOrder.customer_phone || '');
+  const customerName = normaliseText(saasOrder.customer_name || 'Online Customer');
+  const deliveryAddress = normaliseText(saasOrder.delivery_address || '');
+  if (selectedOrderType === 'DELIVERY' && !deliveryAddress) throw new Error('Delivery address required for SaaS delivery order');
+
+  return db.transaction(() => {
+    const existingCustomer = customerPhone ? db.prepare('SELECT * FROM customers WHERE phone = ? AND active = 1 LIMIT 1').get(customerPhone) : null;
+    const customerId = existingCustomer?.id || db.prepare('INSERT INTO customers (name, phone, email, address) VALUES (?, ?, ?, ?)')
+      .run(customerName, customerPhone || null, normaliseText(saasOrder.customer_email) || null, deliveryAddress || null).lastInsertRowid;
+    if (existingCustomer && customerName && existingCustomer.name !== customerName) {
+      db.prepare('UPDATE customers SET name = COALESCE(NULLIF(?, ""), name), email = COALESCE(NULLIF(?, ""), email), address = COALESCE(NULLIF(?, ""), address) WHERE id = ?')
+        .run(customerName, normaliseText(saasOrder.customer_email), deliveryAddress, existingCustomer.id);
+    }
+
+    const result = db.prepare(`
+      INSERT INTO orders (order_type, table_no, status, total_amount, payment_status, created_by, customer_id, delivery_fee, order_source)
+      VALUES (?, ?, 'OPEN', 0, ?, ?, ?, ?, 'SAAS_ONLINE')
+    `).run(
+      selectedOrderType,
+      `${selectedOrderType.replace(/_/g, ' ')} ${saasOrder.order_no || ''}`.trim(),
+      String(saasOrder.payment_status || 'UNPAID').toUpperCase() === 'PAID' ? 'PAID' : 'UNPAID',
+      actor?.id || null,
+      customerId,
+      Number(saasOrder.delivery_fee || 0)
+    );
+    const orderId = result.lastInsertRowid;
+    let total = 0;
+    for (const line of saasOrder.items || []) {
+      const itemId = Number(line.itemId || line.item_id);
+      const quantity = Math.max(Number(line.quantity || 1), 1);
+      const menu = Number.isInteger(itemId) ? db.prepare(`
+        SELECT i.id, i.price, c.kitchen_id
+        FROM items i
+        JOIN categories c ON c.id = i.category_id
+        WHERE i.id = ? AND i.active = 1
+      `).get(itemId) : null;
+      if (!menu) throw new Error(`Menu item not found for SaaS order item ${line.itemName || line.item_name || line.itemId || line.item_id}`);
+      const unitPrice = Number(line.unitPrice || line.unit_price || menu.price || 0);
+      db.prepare('INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price) VALUES (?, ?, ?, ?, ?)')
+        .run(orderId, menu.id, quantity, menu.kitchen_id, unitPrice);
+      total += unitPrice * quantity;
+    }
+    total += Number(saasOrder.delivery_fee || 0);
+    db.prepare('UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(total, orderId);
+    if (DELIVERY_ORDER_TYPES.includes(selectedOrderType)) {
+      db.prepare(`
+        INSERT INTO delivery_orders (order_id, customer_id, delivery_address, delivery_phone, delivery_fee, delivery_status, external_order_id, partner_status, partner_payload)
+        VALUES (?, ?, ?, ?, ?, 'RECEIVED', ?, ?, ?)
+      `).run(orderId, customerId, deliveryAddress || null, customerPhone || null, Number(saasOrder.delivery_fee || 0), saasOrder.order_no || saasOrder.id, saasOrder.order_status || 'PLACED', JSON.stringify(saasOrder));
+    }
+    createKotJobs(db, orderId);
+    writeOrderStatusHistory(db, actor, orderId, 'OPEN', 'ORDER', `Imported SaaS online order ${saasOrder.order_no || saasOrder.id}`);
+    writeAudit(db, actor, 'IMPORT', 'SAAS_ONLINE_ORDER', orderId, null, { saasOrderId: saasOrder.id, orderNo: saasOrder.order_no, total });
+    db.prepare(`
+      INSERT INTO saas_online_order_imports (saas_order_id, saas_order_no, local_order_id, status, payload)
+      VALUES (?, ?, ?, 'IMPORTED', ?)
+      ON CONFLICT(saas_order_id) DO UPDATE SET
+        local_order_id = excluded.local_order_id,
+        status = 'IMPORTED',
+        payload = excluded.payload,
+        updated_at = CURRENT_TIMESTAMP
+    `).run(saasOrder.id, saasOrder.order_no || null, orderId, JSON.stringify(saasOrder));
+    return { imported: true, orderId, duplicate: false };
+  })();
+}
+
+async function importSaasOnlineOrders(restaurantId, actor) {
+  const pulled = await pullSaasOnlineOrders(restaurantId);
+  const db = openRestaurantDatabase(restaurantId);
+  const imported = [];
+  try {
+    for (const order of pulled.orders || []) {
+      const result = importSaasOnlineOrderLocal(db, restaurantId, actor, order);
+      imported.push({ ...result, saasOrderId: order.id, orderNo: order.order_no });
+      if (result.imported) {
+        await updateSaasOnlineOrderStatus(restaurantId, order.id, 'ACCEPTED', result.orderId);
+      }
+    }
+    return { success: true, pulled: pulled.orders || [], imported };
+  } finally {
+    db.close();
+  }
+}
+
 async function syncQueuedReport(db, restaurantId, row) {
   const payload = JSON.parse(row.payload);
   try {
@@ -7871,6 +8079,58 @@ app.post('/cloud-sync/run', async (req, res) => {
     sendError(res, err);
   } finally {
     if (db) db.close();
+  }
+});
+
+app.post('/online-ordering/sync-menu', async (req, res) => {
+  const { restaurantId, actor } = req.body || {};
+  if (!restaurantId || !['OWNER', 'MANAGER_2', 'MANAGER'].includes(actor?.role)) {
+    return res.status(403).json({ success: false, message: 'Manager access required' });
+  }
+  try {
+    const result = await publishOnlineMenuToSaas(restaurantId);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.post('/online-ordering/pull-orders', async (req, res) => {
+  const { restaurantId, actor } = req.body || {};
+  if (!restaurantId || !['OWNER', 'MANAGER_2', 'MANAGER', 'CASHIER'].includes(actor?.role)) {
+    return res.status(403).json({ success: false, message: 'POS access required' });
+  }
+  try {
+    const result = await pullSaasOnlineOrders(restaurantId);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.post('/online-ordering/import-orders', async (req, res) => {
+  const { restaurantId, actor } = req.body || {};
+  if (!restaurantId || !['OWNER', 'MANAGER_2', 'MANAGER', 'CASHIER'].includes(actor?.role)) {
+    return res.status(403).json({ success: false, message: 'POS access required' });
+  }
+  try {
+    const result = await importSaasOnlineOrders(restaurantId, actor);
+    res.json(result);
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.post('/online-ordering/update-saas-status', async (req, res) => {
+  const { restaurantId, actor, saasOrderId, status, posOrderId } = req.body || {};
+  if (!restaurantId || !saasOrderId || !status || !['OWNER', 'MANAGER_2', 'MANAGER', 'CASHIER'].includes(actor?.role)) {
+    return res.status(400).json({ success: false, message: 'Restaurant, SaaS order, status and POS access are required' });
+  }
+  try {
+    const result = await updateSaasOnlineOrderStatus(restaurantId, saasOrderId, status, posOrderId);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    sendError(res, err);
   }
 });
 

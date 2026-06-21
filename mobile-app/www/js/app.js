@@ -1,21 +1,29 @@
-const config = {
-  restaurantId: localStorage.getItem("restaurantId") || "",
-  posUrl: localStorage.getItem("posUrl") || "",
-  saasUrl: localStorage.getItem("saasUrl") || ""
-};
-
-restaurantId.value = config.restaurantId;
-posUrl.value = config.posUrl;
-saasUrl.value = config.saasUrl;
-
 function cleanBase(url) {
   return String(url || "").trim().replace(/\/$/, "");
 }
 
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[char]));
+}
+
+const MOBILE_DIRECTORY_URL = cleanBase(window.MOBILE_DIRECTORY_URL || localStorage.getItem("mobileDirectoryUrl") || "http://localhost:4000");
+const DEV_POS_URL = cleanBase(window.DEV_POS_URL || localStorage.getItem("devPosUrl") || "http://localhost:3000");
+const state = {
+  restaurants: [],
+  restaurant: null,
+  user: JSON.parse(localStorage.getItem("user") || "null")
+};
+
 function setBrand(app) {
   if (!app) return;
   brandName.textContent = app.name || "Restaurant Mobile";
-  brandStatus.textContent = "Premium mobile app enabled";
+  brandStatus.textContent = app.enabled ? "Premium mobile app enabled" : "Mobile app access disabled";
   document.documentElement.style.setProperty("--primary", app.primaryColor || "#2563eb");
   document.documentElement.style.setProperty("--accent", app.accentColor || "#f59e0b");
   if (app.logoPath) {
@@ -26,45 +34,131 @@ function setBrand(app) {
   }
 }
 
-async function checkPremiumAccess() {
-  const base = cleanBase(posUrl.value);
-  const restId = restaurantId.value.trim();
-  if (!base || !restId) {
-    brandStatus.textContent = "Enter POS URL and Restaurant ID.";
-    return;
-  }
-  const res = await fetch(`${base}/mobile-app/config?restaurantId=${encodeURIComponent(restId)}`);
-  const data = await res.json();
-  if (!res.ok || data.success === false) throw new Error(data.message || "Mobile app not enabled");
-  setBrand(data.app);
+function selectedRestaurant() {
+  return state.restaurants.find((restaurant) => restaurant.restaurantId === restaurantSelect.value) || null;
 }
 
-saveConfig.addEventListener("click", async () => {
+function restaurantPosUrl(restaurant) {
+  return cleanBase(restaurant?.posUrl || DEV_POS_URL);
+}
+
+async function fetchJson(url, options) {
+  const res = await fetch(url, options);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.success === false) throw new Error(data.message || "Request failed");
+  return data;
+}
+
+async function checkPremiumAccess(restaurant) {
+  if (!restaurant?.restaurantId) throw new Error("Select a restaurant.");
+  const base = restaurantPosUrl(restaurant);
+  const data = await fetchJson(`${base}/mobile-app/config?restaurantId=${encodeURIComponent(restaurant.restaurantId)}`);
+  setBrand(data.app);
+  return data;
+}
+
+async function loadRestaurants() {
+  restaurantSelect.innerHTML = `<option value="">Loading...</option>`;
   try {
-    localStorage.setItem("restaurantId", restaurantId.value.trim());
-    localStorage.setItem("posUrl", cleanBase(posUrl.value));
-    localStorage.setItem("saasUrl", cleanBase(saasUrl.value));
-    await checkPremiumAccess();
+    const data = await fetchJson(`${MOBILE_DIRECTORY_URL}/mobile/restaurants`);
+    state.restaurants = (data.restaurants || []).map((restaurant) => ({
+      restaurantId: restaurant.restaurantId || restaurant.restaurant_id || restaurant.restaurant_code,
+      name: restaurant.name || "Restaurant",
+      posUrl: restaurant.posUrl || restaurant.pos_url || "",
+      currency: restaurant.currency || "INR"
+    })).filter((restaurant) => restaurant.restaurantId);
+    restaurantSelect.innerHTML = state.restaurants.length
+      ? `<option value="">Select restaurant</option>` + state.restaurants.map((restaurant) => (
+        `<option value="${esc(restaurant.restaurantId)}">${esc(restaurant.name)} (${esc(restaurant.restaurantId)})</option>`
+      )).join("")
+      : `<option value="">No mobile-enabled restaurants</option>`;
+    const previous = localStorage.getItem("restaurantId");
+    if (previous && state.restaurants.some((restaurant) => restaurant.restaurantId === previous)) {
+      restaurantSelect.value = previous;
+      state.restaurant = selectedRestaurant();
+      await checkPremiumAccess(state.restaurant);
+    }
+    loginStatus.textContent = state.restaurants.length ? "Login with your POS username and PIN." : "No restaurant has active mobile access.";
   } catch (err) {
-    brandStatus.textContent = err.message;
+    restaurantSelect.innerHTML = `<option value="">Directory unavailable</option>`;
+    loginStatus.textContent = err.message;
+  }
+}
+
+function showRoleGrid(role) {
+  const roleRules = {
+    owner: ["OWNER", "MANAGER", "MANAGER_2"],
+    captain: ["OWNER", "MANAGER", "MANAGER_1", "MANAGER_2", "CAPTAIN", "WAITER"],
+    waiter: ["OWNER", "MANAGER", "MANAGER_1", "MANAGER_2", "CAPTAIN", "WAITER"],
+    cashier: ["OWNER", "MANAGER", "MANAGER_1", "MANAGER_2", "CASHIER"]
+  };
+  document.querySelectorAll("[data-role]").forEach((button) => {
+    button.hidden = !roleRules[button.dataset.role]?.includes(role);
+  });
+}
+
+async function login() {
+  state.restaurant = selectedRestaurant();
+  if (!state.restaurant) {
+    loginStatus.textContent = "Select a restaurant.";
+    return;
+  }
+  if (!username.value.trim() || !pin.value.trim()) {
+    loginStatus.textContent = "Enter username and PIN.";
+    return;
+  }
+  try {
+    await checkPremiumAccess(state.restaurant);
+    const base = restaurantPosUrl(state.restaurant);
+    const data = await fetchJson(`${base}/mobile-app/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        restaurantId: state.restaurant.restaurantId,
+        username: username.value.trim(),
+        pin: pin.value.trim()
+      })
+    });
+    state.user = data.user;
+    localStorage.setItem("restaurantId", state.restaurant.restaurantId);
+    localStorage.setItem("posUrl", base);
+    localStorage.setItem("user", JSON.stringify(data.user));
+    loginStatus.textContent = `Logged in as ${data.user.role}`;
+    showRoleGrid(data.user.role);
+  } catch (err) {
+    loginStatus.textContent = err.message;
+  }
+}
+
+restaurantSelect.addEventListener("change", async () => {
+  state.restaurant = selectedRestaurant();
+  if (!state.restaurant) return;
+  localStorage.setItem("restaurantId", state.restaurant.restaurantId);
+  try {
+    await checkPremiumAccess(state.restaurant);
+    loginStatus.textContent = "Login with your POS username and PIN.";
+  } catch (err) {
+    loginStatus.textContent = err.message;
   }
 });
+
+loginButton.addEventListener("click", login);
 
 document.querySelector(".role-grid").addEventListener("click", async (event) => {
   const button = event.target.closest("[data-role]");
   if (!button) return;
   const role = button.dataset.role;
-  const restId = restaurantId.value.trim();
-  const posBase = cleanBase(posUrl.value);
-  const saasBase = cleanBase(saasUrl.value);
+  const restaurant = state.restaurant || selectedRestaurant();
+  const restId = restaurant?.restaurantId || localStorage.getItem("restaurantId");
+  const posBase = restaurantPosUrl(restaurant);
   const paths = {
-    owner: `${saasBase}/owner-mobile.html?restaurantId=${encodeURIComponent(restId)}`,
+    owner: `${posBase}/admin.html?restaurantId=${encodeURIComponent(restId)}`,
     captain: `${posBase}/waiter.html?restaurantId=${encodeURIComponent(restId)}`,
     waiter: `${posBase}/waiter.html?restaurantId=${encodeURIComponent(restId)}`,
     cashier: `${posBase}/pos-live.html?restaurantId=${encodeURIComponent(restId)}`
   };
-  if ((role === "owner" && !saasBase) || (role !== "owner" && !posBase)) {
-    brandStatus.textContent = "Save POS/SaaS URL first.";
+  if (!restId || !posBase || !state.user) {
+    loginStatus.textContent = "Login first.";
     return;
   }
   activeRole.textContent = button.textContent;
@@ -77,6 +171,5 @@ closeFrame.addEventListener("click", () => {
   webviewPanel.hidden = true;
 });
 
-if (config.posUrl && config.restaurantId) {
-  checkPremiumAccess().catch((err) => { brandStatus.textContent = err.message; });
-}
+showRoleGrid(state.user?.role || "");
+loadRestaurants();

@@ -4,6 +4,8 @@
   "private": true,
   "description": "Restaurant SaaS and local POS platform",
   "scripts": {
+    "start:all": "node scripts/start-all.js",
+    "setup:palmsy": "npm --prefix saas-backend run migrate && node scripts/setup-palmsy.js",
     "test": "node tests/smoke-commercial-readiness.js",
     "test:pos": "node tests/pos-smoke.js",
     "test:saas": "node tests/saas-smoke.js"

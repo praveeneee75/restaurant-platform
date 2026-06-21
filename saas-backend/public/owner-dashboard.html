@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Owner Dashboard</title>
+  <title>K'Master POS Owner Dashboard</title>
   <style>
     body { font-family: Arial; padding: 20px; }
     table { border-collapse: collapse; width: 100%; margin-top: 16px; }
@@ -9,11 +9,17 @@
     th { background: #f2f2f2; }
     input { margin: 4px; padding: 7px; }
   </style>
-  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/app.css?v=kmaster-ui">
 </head>
 <body>
-  <h2>Owner Dashboard</h2>
+  <h2>K'Master POS Owner Dashboard</h2>
   <p id="ownerStatus">Loading...</p>
+  <section>
+    <h3>Quick Access</h3>
+    <a href="/downloads.html" target="_blank" rel="noopener">Download POS App</a>
+    &nbsp;|&nbsp;
+    <a href="/order.html" target="_blank" rel="noopener">Open Online Ordering</a>
+  </section>
   <section>
     <h3>Change Password</h3>
     <input id="currentPassword" type="password" placeholder="Current password">
@@ -21,22 +27,34 @@
     <button onclick="changePassword()">Change</button>
     <p id="passwordMsg"></p>
   </section>
+  <section>
+    <h3>Overall Branch View</h3>
+    <div id="organizationCards" class="cards"></div>
+  </section>
+  <section>
+    <h3>Individual Branch View</h3>
   <table>
     <thead>
       <tr>
         <th>Restaurant</th>
         <th>Code</th>
+        <th>License Key</th>
+        <th>Package</th>
         <th>Subscription</th>
+        <th>License Expiry</th>
         <th>Days Remaining</th>
         <th>POS</th>
         <th>Version</th>
         <th>Backup</th>
         <th>Printer</th>
         <th>Last Heartbeat</th>
+        <th>Download</th>
       </tr>
     </thead>
     <tbody id="ownerRestaurants"></tbody>
   </table>
+  </section>
   <script src="/js/owner-dashboard.js"></script>
 </body>
 </html>
+
