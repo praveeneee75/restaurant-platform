@@ -8,6 +8,34 @@ const { publicError } = require('../config');
 const router = express.Router();
 const rootDir = path.resolve(__dirname, '../../..');
 const posAppDir = path.join(rootDir, 'pos-app');
+const installerDir = path.join(rootDir, 'saas-backend', 'downloads', 'pos-installers');
+const sourceZipUrl = '/updates/download/pos-app.zip';
+const platformDefinitions = [
+  {
+    key: 'windows',
+    name: 'Windows',
+    label: 'Windows installer',
+    extension: '.exe',
+    match: /\.(exe|msi)$/i,
+    help: 'Download, run the setup file, then sign in with the restaurant code and license key.'
+  },
+  {
+    key: 'mac',
+    name: 'macOS',
+    label: 'macOS installer',
+    extension: '.dmg',
+    match: /\.(dmg|pkg)$/i,
+    help: "Download, open the installer, drag K'Master POS to Applications, then activate."
+  },
+  {
+    key: 'linux',
+    name: 'Linux',
+    label: 'Linux package',
+    extension: '.AppImage',
+    match: /\.(appimage|deb|rpm)$/i,
+    help: 'Download the package, allow execution if needed, then activate with the license key.'
+  }
+];
 
 const crcTable = Array.from({ length: 256 }, (_, index) => {
   let value = index;
@@ -139,6 +167,42 @@ function rowsToRelease(rows) {
   };
 }
 
+function installerFilesFromDisk() {
+  if (!fs.existsSync(installerDir)) return [];
+  return fs.readdirSync(installerDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => {
+      const fullPath = path.join(installerDir, entry.name);
+      const stats = fs.statSync(fullPath);
+      return {
+        file_name: entry.name,
+        file_url: `/updates/download/installer/${encodeURIComponent(entry.name)}`,
+        size: stats.size,
+        updated_at: stats.mtime
+      };
+    });
+}
+
+function installerFilesFromRelease(files) {
+  return (files || [])
+    .filter((file) => /\.(exe|msi|dmg|pkg|appimage|deb|rpm)$/i.test(file.file_name || file.file_url || ''))
+    .map((file) => ({ ...file, size: file.size || null }));
+}
+
+function platformManifest(files = []) {
+  return platformDefinitions.map((platform) => {
+    const match = files.find((file) => platform.match.test(file.file_name || '') || platform.match.test(file.file_url || ''));
+    const { match: _match, ...publicPlatform } = platform;
+    return {
+      ...publicPlatform,
+      available: Boolean(match),
+      fileName: match?.file_name || `KMaster-POS-${platform.name}${platform.extension}`,
+      fileUrl: match?.file_url || null,
+      size: match?.size || null
+    };
+  });
+}
+
 router.get('/latest', async (_req, res) => {
   try {
     const releaseResult = await pool.query(`
@@ -164,6 +228,54 @@ router.get('/latest', async (_req, res) => {
     });
   } catch (err) {
     console.error('LATEST UPDATE ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.get('/installers', async (_req, res) => {
+  try {
+    const releaseResult = await pool.query(`
+      SELECT *
+      FROM releases
+      WHERE status = 'ACTIVE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+    const releaseFiles = releaseResult.rowCount === 0
+      ? []
+      : (await pool.query('SELECT * FROM release_files WHERE release_id = $1 ORDER BY created_at', [releaseResult.rows[0].id])).rows;
+    const installers = [
+      ...installerFilesFromDisk(),
+      ...installerFilesFromRelease(releaseFiles)
+    ];
+    res.json({
+      success: true,
+      version: releaseResult.rows[0]?.version || null,
+      releaseNotes: releaseResult.rows[0]?.release_notes || '',
+      platforms: platformManifest(installers),
+      sourcePackage: {
+        label: 'Technical source package',
+        fileUrl: sourceZipUrl,
+        help: 'For support or technical installation only. Restaurant owners should use the platform installer.'
+      }
+    });
+  } catch (err) {
+    console.error('INSTALLER MANIFEST ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.get('/download/installer/:fileName', async (req, res) => {
+  try {
+    const requested = path.basename(req.params.fileName || '');
+    if (!requested) return res.status(400).json({ success: false, message: 'Installer file required' });
+    const fullPath = path.join(installerDir, requested);
+    if (!fullPath.startsWith(installerDir) || !fs.existsSync(fullPath)) {
+      return res.status(404).json({ success: false, message: 'Installer is not available yet' });
+    }
+    res.download(fullPath, requested);
+  } catch (err) {
+    console.error('INSTALLER DOWNLOAD ERROR:', err.message);
     res.status(500).json({ success: false, message: publicError(err) });
   }
 });

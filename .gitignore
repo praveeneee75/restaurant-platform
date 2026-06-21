@@ -11,3 +11,5 @@ print-agent/logs/
 mobile-app/android/
 mobile-app/ios/
 tmp-ui-shots/
+pos-app/dist-installers/
+saas-backend/downloads/pos-installers/

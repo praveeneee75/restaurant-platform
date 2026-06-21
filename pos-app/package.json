@@ -6,6 +6,11 @@
   "scripts": {
     "start": "node backend/server.js",
     "dev": "node backend/server.js",
+    "desktop": "electron electron/main.js",
+    "dist:win": "electron-builder --win nsis",
+    "dist:mac": "electron-builder --mac dmg",
+    "dist:linux": "electron-builder --linux AppImage deb",
+    "dist:all": "electron-builder --win nsis --mac dmg --linux AppImage deb",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -20,5 +25,49 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "fs-extra": "^11.3.3"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.kmaster.pos",
+    "productName": "K'Master POS",
+    "directories": {
+      "output": "dist-installers"
+    },
+    "files": [
+      "backend/**/*",
+      "electron/**/*",
+      "package.json",
+      "!backend/**/*.log",
+      "!data/**/*",
+      "!backups/**/*",
+      "!updates/staging/**/*",
+      "!*.db",
+      "!.env"
+    ],
+    "asar": false,
+    "win": {
+      "target": "nsis",
+      "artifactName": "KMaster-POS-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "target": "dmg",
+      "artifactName": "KMaster-POS-${version}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "artifactName": "KMaster-POS-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }

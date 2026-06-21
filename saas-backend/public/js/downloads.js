@@ -1,43 +1,29 @@
-function usableDownloadUrl(url) {
-  if (!url) return false;
-  try {
-    const parsed = new URL(url, window.location.origin);
-    const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname);
-    return !isLocalHost || parsed.origin === window.location.origin;
-  } catch (_) {
-    return false;
-  }
+function fileSize(size) {
+  const value = Number(size || 0);
+  if (!value) return "";
+  if (value > 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  return `${Math.max(Math.round(value / 1024), 1)} KB`;
 }
 
 async function loadLatestRelease() {
   try {
-    const res = await fetch("/updates/latest");
+    const res = await fetch("/updates/installers");
     const data = await res.json();
-    if (!res.ok || data.success === false) throw new Error(data.message || "Unable to load release");
-    const releaseFiles = (data.files || []).filter((file) => usableDownloadUrl(file.file_url));
-    const files = releaseFiles.length
-      ? releaseFiles
-      : [{ file_name: "K'Master POS App Package", file_url: "/updates/download/pos-app.zip", checksum: "" }];
-    downloadStatus.innerText = data.version ? `Latest POS version ${data.version}` : "POS app package is ready to download.";
-    releasePanel.innerHTML = `
-      <div class="cards">
-        <div class="card">Version<strong>${data.version || "Current"}</strong></div>
-        <div class="card">Update Type<strong>${data.mandatory_update ? "Mandatory" : "Optional"}</strong></div>
-      </div>
-      <p>${data.release_notes || "Download the POS package, install dependencies, then activate with the restaurant code and license key from the owner dashboard."}</p>
-      <table>
-        <thead><tr><th>File</th><th>Checksum</th><th>Download</th></tr></thead>
-        <tbody>
-          ${files.map((file) => `
-            <tr>
-              <td>${file.file_name}</td>
-              <td><code>${file.checksum || ""}</code></td>
-              <td><a href="${file.file_url}" target="_blank" rel="noopener">Download</a></td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    `;
+    if (!res.ok || data.success === false) throw new Error(data.message || "Unable to load installers");
+    const availableCount = (data.platforms || []).filter((platform) => platform.available).length;
+    downloadStatus.innerText = availableCount
+      ? `Choose your installer${data.version ? ` for version ${data.version}` : ""}.`
+      : "Installers are not published yet. Please contact K'Master support.";
+    installerPanel.innerHTML = (data.platforms || []).map((platform) => `
+      <article class="installer-card">
+        <h4>${platform.label}</h4>
+        <p>${platform.help}</p>
+        ${platform.available
+          ? `<a class="download-button" href="${platform.fileUrl}" download>${platform.fileName}${fileSize(platform.size) ? ` (${fileSize(platform.size)})` : ""}</a>`
+          : `<button type="button" disabled>Coming soon</button>`}
+      </article>
+    `).join("");
+    sourcePackageLink.href = data.sourcePackage?.fileUrl || "/updates/download/pos-app.zip";
   } catch (err) {
     downloadStatus.innerText = err.message;
   }

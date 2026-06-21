@@ -304,6 +304,61 @@ th {
   color: var(--text);
 }
 
+.installer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.installer-card {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.installer-card h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 16px;
+}
+
+.installer-card p {
+  margin: 0;
+}
+
+.download-button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 40px;
+  padding: 9px 13px;
+  border-radius: 7px;
+  background: var(--primary);
+  color: #fff;
+  text-align: center;
+}
+
+.download-button:hover {
+  color: #fff;
+  background: var(--primary-dark);
+  text-decoration: none;
+}
+
+.steps-list {
+  margin: 0;
+  padding-left: 22px;
+  color: var(--text);
+}
+
+.steps-list li {
+  margin: 6px 0;
+}
+
 .auth-page {
   display: flex;
   align-items: center;
