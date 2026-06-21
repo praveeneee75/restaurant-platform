@@ -42,6 +42,10 @@ function fillSelect(element, rows, label = "name") {
   element.innerHTML = rows.map((row) => `<option value="${row.id}">${esc(row[label])}</option>`).join("");
 }
 
+function fillSelectWithBlank(element, rows, label = "name", blankLabel = "Not assigned") {
+  element.innerHTML = `<option value="">${esc(blankLabel)}</option>` + rows.map((row) => `<option value="${row.id}">${esc(row[label])}</option>`).join("");
+}
+
 async function loadAdmin() {
   state.admin = await fetchJson(`/admin/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`);
   if (window.activeRestaurantName) {
@@ -193,14 +197,16 @@ async function loadAll() {
 }
 
 function renderAdmin() {
-  const { kitchens = [], categories = [], items = [], users = [], tables = [] } = state.admin;
+  const { kitchens = [], categories = [], items = [], users = [], tables = [], printers = [] } = state.admin;
+  fillSelectWithBlank(kitchenPrinterId, printers.filter((printer) => printer.type === "KITCHEN" || printer.type === "BAR" || printer.type === "TOKEN"), "name", "No KOT printer");
   fillSelect(categoryKitchen, kitchens);
   fillSelect(itemCategory, categories);
   fillSelect(recipeMenuItem, items);
   fillSelect(modifierAssignItem, items);
   fillSelect(comboItem, items);
   fillSelect(reservationTable, tables, "table_name");
-  kitchensTable.innerHTML = kitchens.map((k) => `<tr><td>${esc(k.name)}</td><td>${esc(k.printer_name || "")}</td><td>${k.active ? "Active" : "Inactive"}</td><td>${actions("kitchen", k.id)}</td></tr>`).join("");
+  kitchensTable.innerHTML = kitchens.map((k) => `<tr><td>${esc(k.name)}</td><td>${esc(k.printer_name || "Not assigned")}</td><td>${k.active ? "Active" : "Inactive"}</td><td>${actions("kitchen", k.id)}</td></tr>`).join("");
+  printersTable.innerHTML = printers.map((printer) => `<tr><td>${esc(printer.name)}</td><td>${esc(printer.type)}</td><td>${esc(printer.connection)}</td><td>${esc(printer.address || "")}</td><td>${printer.active ? "Active" : "Inactive"}</td><td>${actions("printer", printer.id)}</td></tr>`).join("");
   categoriesTable.innerHTML = categories.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.kitchen_name || "")}</td><td>${c.active ? "Active" : "Inactive"}</td><td>${actions("category", c.id)}</td></tr>`).join("");
   const term = (itemSearch?.value || "").toLowerCase();
   itemsTable.innerHTML = items.filter((i) => !term || i.name.toLowerCase().includes(term)).map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td><td>${i.active ? "Active" : "Inactive"}${Number(i.online_enabled ?? 1) ? "" : " / Hidden online"}</td><td>${actions("item", i.id)}</td></tr>`).join("");
@@ -381,9 +387,22 @@ function editKitchen(id) {
   showView("kitchens");
   kitchenId.value = row.id;
   kitchenName.value = row.name || "";
-  kitchenPrinter.value = row.printer_name || "";
+  kitchenPrinterId.value = row.printer_id || "";
   kitchenActive.checked = Number(row.active) !== 0;
   focusFirstInput(kitchenForm);
+}
+
+function editPrinter(id) {
+  const row = findById(state.admin.printers || [], id);
+  if (!row) return;
+  showView("kitchens");
+  printerId.value = row.id;
+  printerName.value = row.name || "";
+  printerType.value = row.type || "KITCHEN";
+  printerConnection.value = row.connection || "USB";
+  printerAddress.value = row.address || "";
+  printerActive.checked = Number(row.active) !== 0;
+  focusFirstInput(printerForm);
 }
 
 function editCategory(id) {
@@ -695,7 +714,8 @@ runDemoReset.addEventListener("click", async () => {
   await Promise.all([loadAdmin(), loadCommercial().catch(() => undefined)]);
 });
 
-kitchenForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/kitchens/save", { id: kitchenId.value || null, name: kitchenName.value, printerName: kitchenPrinter.value, active: kitchenActive.checked }); kitchenForm.reset(); kitchenActive.checked = true; await loadAdmin(); });
+kitchenForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/kitchens/save", { id: kitchenId.value || null, name: kitchenName.value, printerId: kitchenPrinterId.value || null, active: kitchenActive.checked }); kitchenForm.reset(); kitchenActive.checked = true; await loadAdmin(); });
+printerForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/printers/save", { id: printerId.value || null, name: printerName.value, type: printerType.value, connection: printerConnection.value, address: printerAddress.value, active: printerActive.checked }); printerForm.reset(); printerActive.checked = true; await loadAdmin(); });
 categoryForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/categories/save", { id: categoryId.value || null, name: categoryName.value, kitchenId: categoryKitchen.value, active: categoryActive.checked }); categoryForm.reset(); categoryActive.checked = true; await loadAdmin(); });
 itemForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, onlineDescription: itemOnlineDescription.value, imageUrl: itemImageUrl.value, isVeg: itemVeg.checked, allowParcel: itemParcel.checked, onlineEnabled: itemOnlineEnabled.checked, active: itemActive.checked }); itemForm.reset(); itemActive.checked = true; itemOnlineEnabled.checked = true; await loadAdmin(); });
 userForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/users/save", { id: userId.value || null, name: userName.value, username: userUsername.value, pin: userPin.value, role: userRole.value, active: userActive.checked }); userForm.reset(); userActive.checked = true; await loadAdmin(); });
@@ -922,6 +942,7 @@ document.addEventListener("click", async (event) => {
   const pick = (name) => target.dataset[name];
   try {
     if (pick("editKitchen")) return editKitchen(pick("editKitchen"));
+    if (pick("editPrinter")) return editPrinter(pick("editPrinter"));
     if (pick("editCategory")) return editCategory(pick("editCategory"));
     if (pick("editItem")) return editItem(pick("editItem"));
     if (pick("editUser")) return editUser(pick("editUser"));
@@ -932,6 +953,7 @@ document.addEventListener("click", async (event) => {
     if (pick("editModifierOption")) return editModifierOption(pick("editModifierOption"));
     if (pick("editCombo")) return editCombo(pick("editCombo"));
     if (pick("deleteKitchen") && confirm("Delete this kitchen?")) await postJson("/admin/kitchens/delete", { id: pick("deleteKitchen") }).then(loadAdmin);
+    if (pick("deletePrinter") && confirm("Disable this printer?")) await postJson("/admin/printers/delete", { id: pick("deletePrinter") }).then(loadAdmin);
     if (pick("deleteCategory") && confirm("Delete this category?")) await postJson("/admin/categories/delete", { id: pick("deleteCategory") }).then(loadAdmin);
     if (pick("deleteItem") && confirm("Delete this item?")) await postJson("/admin/items/delete", { id: pick("deleteItem") }).then(loadAdmin);
     if (pick("disableUser") && confirm("Disable this user?")) await postJson("/admin/users/disable", { id: pick("disableUser") }).then(loadAdmin);

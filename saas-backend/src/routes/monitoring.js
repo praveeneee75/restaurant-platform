@@ -4,20 +4,37 @@ const authenticate = require('../middleware/authMiddleware');
 const { publicError } = require('../config');
 
 const router = express.Router();
+const heartbeatCredentialCache = new Map();
+const HEARTBEAT_CACHE_MS = 5 * 60 * 1000;
+
+function credentialCacheKey(restaurantId, licenseKey, syncToken) {
+  return `${restaurantId}|${licenseKey || ''}|${syncToken || ''}`;
+}
+
+async function tenantForHeartbeat(restaurantId, licenseKey, syncToken) {
+  const key = credentialCacheKey(restaurantId, licenseKey, syncToken);
+  const cached = heartbeatCredentialCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.tenant;
+  const tenant = await pool.query(`
+    SELECT t.id
+    FROM tenants t
+    JOIN licenses l ON l.tenant_id = t.id
+    WHERE t.restaurant_code = $1
+      AND (($2::text IS NOT NULL AND l.license_key = $2) OR ($3::text IS NOT NULL AND l.sync_token = $3))
+    LIMIT 1
+  `, [restaurantId, licenseKey || null, syncToken || null]);
+  if (tenant.rowCount > 0) {
+    heartbeatCredentialCache.set(key, { tenant: tenant.rows[0], expiresAt: Date.now() + HEARTBEAT_CACHE_MS });
+  }
+  return tenant.rows[0] || null;
+}
 
 router.post('/heartbeat', async (req, res) => {
   const { restaurantId, licenseKey, syncToken, posVersion, backupStatus, printerStatus, licenseStatus, appStatus } = req.body || {};
   if (!restaurantId || (!licenseKey && !syncToken)) return res.status(400).json({ success: false, message: 'restaurantId and sync credentials required' });
   try {
-    const tenant = await pool.query(`
-      SELECT t.id
-      FROM tenants t
-      JOIN licenses l ON l.tenant_id = t.id
-      WHERE t.restaurant_code = $1
-        AND (($2::text IS NOT NULL AND l.license_key = $2) OR ($3::text IS NOT NULL AND l.sync_token = $3))
-      LIMIT 1
-    `, [restaurantId, licenseKey || null, syncToken || null]);
-    if (tenant.rowCount === 0) return res.status(401).json({ success: false, message: 'Invalid heartbeat credentials' });
+    const tenant = await tenantForHeartbeat(restaurantId, licenseKey, syncToken);
+    if (!tenant) return res.status(401).json({ success: false, message: 'Invalid heartbeat credentials' });
     await pool.query(`
       INSERT INTO pos_heartbeats (tenant_id, restaurant_code, pos_version, backup_status, printer_status, license_status, app_status, payload, last_heartbeat_at)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
@@ -30,7 +47,7 @@ router.post('/heartbeat', async (req, res) => {
         app_status = EXCLUDED.app_status,
         payload = EXCLUDED.payload,
         last_heartbeat_at = NOW()
-    `, [tenant.rows[0].id, restaurantId, posVersion || null, backupStatus || null, printerStatus || null, licenseStatus || null, appStatus || 'OK', req.body || {}]);
+    `, [tenant.id, restaurantId, posVersion || null, backupStatus || null, printerStatus || null, licenseStatus || null, appStatus || 'OK', req.body || {}]);
     res.json({ success: true, message: 'Heartbeat recorded' });
   } catch (err) {
     console.error('POS HEARTBEAT ERROR:', err.message);

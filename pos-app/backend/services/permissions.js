@@ -3,6 +3,7 @@ const DEFAULT_ROLES = [
   ['MANAGER_2', 'Senior manager with financial and operational access'],
   ['MANAGER_1', 'Floor manager with limited reports and operations access'],
   ['CASHIER', 'Cashier with billing access'],
+  ['CAPTAIN', 'Captain with floor order and table transfer access'],
   ['WAITER', 'Waiter with order entry access'],
   ['KITCHEN', 'Kitchen display and preparation access']
 ];
@@ -75,6 +76,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'kitchen.status.update'
   ],
   CASHIER: ['orders.create', 'billing.settle'],
+  CAPTAIN: ['orders.create', 'orders.transfer_table'],
   WAITER: ['orders.create'],
   KITCHEN: ['kitchen.kds.view', 'kitchen.status.update']
 };

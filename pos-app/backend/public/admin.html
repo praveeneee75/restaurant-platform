@@ -71,11 +71,21 @@
       <form class="editor-panel" id="kitchenForm">
         <input type="hidden" id="kitchenId">
         <label>Kitchen name<input id="kitchenName" required></label>
-        <label>Printer name<input id="kitchenPrinter"></label>
+        <label>KOT printer<select id="kitchenPrinterId"></select></label>
         <label class="check-row"><input id="kitchenActive" type="checkbox" checked> Active</label>
         <button>Save Kitchen</button>
       </form>
-      <div class="table-panel"><table><thead><tr><th>Name</th><th>Printer</th><th>Status</th><th></th></tr></thead><tbody id="kitchensTable"></tbody></table></div>
+      <form class="editor-panel" id="printerForm">
+        <input type="hidden" id="printerId">
+        <label>Printer name<input id="printerName" placeholder="Kitchen thermal printer" required></label>
+        <label>Type<select id="printerType"><option>KITCHEN</option><option>BILL</option><option>BAR</option><option>TOKEN</option></select></label>
+        <label>Connection<select id="printerConnection"><option>USB</option><option>NETWORK</option><option>WINDOWS</option><option>BLUETOOTH</option></select></label>
+        <label>Address<input id="printerAddress" placeholder="IP address, Windows printer name or USB path"></label>
+        <label class="check-row"><input id="printerActive" type="checkbox" checked> Active</label>
+        <button>Save Printer</button>
+      </form>
+      <div class="table-panel"><table><thead><tr><th>Name</th><th>KOT Printer</th><th>Status</th><th></th></tr></thead><tbody id="kitchensTable"></tbody></table></div>
+      <div class="table-panel"><table><thead><tr><th>Printer</th><th>Type</th><th>Connection</th><th>Address</th><th>Status</th><th></th></tr></thead><tbody id="printersTable"></tbody></table></div>
     </section>
 
     <section class="admin-view" id="view-categories">
@@ -113,7 +123,7 @@
         <label>Name<input id="userName" required></label>
         <label>Username<input id="userUsername" required></label>
         <label>PIN<input id="userPin" maxlength="4" inputmode="numeric"></label>
-        <label>Role<select id="userRole"><option>OWNER</option><option>MANAGER</option><option>MANAGER_2</option><option>CASHIER</option><option>WAITER</option><option>KITCHEN</option></select></label>
+        <label>Role<select id="userRole"><option>OWNER</option><option>MANAGER</option><option>MANAGER_2</option><option>MANAGER_1</option><option>CAPTAIN</option><option>CASHIER</option><option>WAITER</option><option>KITCHEN</option></select></label>
         <label class="check-row"><input id="userActive" type="checkbox" checked> Active</label>
         <button>Save User</button>
       </form>

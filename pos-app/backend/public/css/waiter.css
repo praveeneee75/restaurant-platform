@@ -104,6 +104,29 @@ button {
   gap: 8px;
   margin-top: 12px;
 }
+.transfer-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.transfer-panel label {
+  display: grid;
+  gap: 6px;
+  color: #536071;
+  font-size: 13px;
+  font-weight: 700;
+}
+.transfer-panel select {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  font: inherit;
+}
 #unlockWaiterTable { background: #b91c1c; }
 @media (min-width: 860px) {
   .waiter-layout { grid-template-columns: 260px 1fr 320px; }

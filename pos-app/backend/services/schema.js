@@ -221,8 +221,55 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'users', 'updated_at DATETIME');
 
   // Admin CRUD needs soft activity flags and kitchen printer routing.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS printers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'KITCHEN',
+      connection TEXT NOT NULL DEFAULT 'USB',
+      address TEXT,
+      active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME
+    );
+
+    CREATE TABLE IF NOT EXISTS print_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL,
+      ref_id INTEGER NOT NULL,
+      kitchen_id INTEGER,
+      printer_id INTEGER NOT NULL,
+      payload TEXT NOT NULL,
+      status TEXT DEFAULT 'PENDING',
+      attempts INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  addColumn(db, 'printers', "type TEXT DEFAULT 'KITCHEN'");
+  addColumn(db, 'printers', "connection TEXT DEFAULT 'USB'");
+  addColumn(db, 'printers', 'address TEXT');
+  addColumn(db, 'printers', 'active INTEGER DEFAULT 1');
+  addColumn(db, 'printers', 'created_at DATETIME');
+  addColumn(db, 'printers', 'updated_at DATETIME');
+  addColumn(db, 'print_jobs', 'last_error TEXT');
+  addColumn(db, 'print_jobs', 'updated_at DATETIME');
   addColumn(db, 'kitchens', 'active INTEGER DEFAULT 1');
   addColumn(db, 'kitchens', 'printer_id INTEGER');
+  const legacyKitchenPrinters = db.prepare(`
+    SELECT id, printer_name
+    FROM kitchens
+    WHERE printer_id IS NULL
+      AND printer_name IS NOT NULL
+      AND TRIM(printer_name) != ''
+  `).all();
+  legacyKitchenPrinters.forEach((kitchen) => {
+    const existingPrinter = db.prepare('SELECT id FROM printers WHERE LOWER(name) = LOWER(?) LIMIT 1').get(kitchen.printer_name);
+    const printerId = existingPrinter?.id || db.prepare(`
+      INSERT INTO printers (name, type, connection, active)
+      VALUES (?, 'KITCHEN', 'WINDOWS', 1)
+    `).run(kitchen.printer_name).lastInsertRowid;
+    db.prepare('UPDATE kitchens SET printer_id = ? WHERE id = ?').run(printerId, kitchen.id);
+  });
   addColumn(db, 'categories', 'active INTEGER DEFAULT 1');
   addColumn(db, 'items', 'active INTEGER DEFAULT 1');
   addColumn(db, 'items', 'image_url TEXT');

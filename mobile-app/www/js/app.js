@@ -247,11 +247,17 @@ document.querySelector(".role-grid").addEventListener("click", async (event) => 
   const restaurant = state.restaurant || selectedRestaurant();
   const restId = restaurant?.restaurantId || localStorage.getItem("restaurantId");
   const posBase = restaurantPosUrl(restaurant);
+  const mobileParams = new URLSearchParams({
+    restaurantId: restId || "",
+    mobileUserId: String(state.user?.id || ""),
+    mobileUserName: state.user?.name || state.user?.username || "Mobile user",
+    mobileRole: state.user?.role || ""
+  });
   const paths = {
-    owner: `${posBase}/admin.html?restaurantId=${encodeURIComponent(restId)}`,
-    captain: `${posBase}/waiter.html?restaurantId=${encodeURIComponent(restId)}`,
-    waiter: `${posBase}/waiter.html?restaurantId=${encodeURIComponent(restId)}`,
-    cashier: `${posBase}/pos-live.html?restaurantId=${encodeURIComponent(restId)}`
+    owner: `${posBase}/admin.html?${mobileParams.toString()}`,
+    captain: `${posBase}/waiter.html?${mobileParams.toString()}`,
+    waiter: `${posBase}/waiter.html?${mobileParams.toString()}`,
+    cashier: `${posBase}/pos-live.html?${mobileParams.toString()}`
   };
   if (!restId || !posBase || !state.user) {
     showLoginView("Login first.");

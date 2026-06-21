@@ -1,8 +1,23 @@
-const restaurantId = new URLSearchParams(window.location.search).get("restaurantId") || localStorage.getItem("restaurantId");
+const params = new URLSearchParams(window.location.search);
+const restaurantId = params.get("restaurantId") || localStorage.getItem("restaurantId");
 if (restaurantId) localStorage.setItem("restaurantId", restaurantId);
 
-const user = JSON.parse(localStorage.getItem("user") || "null");
-if (!restaurantId || !user) window.location.href = "/login.html";
+function userFromMobileParams() {
+  const role = params.get("mobileRole");
+  if (!role) return null;
+  return {
+    id: Number(params.get("mobileUserId") || 0),
+    name: params.get("mobileUserName") || "Mobile user",
+    role
+  };
+}
+
+const user = JSON.parse(localStorage.getItem("user") || "null") || userFromMobileParams();
+if (user) localStorage.setItem("user", JSON.stringify(user));
+if (!restaurantId || !user) {
+  waiterStatus.textContent = "Login from the mobile app first.";
+  throw new Error("Missing restaurant or user session");
+}
 
 const actor = { id: user?.id, role: user?.role };
 const state = {
@@ -21,34 +36,58 @@ const state = {
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 const money = (value) => Number(value || 0).toFixed(2);
 const can = (permission) => state.permissions.includes(permission) || actor.role === "OWNER";
+let bootstrapInFlight = false;
 
 async function postJson(url, body) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    signal: controller.signal,
     body: JSON.stringify({ restaurantId, actor, deviceName: navigator.userAgent.slice(0, 80), ...body })
-  });
-  const data = await res.json();
+  }).finally(() => clearTimeout(timer));
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.success === false) throw new Error(data.message || "Request failed");
+  return data;
+}
+
+async function fetchJson(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  const res = await fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+  const data = await res.json().catch(() => ({}));
   if (!res.ok || data.success === false) throw new Error(data.message || "Request failed");
   return data;
 }
 
 async function loadBootstrap() {
-  const [pos, permissions] = await Promise.all([
-    fetch(`/pos/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`).then((res) => res.json()),
-    fetch(`/permissions/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}`).then((res) => res.json())
-  ]);
-  state.tables = pos.tables || [];
-  state.categories = pos.categories || [];
-  state.items = pos.items || [];
-  state.permissions = permissions.currentPermissions || [];
-  if (!can("orders.create")) {
-    waiterStatus.textContent = "Your role cannot create waiter orders.";
-    saveWaiterOrder.disabled = true;
-    submitWaiterKot.disabled = true;
+  if (bootstrapInFlight) return;
+  bootstrapInFlight = true;
+  waiterStatus.textContent = "Refreshing tables...";
+  try {
+    const [pos, permissions] = await Promise.all([
+      fetchJson(`/pos/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`),
+      fetchJson(`/permissions/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}`)
+    ]);
+    state.tables = pos.tables || [];
+    state.categories = pos.categories || [];
+    state.items = pos.items || [];
+    state.permissions = permissions.currentPermissions || [];
+    if (!can("orders.create")) {
+      waiterStatus.textContent = "Your role cannot create waiter orders.";
+      saveWaiterOrder.disabled = true;
+      submitWaiterKot.disabled = true;
+    } else {
+      waiterStatus.textContent = `${state.tables.length} tables ready`;
+      saveWaiterOrder.disabled = false;
+      submitWaiterKot.disabled = false;
+    }
+    if (!state.selectedCategoryId) state.selectedCategoryId = state.categories[0]?.id || null;
+    renderAll();
+  } finally {
+    bootstrapInFlight = false;
   }
-  if (!state.selectedCategoryId) state.selectedCategoryId = state.categories[0]?.id || null;
-  renderAll();
 }
 
 async function touchDevice() {
@@ -60,6 +99,7 @@ function renderAll() {
   renderCategories();
   renderItems();
   renderCart();
+  renderTransferOptions();
 }
 
 function renderTables() {
@@ -98,6 +138,15 @@ function renderCart() {
   `).join("") || "<p>No items selected.</p>";
   waiterTotal.textContent = `Total: ${money(state.cart.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0))}`;
   lockStatus.textContent = state.lock ? `Locked until ${state.lock.expires_at}` : "No table locked";
+  transferTableButton.disabled = !state.orderId || !state.selectedTable || !state.lock;
+}
+
+function renderTransferOptions() {
+  const selectedId = Number(state.selectedTable?.id || 0);
+  const availableTables = state.tables.filter((table) => Number(table.id) !== selectedId && table.status !== "OCCUPIED" && table.status !== "INACTIVE");
+  transferTable.innerHTML = `<option value="">Choose target table</option>` + availableTables.map((table) => (
+    `<option value="${table.id}">${esc(table.table_name)} (${esc(table.status)})</option>`
+  )).join("");
 }
 
 async function selectTable(tableId) {
@@ -149,6 +198,24 @@ async function submitKot() {
   waiterStatus.textContent = `KOT submitted for order #${state.orderId}`;
 }
 
+async function transferSelectedTable() {
+  if (!can("orders.transfer_table")) throw new Error("Table transfer permission required");
+  if (!state.selectedTable || !state.orderId || !state.lock) throw new Error("Select and lock a table with an open order first");
+  if (!transferTable.value) throw new Error("Choose a target table");
+  const moved = await postJson("/orders/transfer-table", {
+    orderId: state.orderId,
+    fromTableId: state.selectedTable.id,
+    toTableId: transferTable.value,
+    lockId: state.lock.id
+  });
+  waiterStatus.textContent = moved.message || "Table transferred";
+  state.selectedTable = null;
+  state.lock = null;
+  state.cart = [];
+  state.orderId = null;
+  await loadBootstrap();
+}
+
 async function renewLock() {
   if (!state.lock) return;
   try {
@@ -190,6 +257,7 @@ document.addEventListener("click", async (event) => {
 
 saveWaiterOrder.addEventListener("click", () => saveOrder().catch((err) => alert(err.message)));
 submitWaiterKot.addEventListener("click", () => submitKot().catch((err) => alert(err.message)));
+transferTableButton.addEventListener("click", () => transferSelectedTable().catch((err) => alert(err.message)));
 unlockWaiterTable.addEventListener("click", async () => {
   if (state.lock) await postJson("/orders/unlock", { lockId: state.lock.id, tableId: state.selectedTable?.id });
   state.lock = null;
@@ -202,6 +270,6 @@ refreshWaiter.addEventListener("click", () => loadBootstrap().catch((err) => ale
 loadBootstrap().then(touchDevice).catch((err) => {
   waiterStatus.textContent = err.message;
 });
-setInterval(() => loadBootstrap().catch(() => {}), 5000);
+setInterval(() => loadBootstrap().catch(() => {}), 15000);
 setInterval(() => renewLock().catch(() => {}), 30000);
 setInterval(() => touchDevice().catch(() => {}), 30000);

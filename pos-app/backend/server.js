@@ -3153,6 +3153,7 @@ app.get('/admin/bootstrap', (req, res) => {
         id: db.__restaurantId || restaurantId,
         name: getConfigValue(db, 'restaurant_display_name', db.__restaurantId || restaurantId)
       },
+      printers: db.prepare("SELECT id, name, type, connection, address, active, created_at FROM printers WHERE (? = 'true' OR active = 1) ORDER BY type, name").all(includeInactive),
       kitchens: db.prepare("SELECT id, name, printer_name, printer_id, active FROM kitchens WHERE (? = 'true' OR active = 1) ORDER BY name").all(includeInactive),
       categories: db.prepare(`
         SELECT c.id, c.name, c.kitchen_id, c.active, k.name AS kitchen_name
@@ -3174,6 +3175,57 @@ app.get('/admin/bootstrap', (req, res) => {
       tables: db.prepare("SELECT id, table_name, status, active, created_at FROM tables WHERE (? = 'true' OR active = 1) ORDER BY id").all(includeInactive),
       enabledModules: enabledModules(db)
     });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/admin/printers/save', (req, res) => {
+  const { restaurantId, actor, id, name, type, connection, address, active } = req.body;
+  const printerTypes = ['KITCHEN', 'BILL', 'BAR', 'TOKEN'];
+  const connections = ['USB', 'NETWORK', 'WINDOWS', 'BLUETOOTH'];
+  const cleanType = String(type || 'KITCHEN').toUpperCase();
+  const cleanConnection = String(connection || 'USB').toUpperCase();
+  if (!restaurantId || !hasText(name) || !printerTypes.includes(cleanType) || !connections.includes(cleanConnection) || !canManage(actor?.role)) {
+    return res.status(400).json({ success: false, message: 'Printer name, type, connection and manager permission are required' });
+  }
+
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    if (activeNameExists(db, 'printers', 'name', name, id)) throw new Error('Printer name already exists');
+    const oldValue = id ? db.prepare('SELECT * FROM printers WHERE id = ?').get(id) : null;
+    const result = id
+      ? db.prepare('UPDATE printers SET name = ?, type = ?, connection = ?, address = ?, active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(normaliseText(name), cleanType, cleanConnection, normaliseText(address) || null, active === false ? 0 : 1, id)
+      : db.prepare('INSERT INTO printers (name, type, connection, address, active) VALUES (?, ?, ?, ?, 1)')
+        .run(normaliseText(name), cleanType, cleanConnection, normaliseText(address) || null);
+    const printerId = id || result.lastInsertRowid;
+    const newValue = db.prepare('SELECT * FROM printers WHERE id = ?').get(printerId);
+    writeAudit(db, actor, id ? 'UPDATE' : 'CREATE', 'PRINTER', printerId, oldValue, newValue);
+    res.json({ success: true, id: printerId });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/admin/printers/delete', (req, res) => {
+  const { restaurantId, actor, id } = req.body;
+  if (!restaurantId || !isPositiveId(id) || !canManage(actor?.role)) {
+    return res.status(400).json({ success: false, message: 'Printer and manager permission are required' });
+  }
+
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const oldValue = db.prepare('SELECT * FROM printers WHERE id = ?').get(id);
+    db.prepare('UPDATE printers SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+    db.prepare('UPDATE kitchens SET printer_id = NULL WHERE printer_id = ?').run(id);
+    const newValue = db.prepare('SELECT * FROM printers WHERE id = ?').get(id);
+    writeAudit(db, actor, 'DELETE', 'PRINTER', id, oldValue, newValue);
+    res.json({ success: true });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -3910,16 +3962,23 @@ app.post('/demo/reset', (req, res) => {
 });
 
 app.post('/admin/kitchens/save', (req, res) => {
-  const { restaurantId, actor, id, name, printerName, active } = req.body;
+  const { restaurantId, actor, id, name, printerName, printerId, active } = req.body;
   if (!restaurantId || !hasText(name) || !canManage(actor?.role)) return res.status(400).json({ success: false, message: 'Kitchen name and manager permission are required' });
 
   const db = openRestaurantDatabase(restaurantId);
   try {
     if (activeNameExists(db, 'kitchens', 'name', name, id)) throw new Error('Kitchen name already exists');
+    const resolvedPrinterId = isPositiveId(printerId) ? Number(printerId) : null;
+    let resolvedPrinterName = normaliseText(printerName) || null;
+    if (resolvedPrinterId) {
+      const printer = db.prepare('SELECT id, name FROM printers WHERE id = ? AND active = 1').get(resolvedPrinterId);
+      if (!printer) throw new Error('KOT printer not found');
+      resolvedPrinterName = printer.name;
+    }
     const oldValue = id ? db.prepare('SELECT * FROM kitchens WHERE id = ?').get(id) : null;
     const result = id
-      ? db.prepare('UPDATE kitchens SET name = ?, printer_name = ?, active = ? WHERE id = ?').run(normaliseText(name), normaliseText(printerName) || null, active === false ? 0 : 1, id)
-      : db.prepare('INSERT INTO kitchens (name, printer_name, active) VALUES (?, ?, 1)').run(normaliseText(name), normaliseText(printerName) || null);
+      ? db.prepare('UPDATE kitchens SET name = ?, printer_name = ?, printer_id = ?, active = ? WHERE id = ?').run(normaliseText(name), resolvedPrinterName, resolvedPrinterId, active === false ? 0 : 1, id)
+      : db.prepare('INSERT INTO kitchens (name, printer_name, printer_id, active) VALUES (?, ?, ?, 1)').run(normaliseText(name), resolvedPrinterName, resolvedPrinterId);
     const newValue = db.prepare('SELECT * FROM kitchens WHERE id = ?').get(id || result.lastInsertRowid);
     writeAudit(db, actor, id ? 'UPDATE' : 'CREATE', 'KITCHEN', id || result.lastInsertRowid, oldValue, newValue);
     res.json({ success: true, id: id || result.lastInsertRowid });
@@ -5051,6 +5110,66 @@ app.post('/device-sessions/force-logout', (req, res) => {
     db.prepare('UPDATE device_sessions SET active = 0, last_seen_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
     writeAudit(db, actor, 'FORCE_LOGOUT', 'DEVICE_SESSION', id, oldValue, { id, active: 0 });
     res.json({ success: true });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/orders/transfer-table', (req, res) => {
+  const { restaurantId, actor, orderId, fromTableId, toTableId, lockId } = req.body;
+  if (!restaurantId || !isPositiveId(orderId) || !isPositiveId(fromTableId) || !isPositiveId(toTableId)) {
+    return res.status(400).json({ success: false, message: 'Order, source table and target table are required' });
+  }
+  if (Number(fromTableId) === Number(toTableId)) {
+    return res.status(400).json({ success: false, message: 'Choose a different target table' });
+  }
+
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'orders.transfer_table', 'Table transfer permission required');
+    if (lockId) verifyOrderLock(db, actor, fromTableId, orderId, lockId);
+    const order = db.prepare(`
+      SELECT id, table_id, table_no, status, payment_status
+      FROM orders
+      WHERE id = ? AND status = 'OPEN' AND payment_status != 'PAID'
+    `).get(orderId);
+    if (!order) throw new Error('Open unpaid order not found');
+    if (Number(order.table_id) !== Number(fromTableId)) throw new Error('Order does not belong to the selected source table');
+    const targetTable = db.prepare("SELECT id, table_name, status FROM tables WHERE id = ? AND active = 1").get(toTableId);
+    if (!targetTable) throw new Error('Target table not found');
+    const targetOrder = db.prepare(`
+      SELECT id FROM orders
+      WHERE table_id = ? AND status = 'OPEN' AND payment_status != 'PAID' AND id != ?
+      LIMIT 1
+    `).get(toTableId, orderId);
+    if (targetOrder) throw new Error('Target table already has an open order');
+
+    db.transaction(() => {
+      const oldValue = { ...order };
+      db.prepare('UPDATE orders SET table_id = ?, table_no = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(targetTable.id, targetTable.table_name, orderId);
+      const sourceOpenOrder = db.prepare(`
+        SELECT id FROM orders
+        WHERE table_id = ? AND status = 'OPEN' AND payment_status != 'PAID' AND id != ?
+        LIMIT 1
+      `).get(fromTableId, orderId);
+      if (!sourceOpenOrder) db.prepare("UPDATE tables SET status = 'AVAILABLE' WHERE id = ?").run(fromTableId);
+      db.prepare("UPDATE tables SET status = 'OCCUPIED' WHERE id = ?").run(toTableId);
+      db.prepare('DELETE FROM order_locks WHERE table_id = ? AND id != ?').run(toTableId, lockId || 0);
+      if (lockId) {
+        db.prepare('UPDATE order_locks SET table_id = ?, order_id = ?, locked_at = CURRENT_TIMESTAMP, expires_at = ' + lockExpirySql() + ' WHERE id = ?')
+          .run(toTableId, orderId, lockId);
+      } else {
+        db.prepare('DELETE FROM order_locks WHERE table_id = ? OR order_id = ?').run(fromTableId, orderId);
+      }
+      const newValue = db.prepare('SELECT id, table_id, table_no, status, payment_status FROM orders WHERE id = ?').get(orderId);
+      writeOrderStatusHistory(db, actor, orderId, 'TRANSFERRED', 'ORDER', `Moved from ${order.table_no || fromTableId} to ${targetTable.table_name}`);
+      writeAudit(db, actor, 'TRANSFER_TABLE', 'ORDER', orderId, oldValue, newValue, { fromTableId, toTableId });
+    })();
+
+    res.json({ success: true, message: `Moved to ${targetTable.table_name}`, table: targetTable });
   } catch (err) {
     sendError(res, err);
   } finally {

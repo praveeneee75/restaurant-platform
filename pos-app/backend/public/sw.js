@@ -1,4 +1,4 @@
-const CACHE_NAME = "restaurant-pos-waiter-v1";
+const CACHE_NAME = "restaurant-pos-waiter-v2";
 const SHELL_ASSETS = [
   "/waiter.html",
   "/css/waiter.css",
@@ -22,6 +22,14 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== "GET" || url.pathname.startsWith("/orders") || url.pathname.startsWith("/pos") || url.pathname.startsWith("/kds")) {
+    return;
+  }
+  if (SHELL_ASSETS.includes(url.pathname)) {
+    event.respondWith(fetch(event.request).then((response) => {
+      const clone = response.clone();
+      caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+      return response;
+    }).catch(() => caches.match(event.request)));
     return;
   }
   event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
