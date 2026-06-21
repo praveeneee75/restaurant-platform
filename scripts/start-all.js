@@ -7,18 +7,21 @@ const root = path.resolve(__dirname, '..');
 
 const services = [
   {
+    key: 'pos',
     name: 'POS',
     cwd: path.join(root, 'pos-app'),
     args: ['start'],
     url: 'http://localhost:3000'
   },
   {
+    key: 'saas',
     name: 'SaaS',
     cwd: path.join(root, 'saas-backend'),
     args: ['start'],
     url: 'http://localhost:4000'
   },
   {
+    key: 'mobile',
     name: 'Mobile',
     cwd: path.join(root, 'mobile-app'),
     args: ['run', 'start:4300'],
@@ -28,6 +31,23 @@ const services = [
 
 const children = [];
 let shuttingDown = false;
+const requestedService = (process.argv[2] || 'all').toLowerCase();
+
+function printHelp() {
+  console.log(`
+Usage:
+  npm.cmd run start:all
+  npm.cmd run start:pos
+  npm.cmd run start:saas
+  npm.cmd run start:mobile
+
+Advanced:
+  node scripts/start-all.js all
+  node scripts/start-all.js pos
+  node scripts/start-all.js saas
+  node scripts/start-all.js mobile
+`);
+}
 
 function prefixLines(name, stream, chunk) {
   String(chunk)
@@ -74,5 +94,15 @@ function stopAll(exitCode = 0) {
 process.on('SIGINT', () => stopAll(0));
 process.on('SIGTERM', () => stopAll(0));
 
-services.forEach(startService);
-console.log('[all] POS, SaaS and mobile preview are starting. Press Ctrl+C to stop all.');
+const selectedServices = requestedService === 'all'
+  ? services
+  : services.filter((service) => service.key === requestedService);
+
+if (selectedServices.length === 0) {
+  console.error(`[start] Unknown service "${requestedService}".`);
+  printHelp();
+  process.exit(1);
+}
+
+selectedServices.forEach(startService);
+console.log(`[start] ${selectedServices.map((service) => service.name).join(', ')} starting. Press Ctrl+C to stop.`);

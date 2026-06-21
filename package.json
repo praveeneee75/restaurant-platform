@@ -5,6 +5,13 @@
   "description": "Restaurant SaaS and local POS platform",
   "scripts": {
     "start:all": "node scripts/start-all.js",
+    "start:pos": "node scripts/start-all.js pos",
+    "start:saas": "node scripts/start-all.js saas",
+    "start:mobile": "node scripts/start-all.js mobile",
+    "stop:all": "node scripts/stop-service.js all",
+    "stop:pos": "node scripts/stop-service.js pos",
+    "stop:saas": "node scripts/stop-service.js saas",
+    "stop:mobile": "node scripts/stop-service.js mobile",
     "setup:palmsy": "npm --prefix saas-backend run migrate && node scripts/setup-palmsy.js",
     "test": "node tests/smoke-commercial-readiness.js",
     "test:pos": "node tests/pos-smoke.js",
