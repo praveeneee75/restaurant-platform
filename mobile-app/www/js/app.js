@@ -20,6 +20,26 @@ const state = {
   user: JSON.parse(localStorage.getItem("user") || "null")
 };
 
+function rememberRestaurant(restaurant) {
+  if (!restaurant?.restaurantId) return;
+  localStorage.setItem("restaurantId", restaurant.restaurantId);
+  localStorage.setItem("restaurantName", restaurant.name || restaurant.restaurantId);
+  localStorage.setItem("currency", restaurant.currency || "INR");
+  if (restaurant.posUrl) localStorage.setItem("posUrl", restaurantPosUrl(restaurant));
+}
+
+function savedRestaurant() {
+  const restaurantId = localStorage.getItem("restaurantId");
+  if (!restaurantId) return null;
+  return {
+    restaurantId,
+    name: localStorage.getItem("restaurantName") || restaurantId,
+    posUrl: localStorage.getItem("posUrl") || DEV_POS_URL,
+    currency: localStorage.getItem("currency") || "INR",
+    savedOnly: true
+  };
+}
+
 function setBrand(app) {
   if (!app) return;
   const selectedName = state.restaurant?.name || app.name || localStorage.getItem("restaurantName") || "Restaurant";
@@ -51,6 +71,40 @@ async function fetchJson(url, options) {
   return data;
 }
 
+async function fetchRestaurantDirectory() {
+  const bases = [MOBILE_DIRECTORY_URL, "http://localhost:4000"]
+    .map(cleanBase)
+    .filter((base, index, all) => base && all.indexOf(base) === index);
+  let lastError = null;
+  for (const base of bases) {
+    try {
+      const data = await fetchJson(`${base}/mobile/restaurants`);
+      localStorage.setItem("mobileDirectoryUrl", base);
+      return data;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error("Directory unavailable");
+}
+
+function renderRestaurantOptions() {
+  restaurantSelect.innerHTML = state.restaurants.length
+    ? `<option value="">Select restaurant</option>` + state.restaurants.map((restaurant) => (
+      `<option value="${esc(restaurant.restaurantId)}">${esc(restaurant.name)} (${esc(restaurant.restaurantId)})</option>`
+    )).join("")
+    : `<option value="">No mobile-enabled restaurants</option>`;
+}
+
+async function useRestaurant(restaurant) {
+  if (!restaurant) return;
+  state.restaurant = restaurant;
+  restaurantSelect.value = restaurant.restaurantId;
+  rememberRestaurant(restaurant);
+  activeRestaurantName.textContent = `${restaurant.name} active`;
+  await checkPremiumAccess(restaurant);
+}
+
 async function checkPremiumAccess(restaurant) {
   if (!restaurant?.restaurantId) throw new Error("Select a restaurant.");
   const base = restaurantPosUrl(restaurant);
@@ -59,6 +113,9 @@ async function checkPremiumAccess(restaurant) {
     restaurant.restaurantId = data.app.restaurantId;
     localStorage.setItem("restaurantId", restaurant.restaurantId);
   }
+  if (data.app?.name) restaurant.name = data.app.name;
+  if (data.app?.currency) restaurant.currency = data.app.currency;
+  rememberRestaurant(restaurant);
   setBrand(data.app);
   return data;
 }
@@ -66,36 +123,36 @@ async function checkPremiumAccess(restaurant) {
 async function loadRestaurants() {
   restaurantSelect.innerHTML = `<option value="">Loading...</option>`;
   try {
-    const data = await fetchJson(`${MOBILE_DIRECTORY_URL}/mobile/restaurants`);
+    const data = await fetchRestaurantDirectory();
     state.restaurants = (data.restaurants || []).map((restaurant) => ({
       restaurantId: restaurant.restaurantId || restaurant.restaurant_id || restaurant.restaurant_code,
       name: restaurant.name || restaurant.restaurantName || restaurant.restaurant_name || restaurant.displayName || restaurant.display_name || "Restaurant",
       posUrl: restaurant.posUrl || restaurant.pos_url || "",
       currency: restaurant.currency || "INR"
     })).filter((restaurant) => restaurant.restaurantId);
-    restaurantSelect.innerHTML = state.restaurants.length
-      ? `<option value="">Select restaurant</option>` + state.restaurants.map((restaurant) => (
-        `<option value="${esc(restaurant.restaurantId)}">${esc(restaurant.name)} (${esc(restaurant.restaurantId)})</option>`
-      )).join("")
-      : `<option value="">No mobile-enabled restaurants</option>`;
+    renderRestaurantOptions();
     const previous = localStorage.getItem("restaurantId");
     if (previous && state.restaurants.some((restaurant) => restaurant.restaurantId === previous)) {
-      restaurantSelect.value = previous;
-      state.restaurant = selectedRestaurant();
-      activeRestaurantName.textContent = `${state.restaurant.name} active`;
-      await checkPremiumAccess(state.restaurant);
+      await useRestaurant(state.restaurants.find((restaurant) => restaurant.restaurantId === previous));
     } else if (state.restaurants.length === 1) {
-      state.restaurant = state.restaurants[0];
-      restaurantSelect.value = state.restaurant.restaurantId;
-      localStorage.setItem("restaurantId", state.restaurant.restaurantId);
-      localStorage.setItem("restaurantName", state.restaurant.name);
-      activeRestaurantName.textContent = `${state.restaurant.name} active`;
-      await checkPremiumAccess(state.restaurant);
+      await useRestaurant(state.restaurants[0]);
     }
     loginStatus.textContent = state.restaurants.length ? "Login with your POS username and PIN." : "No restaurant has active mobile access.";
   } catch (err) {
-    restaurantSelect.innerHTML = `<option value="">Directory unavailable</option>`;
-    loginStatus.textContent = err.message;
+    const fallback = savedRestaurant();
+    if (!fallback) {
+      restaurantSelect.innerHTML = `<option value="">Directory unavailable</option>`;
+      loginStatus.textContent = err.message;
+      return;
+    }
+    state.restaurants = [fallback];
+    renderRestaurantOptions();
+    try {
+      await useRestaurant(fallback);
+      loginStatus.textContent = "Login with your POS username and PIN.";
+    } catch (configErr) {
+      loginStatus.textContent = configErr.message || "Directory unavailable. Using saved restaurant.";
+    }
   }
 }
 
@@ -150,8 +207,7 @@ async function login() {
 restaurantSelect.addEventListener("change", async () => {
   state.restaurant = selectedRestaurant();
   if (!state.restaurant) return;
-  localStorage.setItem("restaurantId", state.restaurant.restaurantId);
-  localStorage.setItem("restaurantName", state.restaurant.name);
+  rememberRestaurant(state.restaurant);
   activeRestaurantName.textContent = `${state.restaurant.name} active`;
   try {
     await checkPremiumAccess(state.restaurant);
