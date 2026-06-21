@@ -1,9 +1,124 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const pool = require('../db/db');
 const authenticate = require('../middleware/authMiddleware');
 const { publicError } = require('../config');
 
 const router = express.Router();
+const rootDir = path.resolve(__dirname, '../../..');
+const posAppDir = path.join(rootDir, 'pos-app');
+
+const crcTable = Array.from({ length: 256 }, (_, index) => {
+  let value = index;
+  for (let bit = 0; bit < 8; bit += 1) {
+    value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+  }
+  return value >>> 0;
+});
+
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function dosDateTime(date = new Date()) {
+  const year = Math.max(date.getFullYear(), 1980);
+  const time = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+  const day = (year - 1980) << 9 | ((date.getMonth() + 1) << 5) | date.getDate();
+  return { time, day };
+}
+
+function shouldSkipPosPath(relativePath) {
+  const normalized = relativePath.replace(/\\/g, '/');
+  return normalized === ''
+    || normalized.startsWith('node_modules/')
+    || normalized.startsWith('data/')
+    || normalized.startsWith('backups/')
+    || normalized.startsWith('updates/staging/')
+    || normalized.startsWith('.npm-cache/')
+    || normalized.includes('/tmp-')
+    || normalized.endsWith('.db')
+    || normalized.endsWith('.log')
+    || normalized === '.env';
+}
+
+function listPosFiles(dir = posAppDir, prefix = '') {
+  if (!fs.existsSync(posAppDir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const relativePath = path.join(prefix, entry.name);
+    if (shouldSkipPosPath(relativePath)) return [];
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) return listPosFiles(fullPath, relativePath);
+    if (!entry.isFile()) return [];
+    return [{ fullPath, zipPath: `kmaster-pos/${relativePath.replace(/\\/g, '/')}` }];
+  });
+}
+
+function buildStoredZip(files) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  files.forEach((file) => {
+    const data = fs.readFileSync(file.fullPath);
+    const name = Buffer.from(file.zipPath, 'utf8');
+    const crc = crc32(data);
+    const { time, day } = dosDateTime(fs.statSync(file.fullPath).mtime);
+
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0x0800, 6);
+    local.writeUInt16LE(0, 8);
+    local.writeUInt16LE(time, 10);
+    local.writeUInt16LE(day, 12);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    local.writeUInt16LE(0, 28);
+    localParts.push(local, name, data);
+
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0x0800, 8);
+    central.writeUInt16LE(0, 10);
+    central.writeUInt16LE(time, 12);
+    central.writeUInt16LE(day, 14);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt16LE(0, 30);
+    central.writeUInt16LE(0, 32);
+    central.writeUInt16LE(0, 34);
+    central.writeUInt16LE(0, 36);
+    central.writeUInt32LE(0, 38);
+    central.writeUInt32LE(offset, 42);
+    centralParts.push(central, name);
+
+    offset += local.length + name.length + data.length;
+  });
+
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(0, 4);
+  end.writeUInt16LE(0, 6);
+  end.writeUInt16LE(files.length, 8);
+  end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(centralSize, 12);
+  end.writeUInt32LE(offset, 16);
+  end.writeUInt16LE(0, 20);
+
+  return Buffer.concat([...localParts, ...centralParts, end]);
+}
 
 function rowsToRelease(rows) {
   if (rows.length === 0) return null;
@@ -49,6 +164,21 @@ router.get('/latest', async (_req, res) => {
     });
   } catch (err) {
     console.error('LATEST UPDATE ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.get('/download/pos-app.zip', async (_req, res) => {
+  try {
+    const files = listPosFiles();
+    if (files.length === 0) return res.status(404).json({ success: false, message: 'POS app package is not available' });
+    const zip = buildStoredZip(files);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="kmaster-pos-app.zip"');
+    res.setHeader('Content-Length', String(zip.length));
+    res.send(zip);
+  } catch (err) {
+    console.error('POS DOWNLOAD ERROR:', err.message);
     res.status(500).json({ success: false, message: publicError(err) });
   }
 });

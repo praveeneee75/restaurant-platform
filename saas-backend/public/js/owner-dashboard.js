@@ -18,6 +18,7 @@ async function ownerApi(url, options = {}) {
 async function loadDashboard() {
   try {
     const data = await ownerApi("/owners/dashboard");
+    const posDownloadUrl = "/updates/download/pos-app.zip";
     ownerStatus.innerText = "Assigned restaurants";
     organizationCards.innerHTML = (data.organizations || []).map((org) => `
       <div class="card">
@@ -40,7 +41,7 @@ async function loadDashboard() {
         <td>${row.backup_status || ""}</td>
         <td>${row.printer_status || ""}</td>
         <td>${row.last_heartbeat_at ? new Date(row.last_heartbeat_at).toLocaleString() : "Never"}</td>
-        <td><a href="/downloads.html" target="_blank" rel="noopener">POS App</a></td>
+        <td><a href="${posDownloadUrl}" target="_blank" rel="noopener" download>Download</a></td>
       </tr>
     `).join("") || `<tr><td colspan="13">No restaurants assigned.</td></tr>`;
   } catch (err) {
