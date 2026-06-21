@@ -18,7 +18,7 @@
       </div>
     </section>
 
-    <section class="login-panel">
+    <section class="login-panel" id="loginView">
       <label>Restaurant
         <select id="restaurantSelect"></select>
       </label>
@@ -32,11 +32,21 @@
       <p id="loginStatus" class="status-line">Loading restaurants...</p>
     </section>
 
-    <section class="role-grid">
-      <button data-role="owner" type="button">Owner Dashboard</button>
-      <button data-role="captain" type="button">Captain Ordering</button>
-      <button data-role="waiter" type="button">Waiter Ordering</button>
-      <button data-role="cashier" type="button">Cashier POS</button>
+    <section class="dashboard-panel" id="dashboardView" hidden>
+      <header class="dashboard-header">
+        <div>
+          <p class="eyebrow">Signed in</p>
+          <h2 id="dashboardTitle">Mobile Dashboard</h2>
+          <p id="dashboardStatus" class="status-line">Choose your workspace.</p>
+        </div>
+        <button id="logoutButton" type="button" class="secondary-button">Logout</button>
+      </header>
+      <div class="role-grid">
+        <button data-role="owner" type="button">Owner Dashboard</button>
+        <button data-role="captain" type="button">Captain Ordering</button>
+        <button data-role="waiter" type="button">Waiter Ordering</button>
+        <button data-role="cashier" type="button">Cashier POS</button>
+      </div>
     </section>
 
     <section class="webview-panel" id="webviewPanel" hidden>

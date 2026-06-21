@@ -20,6 +20,21 @@ const state = {
   user: JSON.parse(localStorage.getItem("user") || "null")
 };
 
+function showLoginView(message) {
+  loginView.hidden = false;
+  dashboardView.hidden = true;
+  webviewPanel.hidden = true;
+  appFrame.src = "about:blank";
+  if (message) loginStatus.textContent = message;
+}
+
+function showDashboardView(message) {
+  loginView.hidden = true;
+  dashboardView.hidden = false;
+  dashboardTitle.textContent = state.restaurant?.name || localStorage.getItem("restaurantName") || "Mobile Dashboard";
+  dashboardStatus.textContent = message || `Signed in as ${state.user?.role || "user"}.`;
+}
+
 function rememberRestaurant(restaurant) {
   if (!restaurant?.restaurantId) return;
   localStorage.setItem("restaurantId", restaurant.restaurantId);
@@ -197,8 +212,8 @@ async function login() {
     localStorage.setItem("posUrl", base);
     localStorage.setItem("user", JSON.stringify(data.user));
     activeRestaurantName.textContent = `${state.restaurant.name} active`;
-    loginStatus.textContent = `Logged in to ${state.restaurant.name} as ${data.user.role}`;
     showRoleGrid(data.user.role);
+    showDashboardView(`Signed in as ${data.user.role}.`);
   } catch (err) {
     loginStatus.textContent = err.message;
   }
@@ -218,6 +233,12 @@ restaurantSelect.addEventListener("change", async () => {
 });
 
 loginButton.addEventListener("click", login);
+logoutButton.addEventListener("click", () => {
+  state.user = null;
+  localStorage.removeItem("user");
+  showRoleGrid("");
+  showLoginView("Logged out. Login with your POS username and PIN.");
+});
 
 document.querySelector(".role-grid").addEventListener("click", async (event) => {
   const button = event.target.closest("[data-role]");
@@ -233,7 +254,7 @@ document.querySelector(".role-grid").addEventListener("click", async (event) => 
     cashier: `${posBase}/pos-live.html?restaurantId=${encodeURIComponent(restId)}`
   };
   if (!restId || !posBase || !state.user) {
-    loginStatus.textContent = "Login first.";
+    showLoginView("Login first.");
     return;
   }
   activeRole.textContent = button.textContent;
@@ -248,3 +269,8 @@ closeFrame.addEventListener("click", () => {
 
 showRoleGrid(state.user?.role || "");
 loadRestaurants();
+if (state.user) {
+  showDashboardView(`Signed in as ${state.user.role}.`);
+} else {
+  showLoginView();
+}
