@@ -164,6 +164,11 @@ button:hover {
   background: var(--primary-dark);
 }
 
+button > *,
+a > * {
+  min-width: 0;
+}
+
 button:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
@@ -336,11 +341,15 @@ th {
   justify-content: center;
   align-items: center;
   min-height: 40px;
+  max-width: 100%;
   padding: 9px 13px;
   border-radius: 7px;
   background: var(--primary);
   color: #fff;
   text-align: center;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .download-button:hover {
@@ -594,7 +603,10 @@ body.saas-shell {
   border: 1px solid transparent !important;
   background: transparent !important;
   color: #e2e8f0 !important;
+  line-height: 1.25;
   text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
   box-shadow: none !important;
 }
 
@@ -656,16 +668,48 @@ body.saas-shell {
   background: #fff;
   color: #0f172a;
   font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
   text-decoration: none;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .secondary-link:hover,
 .quick-link-grid a:hover,
 .quick-link-grid button:hover {
   border-color: #0f766e;
+  background: #ecfdf5;
   color: #0f766e;
   text-decoration: none;
+}
+
+.secondary-link:focus-visible,
+.quick-link-grid a:focus-visible,
+.quick-link-grid button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.saas-view a:not(.download-button):not(.secondary-link) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  max-width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: #fff;
+  color: #0f766e;
+  line-height: 1.2;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.saas-view a:not(.download-button):not(.secondary-link):hover {
+  background: #ecfdf5;
+  border-color: #0f766e;
+  color: #115e59;
 }
 
 .saas-view {
@@ -772,22 +816,44 @@ body.saas-shell {
 }
 
 .action-card {
+  display: flex !important;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 6px;
+  width: 100%;
   min-height: 128px;
   cursor: pointer;
   color: #475569;
   text-align: left;
+  line-height: 1.25;
 }
 
 .action-card strong {
+  display: block;
+  margin: 0;
   color: #0f172a;
   font-size: 18px;
+  overflow-wrap: anywhere;
 }
 
 .action-card small {
   display: block;
-  margin-top: 6px;
+  margin-top: 0;
   color: #64748b;
   font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.action-card:hover {
+  border-color: #0f766e !important;
+  background: #f0fdfa !important;
+  color: #0f172a;
+}
+
+.action-card:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .inline-check {
@@ -844,8 +910,10 @@ body.saas-shell {
 
   .saas-nav-btn {
     width: auto;
-    min-width: max-content;
-    white-space: nowrap;
+    flex: 0 1 150px;
+    min-width: 112px;
+    max-width: 190px;
+    white-space: normal;
   }
 
   .saas-main {
