@@ -4,6 +4,41 @@ if (!token) {
   window.location.href = "/login.html";
 }
 
+function showSaasView(viewName = "overview") {
+  const viewId = `view-${viewName}`;
+  const target = document.getElementById(viewId) || document.getElementById("view-overview");
+  if (!target) return;
+
+  const activeView = target.id.replace("view-", "");
+  document.querySelectorAll(".saas-view").forEach((section) => {
+    section.classList.toggle("active", section === target);
+  });
+  document.querySelectorAll(".saas-nav-btn").forEach((button) => {
+    button.classList.toggle("active", button.dataset.saasView === activeView);
+  });
+
+  if (window.saasViewTitle) window.saasViewTitle.innerText = target.dataset.title || "K'Master POS";
+  if (window.saasViewHint) window.saasViewHint.innerText = target.dataset.hint || "";
+  if (location.hash !== `#${activeView}`) history.replaceState(null, "", `#${activeView}`);
+}
+
+document.addEventListener("click", (event) => {
+  const navButton = event.target.closest("[data-saas-view]");
+  if (navButton) {
+    showSaasView(navButton.dataset.saasView);
+    return;
+  }
+
+  const viewLink = event.target.closest("[data-saas-view-link]");
+  if (viewLink) {
+    showSaasView(viewLink.dataset.saasViewLink);
+  }
+});
+
+window.addEventListener("hashchange", () => {
+  showSaasView((location.hash || "#overview").slice(1));
+});
+
 async function api(url, options = {}) {
   const res = await fetch(url, {
     ...options,
@@ -890,3 +925,4 @@ loadMonitoring();
 loadPartners();
 loadModules();
 loadOrganizations();
+showSaasView((location.hash || "#overview").slice(1));

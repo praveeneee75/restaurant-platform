@@ -2,376 +2,347 @@
 <html>
 <head>
   <title>K'Master POS Admin Dashboard</title>
-  <style>
-    body { font-family: Arial; padding: 20px; }
-    input, textarea, select { margin: 4px; padding: 7px; }
-    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }
-    th { background-color: #f2f2f2; }
-    button { padding: 6px 12px; cursor: pointer; }
-    section { margin-bottom: 26px; }
-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 12px 0; }
-    .card { border: 1px solid #ddd; border-radius: 6px; padding: 12px; background: #fafafa; }
-    .card strong { display: block; font-size: 20px; margin-top: 6px; }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="/css/app.css?v=kmaster-ui">
 </head>
-<body>
-  <h2>K'Master POS Admin Dashboard</h2>
-
-  <section>
-    <h3>Quick Access</h3>
-    <a href="/downloads.html" target="_blank" rel="noopener">Download POS App</a>
-    &nbsp;|&nbsp;
-    <a href="/order.html" target="_blank" rel="noopener">Open SaaS Online Ordering</a>
-  </section>
-
-  <section>
-    <h3>Create Customer</h3>
-    <div class="wizard-steps" aria-label="Create customer steps">
-      <button id="createStep1Tab" class="active" type="button" onclick="showCreateStep(1)">1. Restaurant</button>
-      <button id="createStep2Tab" type="button" onclick="showCreateStep(2)">2. Location</button>
-      <button id="createStep3Tab" type="button" onclick="showCreateStep(3)">3. License</button>
-    </div>
-    <div class="wizard-panel active" id="createStep1">
-      <label>Restaurant name<input id="restaurantName" placeholder="Restaurant or branch name"></label>
-      <label>Owner/business contact<input id="restaurantContact" placeholder="Owner or manager name"></label>
-      <div class="wizard-actions">
-        <button type="button" onclick="showCreateStep(2)">Next</button>
+<body class="saas-shell">
+  <aside class="saas-sidebar">
+    <div class="saas-brand">
+      <span class="brand-mark">K</span>
+      <div>
+        <strong>K'Master POS</strong>
+        <small>SaaS Control</small>
       </div>
     </div>
-    <div class="wizard-panel" id="createStep2">
-      <label>Country<input id="restaurantCountry" placeholder="India" value="India"></label>
-      <label>Currency<select id="restaurantCurrency"><option value="INR">INR</option><option value="USD">USD</option><option value="AUD">AUD</option></select></label>
-      <label>POS URL for mobile app<input id="restaurantMobilePosUrl" placeholder="http://localhost:3000"></label>
-      <div class="wizard-actions">
-        <button type="button" onclick="showCreateStep(1)">Back</button>
-        <button type="button" onclick="showCreateStep(3)">Next</button>
+    <nav class="saas-nav" aria-label="SaaS admin sections">
+      <p class="nav-group-title">Core</p>
+      <button class="saas-nav-btn active" data-saas-view="overview" type="button">Overview</button>
+      <button class="saas-nav-btn" data-saas-view="customers" type="button">Create Customer</button>
+      <button class="saas-nav-btn" data-saas-view="restaurants" type="button">Restaurants</button>
+      <button class="saas-nav-btn" data-saas-view="subscriptions" type="button">Subscriptions</button>
+      <button class="saas-nav-btn" data-saas-view="modules" type="button">Modules</button>
+
+      <p class="nav-group-title">Operations</p>
+      <button class="saas-nav-btn" data-saas-view="monitoring" type="button">Monitoring</button>
+      <button class="saas-nav-btn" data-saas-view="owners" type="button">Owner Accounts</button>
+      <button class="saas-nav-btn" data-saas-view="reports" type="button">Cloud Reports</button>
+      <button class="saas-nav-btn" data-saas-view="support" type="button">Support</button>
+
+      <p class="nav-group-title">Growth</p>
+      <button class="saas-nav-btn" data-saas-view="partners" type="button">Partners</button>
+      <button class="saas-nav-btn" data-saas-view="partner-users" type="button">Partner Users</button>
+      <button class="saas-nav-btn" data-saas-view="partner-branding" type="button">Partner Branding</button>
+      <button class="saas-nav-btn" data-saas-view="partner-restaurants" type="button">Partner Restaurants</button>
+      <button class="saas-nav-btn" data-saas-view="partner-commissions" type="button">Commissions</button>
+      <button class="saas-nav-btn" data-saas-view="organizations" type="button">Multi-Branch</button>
+
+      <p class="nav-group-title">Release</p>
+      <button class="saas-nav-btn" data-saas-view="releases" type="button">Releases</button>
+    </nav>
+  </aside>
+
+  <main class="saas-main">
+    <header class="saas-topbar">
+      <div>
+        <p class="eyebrow">Platform Admin</p>
+        <h1 id="saasViewTitle">Overview</h1>
+        <p id="saasViewHint">Monitor customers, subscriptions, partners and POS health from one workspace.</p>
       </div>
-    </div>
-    <div class="wizard-panel" id="createStep3">
-      <label>License package<select id="createPlan"></select></label>
-      <label>Start date<input id="createStartDate" type="date"></label>
-      <label>Expiry override<input id="expiryDate" type="date"></label>
-      <label>Payment amount<input id="createPaymentAmount" type="number" min="0" step="0.01" placeholder="0.00"></label>
-      <label>Payment mode<select id="createPaymentMode"><option>CASH</option><option>UPI</option><option>BANK</option><option>CARD</option></select></label>
-      <input id="createPaymentRef" placeholder="Payment reference optional">
-      <div id="createReview" class="wizard-review"></div>
-      <div class="wizard-actions">
-        <button type="button" onclick="showCreateStep(2)">Back</button>
-        <button type="button" onclick="createRestaurant()">Create Customer</button>
+      <div class="saas-quick-actions">
+        <a class="secondary-link" href="/downloads.html" target="_blank" rel="noopener">Download POS App</a>
+        <a class="secondary-link" href="/order.html" target="_blank" rel="noopener">Open Online Ordering</a>
       </div>
-    </div>
-    <p id="createMsg"></p>
-  </section>
+    </header>
 
-  <hr>
+    <section class="saas-view active" id="view-overview" data-title="Overview" data-hint="Monitor customers, subscriptions, partners and POS health from one workspace.">
+      <div class="cards">
+        <button class="card action-card" data-saas-view-link="customers" type="button">Create Customer<strong>New restaurant</strong><small>Start a guided setup with package and license.</small></button>
+        <button class="card action-card" data-saas-view-link="restaurants" type="button">Restaurants<strong>Manage licenses</strong><small>Review keys, expiry, sync and revenue.</small></button>
+        <button class="card action-card" data-saas-view-link="monitoring" type="button">Monitoring<strong>POS health</strong><small>Heartbeat, backup, printer and license state.</small></button>
+        <button class="card action-card" data-saas-view-link="reports" type="button">Reports<strong>Cloud sales</strong><small>Sales, payment mode and top items.</small></button>
+      </div>
+      <div class="split-grid">
+        <article class="info-panel">
+          <h3>Quick Access</h3>
+          <div class="quick-link-grid">
+            <a href="/downloads.html" target="_blank" rel="noopener">Download POS App</a>
+            <a href="/order.html" target="_blank" rel="noopener">Open SaaS Online Ordering</a>
+            <button data-saas-view-link="subscriptions" type="button">Renew Subscription</button>
+            <button data-saas-view-link="support" type="button">Open Diagnostics</button>
+          </div>
+        </article>
+        <article class="info-panel">
+          <h3>Daily Operating Flow</h3>
+          <ol class="steps-list">
+            <li>Create or renew a restaurant customer.</li>
+            <li>Assign owner access and premium modules.</li>
+            <li>Monitor POS heartbeat, backup and printer status.</li>
+            <li>Use cloud reports for owner and branch review.</li>
+          </ol>
+        </article>
+      </div>
+    </section>
 
-  <section>
-    <h3>Releases</h3>
-    <input id="releaseVersion" placeholder="Version e.g. 1.0.1">
-    <label><input id="releaseMandatory" type="checkbox"> Mandatory update</label>
-    <br>
-    <textarea id="releaseNotes" placeholder="Release notes" rows="4" style="width:100%;max-width:720px"></textarea>
-    <br>
-    <input id="releaseFileName" placeholder="File name e.g. pos-update.zip">
-    <input id="releaseFileUrl" placeholder="File URL" style="width:420px">
-    <input id="releaseChecksum" placeholder="SHA256 checksum optional" style="width:280px">
-    <button onclick="createRelease()">Create Release</button>
-    <p id="releaseMsg"></p>
+    <section class="saas-view" id="view-customers" data-title="Create Customer" data-hint="Guided restaurant onboarding with location, mobile POS URL and license package.">
+      <div class="section-heading"><h2>Create Customer</h2><p>Set up a restaurant in three short steps.</p></div>
+      <div class="wizard-steps" aria-label="Create customer steps">
+        <button id="createStep1Tab" class="active" type="button" onclick="showCreateStep(1)">1. Restaurant</button>
+        <button id="createStep2Tab" type="button" onclick="showCreateStep(2)">2. Location</button>
+        <button id="createStep3Tab" type="button" onclick="showCreateStep(3)">3. License</button>
+      </div>
+      <div class="wizard-panel active" id="createStep1">
+        <label>Restaurant name<input id="restaurantName" placeholder="Restaurant or branch name"></label>
+        <label>Owner/business contact<input id="restaurantContact" placeholder="Owner or manager name"></label>
+        <div class="wizard-actions"><button type="button" onclick="showCreateStep(2)">Next</button></div>
+      </div>
+      <div class="wizard-panel" id="createStep2">
+        <label>Country<input id="restaurantCountry" placeholder="India" value="India"></label>
+        <label>Currency<select id="restaurantCurrency"><option value="INR">INR</option><option value="USD">USD</option><option value="AUD">AUD</option></select></label>
+        <label>POS URL for mobile app<input id="restaurantMobilePosUrl" placeholder="http://localhost:3000"></label>
+        <div class="wizard-actions"><button type="button" onclick="showCreateStep(1)">Back</button><button type="button" onclick="showCreateStep(3)">Next</button></div>
+      </div>
+      <div class="wizard-panel" id="createStep3">
+        <label>License package<select id="createPlan"></select></label>
+        <label>Start date<input id="createStartDate" type="date"></label>
+        <label>Expiry override<input id="expiryDate" type="date"></label>
+        <label>Payment amount<input id="createPaymentAmount" type="number" min="0" step="0.01" placeholder="0.00"></label>
+        <label>Payment mode<select id="createPaymentMode"><option>CASH</option><option>UPI</option><option>BANK</option><option>CARD</option></select></label>
+        <label>Payment reference<input id="createPaymentRef" placeholder="Payment reference optional"></label>
+        <div id="createReview" class="wizard-review"></div>
+        <div class="wizard-actions"><button type="button" onclick="showCreateStep(2)">Back</button><button type="button" onclick="createRestaurant()">Create Customer</button></div>
+      </div>
+      <p id="createMsg" class="form-message"></p>
+    </section>
 
-    <table id="releaseTable">
-      <thead>
-        <tr>
-          <th>Version</th>
-          <th>Status</th>
-          <th>Mandatory</th>
-          <th>Files</th>
-          <th>Notes</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </section>
+    <section class="saas-view" id="view-restaurants" data-title="Restaurants" data-hint="Manage restaurant license keys, expiry dates, sync state and revenue.">
+      <div class="section-heading"><h2>Restaurants</h2><p>License and sync status for every customer.</p></div>
+      <div class="table-wrap">
+        <table id="tenantTable">
+          <thead><tr><th>Restaurant Name</th><th>Restaurant ID</th><th>License Key</th><th>Expiry Date</th><th>Status</th><th>Last Sync</th><th>Today Revenue</th><th>Update</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
 
-  <hr>
+    <section class="saas-view" id="view-owners" data-title="Owner Accounts" data-hint="Create owner logins, assign restaurants and reset credentials.">
+      <div class="section-heading"><h2>Owner Accounts</h2><p>Control owner access to one or more restaurants.</p></div>
+      <div class="form-grid">
+        <input id="ownerName" placeholder="Owner name">
+        <input id="ownerEmail" placeholder="Owner email">
+        <input id="ownerPassword" type="password" placeholder="Temporary password">
+        <button onclick="createOwner()">Create Owner</button>
+        <select id="ownerSelect"></select>
+        <select id="ownerRestaurantSelect"></select>
+        <button onclick="assignOwner()">Assign Owner</button>
+        <button onclick="removeOwner()">Remove Owner</button>
+        <input id="ownerResetPassword" type="password" placeholder="New password">
+        <button onclick="resetOwnerPassword()">Reset Password</button>
+      </div>
+      <p id="ownerMsg" class="form-message"></p>
+      <div class="table-wrap"><table id="ownerTable"><thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Reset Required</th></tr></thead><tbody></tbody></table></div>
+    </section>
 
-  <section>
-    <h3>Restaurants</h3>
-    <table id="tenantTable">
-      <thead>
-        <tr>
-          <th>Restaurant Name</th>
-          <th>Restaurant ID</th>
-          <th>License Key</th>
-          <th>Expiry Date</th>
-          <th>Status</th>
-          <th>Last Sync</th>
-          <th>Today Revenue</th>
-          <th>Update</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </section>
+    <section class="saas-view" id="view-subscriptions" data-title="Subscriptions" data-hint="Assign packages, renew licenses, suspend or reactivate subscriptions.">
+      <div class="section-heading"><h2>Subscriptions</h2><p>Package lifecycle and payment tracking.</p></div>
+      <div class="form-grid">
+        <select id="subscriptionRestaurant"></select>
+        <select id="subscriptionPlan"></select>
+        <input id="subscriptionStart" type="date">
+        <input id="subscriptionAmount" type="number" min="0" step="0.01" placeholder="Payment amount">
+        <select id="subscriptionMode"><option>CASH</option><option>UPI</option><option>BANK</option><option>CARD</option></select>
+        <input id="subscriptionRef" placeholder="Reference">
+        <button onclick="assignSubscription()">Assign/Renew Plan</button>
+        <button onclick="suspendSubscription()">Suspend</button>
+        <button onclick="reactivateSubscription()">Reactivate</button>
+      </div>
+      <p id="subscriptionMsg" class="form-message"></p>
+      <div class="table-wrap"><table id="subscriptionTable"><thead><tr><th>Restaurant</th><th>Plan</th><th>Status</th><th>Expires</th><th>Days</th><th>Warning</th><th>Paid</th><th>Monthly Add-ons</th></tr></thead><tbody></tbody></table></div>
+    </section>
 
-  <hr>
+    <section class="saas-view" id="view-modules" data-title="Modules" data-hint="Configure marketplace add-ons and enable modules per restaurant.">
+      <div class="section-heading"><h2>Marketplace / Add-on Modules</h2><p>Package optional capabilities such as mobile app, inventory and online ordering.</p></div>
+      <div class="form-grid">
+        <input id="moduleCode" placeholder="Code e.g. INVENTORY">
+        <input id="moduleName" placeholder="Module name">
+        <input id="moduleCategory" placeholder="Category">
+        <select id="moduleStatus"><option>ACTIVE</option><option>DISABLED</option></select>
+        <input id="moduleMonthlyPrice" type="number" min="0" step="0.01" placeholder="Monthly price">
+        <input id="moduleCurrency" placeholder="Currency" value="INR">
+        <button onclick="createModule()">Save Module</button>
+      </div>
+      <textarea id="moduleDescription" placeholder="Description" rows="2"></textarea>
+      <div class="form-grid compact">
+        <select id="moduleRestaurant"></select>
+        <select id="tenantModuleSelect"></select>
+        <input id="tenantModuleTrialDays" type="number" min="0" step="1" placeholder="Trial days">
+        <button onclick="enableTenantModule()">Enable</button>
+        <button onclick="disableTenantModule()">Disable</button>
+      </div>
+      <p id="moduleMsg" class="form-message"></p>
+      <div class="cards">
+        <div class="card">Monthly Add-ons<strong id="moduleMonthlyTotal">0.00</strong></div>
+        <div class="card">Enabled Modules<strong id="moduleEnabledList">None</strong></div>
+      </div>
+      <div class="table-wrap"><table id="moduleTable"><thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Status</th><th>Pricing</th></tr></thead><tbody></tbody></table></div>
+      <div class="table-wrap"><table id="tenantModuleTable"><thead><tr><th>Module</th><th>Status</th><th>Trial Ends</th><th>Monthly</th></tr></thead><tbody></tbody></table></div>
+    </section>
 
-  <section>
-    <h3>Owner Accounts</h3>
-    <input id="ownerName" placeholder="Owner name">
-    <input id="ownerEmail" placeholder="Owner email">
-    <input id="ownerPassword" type="password" placeholder="Temporary password">
-    <button onclick="createOwner()">Create Owner</button>
-    <br>
-    <select id="ownerSelect"></select>
-    <select id="ownerRestaurantSelect"></select>
-    <button onclick="assignOwner()">Assign Owner</button>
-    <button onclick="removeOwner()">Remove Owner</button>
-    <input id="ownerResetPassword" type="password" placeholder="New password">
-    <button onclick="resetOwnerPassword()">Reset Password</button>
-    <p id="ownerMsg"></p>
-    <table id="ownerTable">
-      <thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Reset Required</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
+    <section class="saas-view" id="view-monitoring" data-title="Monitoring" data-hint="Track POS heartbeat, backup, printer and license health.">
+      <div class="section-heading"><h2>Remote POS Monitoring</h2><p>Use this to find offline branches, failed backups and printer problems.</p></div>
+      <button onclick="loadMonitoring()">Refresh Monitoring</button>
+      <div class="table-wrap"><table id="monitoringTable"><thead><tr><th>Restaurant</th><th>Status</th><th>Version</th><th>Backup</th><th>Printer</th><th>License</th><th>Last Heartbeat</th></tr></thead><tbody></tbody></table></div>
+    </section>
 
-  <hr>
+    <section class="saas-view" id="view-partners" data-title="Partners" data-hint="Manage reseller partners, white-label accounts and partner health.">
+      <div class="section-heading"><h2>Partners & White Label</h2><p>Create partners and review their customer portfolio.</p></div>
+      <div class="form-grid">
+        <input id="partnerName" placeholder="Partner name">
+        <input id="partnerBusinessName" placeholder="Business name">
+        <input id="partnerEmail" placeholder="Email">
+        <input id="partnerPhone" placeholder="Phone">
+        <input id="partnerCommission" type="number" min="0" max="100" step="0.01" placeholder="Commission %">
+        <button onclick="createPartner()">Create Partner</button>
+        <select id="partnerSelect"></select>
+        <select id="partnerStatus"><option>ACTIVE</option><option>SUSPENDED</option></select>
+        <button onclick="updatePartner()">Update Partner</button>
+        <button onclick="loadPartnerDashboard()">Load Dashboard</button>
+      </div>
+      <p id="partnerMsg" class="form-message"></p>
+      <div class="cards">
+        <div class="card">Restaurants<strong id="partnerTotalRestaurants">0</strong></div>
+        <div class="card">Active Licenses<strong id="partnerActiveLicenses">0</strong></div>
+        <div class="card">Expired Licenses<strong id="partnerExpiredLicenses">0</strong></div>
+        <div class="card">MRR<strong id="partnerMrr">0.00</strong></div>
+        <div class="card">Online<strong id="partnerOnline">0</strong></div>
+        <div class="card">Offline<strong id="partnerOffline">0</strong></div>
+      </div>
+      <div class="table-wrap"><table id="partnerTable"><thead><tr><th>Name</th><th>Business</th><th>Status</th><th>Commission %</th><th>Restaurants</th><th>Active Licenses</th></tr></thead><tbody></tbody></table></div>
+    </section>
 
-  <section>
-    <h3>Subscriptions</h3>
-    <select id="subscriptionRestaurant"></select>
-    <select id="subscriptionPlan"></select>
-    <input id="subscriptionStart" type="date">
-    <input id="subscriptionAmount" type="number" min="0" step="0.01" placeholder="Payment amount">
-    <select id="subscriptionMode"><option>CASH</option><option>UPI</option><option>BANK</option><option>CARD</option></select>
-    <input id="subscriptionRef" placeholder="Reference">
-    <button onclick="assignSubscription()">Assign/Renew Plan</button>
-    <button onclick="suspendSubscription()">Suspend</button>
-    <button onclick="reactivateSubscription()">Reactivate</button>
-    <p id="subscriptionMsg"></p>
-    <table id="subscriptionTable">
-      <thead><tr><th>Restaurant</th><th>Plan</th><th>Status</th><th>Expires</th><th>Days</th><th>Warning</th><th>Paid</th><th>Monthly Add-ons</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
+    <section class="saas-view" id="view-organizations" data-title="Multi-Branch" data-hint="Group restaurants under owners or organizations for consolidated branch reporting.">
+      <div class="section-heading"><h2>Organizations / Multi-Branch</h2><p>Support owners with multiple branches and consolidated reporting.</p></div>
+      <div class="form-grid">
+        <input id="orgName" placeholder="Organization name">
+        <input id="orgEmail" placeholder="Email">
+        <button onclick="createOrganization()">Create Organization</button>
+        <select id="orgSelect"></select>
+        <input id="branchGroupName" placeholder="Branch group name">
+        <button onclick="saveBranchGroup()">Save Branch Group</button>
+        <select id="orgRestaurantSelect"></select>
+        <select id="orgBranchGroupSelect"></select>
+        <input id="orgBranchName" placeholder="Branch name">
+        <button onclick="assignOrganizationRestaurant()">Assign Restaurant</button>
+      </div>
+      <p id="orgMsg" class="form-message"></p>
+      <div class="cards"><div class="card">Net Sales<strong id="orgNetSales">0.00</strong></div><div class="card">Orders<strong id="orgOrders">0</strong></div></div>
+      <div class="table-wrap"><table id="orgTable"><thead><tr><th>Name</th><th>Status</th><th>Restaurants</th><th>Active Licenses</th></tr></thead><tbody></tbody></table></div>
+      <div class="table-wrap"><table id="orgBranchesTable"><thead><tr><th>Restaurant</th><th>Group</th><th>Status</th><th>POS</th></tr></thead><tbody></tbody></table></div>
+    </section>
 
-  <hr>
+    <section class="saas-view" id="view-support" data-title="Support" data-hint="Load diagnostics and add internal support notes for any restaurant.">
+      <div class="section-heading"><h2>Support Diagnostics</h2><p>Use this for troubleshooting POS connectivity, backups and sync.</p></div>
+      <div class="form-grid">
+        <select id="supportRestaurant"></select>
+        <button onclick="loadSupportDiagnostics()">Load Diagnostics</button>
+        <input id="supportNote" placeholder="Support note">
+        <button onclick="saveSupportNote()">Add Note</button>
+      </div>
+      <p id="supportMsg" class="form-message"></p>
+      <pre id="supportDiagnostics"></pre>
+    </section>
 
-  <section>
-    <h3>Marketplace / Add-on Modules</h3>
-    <div>
-      <input id="moduleCode" placeholder="Code e.g. INVENTORY">
-      <input id="moduleName" placeholder="Module name">
-      <input id="moduleCategory" placeholder="Category">
-      <select id="moduleStatus"><option>ACTIVE</option><option>DISABLED</option></select>
-      <input id="moduleMonthlyPrice" type="number" min="0" step="0.01" placeholder="Monthly price">
-      <input id="moduleCurrency" placeholder="Currency" value="INR">
-      <button onclick="createModule()">Save Module</button>
-    </div>
-    <textarea id="moduleDescription" placeholder="Description" rows="2" style="width:100%;max-width:720px"></textarea>
-    <div>
-      <select id="moduleRestaurant"></select>
-      <select id="tenantModuleSelect"></select>
-      <input id="tenantModuleTrialDays" type="number" min="0" step="1" placeholder="Trial days">
-      <button onclick="enableTenantModule()">Enable</button>
-      <button onclick="disableTenantModule()">Disable</button>
-    </div>
-    <p id="moduleMsg"></p>
-    <div class="cards">
-      <div class="card">Monthly Add-ons<strong id="moduleMonthlyTotal">0.00</strong></div>
-      <div class="card">Enabled Modules<strong id="moduleEnabledList">None</strong></div>
-    </div>
-    <table id="moduleTable">
-      <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Status</th><th>Pricing</th></tr></thead>
-      <tbody></tbody>
-    </table>
-    <table id="tenantModuleTable">
-      <thead><tr><th>Module</th><th>Status</th><th>Trial Ends</th><th>Monthly</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
+    <section class="saas-view" id="view-partner-users" data-title="Partner Users" data-hint="Create and manage users under the selected partner.">
+      <div class="section-heading"><h2>Partner Users</h2><p>Grant partner admin or support access.</p></div>
+      <div class="form-grid">
+        <input id="partnerUserName" placeholder="Name">
+        <input id="partnerUserEmail" placeholder="Email">
+        <input id="partnerUserPassword" type="password" placeholder="Temporary password">
+        <select id="partnerUserRole"><option>PARTNER_ADMIN</option><option>PARTNER_SUPPORT</option></select>
+        <button onclick="createPartnerUser()">Create Partner User</button>
+      </div>
+      <div class="table-wrap"><table id="partnerUserTable"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th></tr></thead><tbody></tbody></table></div>
+    </section>
 
-  <hr>
+    <section class="saas-view" id="view-partner-branding" data-title="Partner Branding" data-hint="Configure partner brand name, logo, domain and support contact.">
+      <div class="section-heading"><h2>Partner Branding</h2><p>White-label partner portals and customer-facing pages.</p></div>
+      <div class="form-grid">
+        <input id="brandName" placeholder="Brand name">
+        <input id="brandLogo" placeholder="Logo URL">
+        <input id="brandPrimary" placeholder="Primary color">
+        <input id="brandSecondary" placeholder="Secondary color">
+        <input id="brandSupportEmail" placeholder="Support email">
+        <input id="brandSupportPhone" placeholder="Support phone">
+        <input id="brandDomain" placeholder="Custom domain placeholder">
+        <button onclick="savePartnerBranding()">Save Branding</button>
+      </div>
+    </section>
 
-  <section>
-    <h3>Remote POS Monitoring</h3>
-    <button onclick="loadMonitoring()">Refresh Monitoring</button>
-    <table id="monitoringTable">
-      <thead><tr><th>Restaurant</th><th>Status</th><th>Version</th><th>Backup</th><th>Printer</th><th>License</th><th>Last Heartbeat</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
+    <section class="saas-view" id="view-partner-restaurants" data-title="Partner Restaurants" data-hint="Create restaurants under the selected partner and review their POS health.">
+      <div class="section-heading"><h2>Partner Restaurants</h2><p>Create partner-managed customers with an initial package.</p></div>
+      <div class="form-grid">
+        <input id="partnerRestaurantName" placeholder="Restaurant name">
+        <input id="partnerRestaurantExpiry" type="date">
+        <select id="partnerRestaurantPlan"></select>
+        <input id="partnerRestaurantPayment" type="number" min="0" step="0.01" placeholder="Initial payment">
+        <button onclick="createPartnerRestaurant()">Create Restaurant Under Partner</button>
+      </div>
+      <div class="table-wrap"><table id="partnerRestaurantTable"><thead><tr><th>Restaurant</th><th>License</th><th>Online</th><th>POS</th><th>Backup</th><th>Printer</th><th>Last Sync</th></tr></thead><tbody></tbody></table></div>
+    </section>
 
-  <hr>
+    <section class="saas-view" id="view-partner-commissions" data-title="Commissions" data-hint="Review partner revenue, commissions and payout state.">
+      <div class="section-heading"><h2>Partner Commissions & Payouts</h2><p>Mark selected commissions as paid with a reference.</p></div>
+      <div class="form-grid compact">
+        <button onclick="loadPartnerCommissions()">Refresh Commissions</button>
+        <input id="partnerPayoutRef" placeholder="Payout reference">
+        <button onclick="markPartnerPayoutPaid()">Mark Selected Paid</button>
+      </div>
+      <p id="partnerCommissionMsg" class="form-message"></p>
+      <div class="cards">
+        <div class="card">Revenue<strong id="partnerRevenue">0.00</strong></div>
+        <div class="card">Commission<strong id="partnerCommissionTotal">0.00</strong></div>
+        <div class="card">Pending<strong id="partnerCommissionPending">0.00</strong></div>
+        <div class="card">Paid<strong id="partnerCommissionPaid">0.00</strong></div>
+      </div>
+      <div class="table-wrap"><table id="partnerCommissionTable"><thead><tr><th>Select</th><th>Restaurant</th><th>Revenue</th><th>Commission %</th><th>Commission</th><th>Status</th><th>Created</th></tr></thead><tbody></tbody></table></div>
+    </section>
 
-  <section>
-    <h3>Partners & White Label</h3>
-    <div>
-      <input id="partnerName" placeholder="Partner name">
-      <input id="partnerBusinessName" placeholder="Business name">
-      <input id="partnerEmail" placeholder="Email">
-      <input id="partnerPhone" placeholder="Phone">
-      <input id="partnerCommission" type="number" min="0" max="100" step="0.01" placeholder="Commission %">
-      <button onclick="createPartner()">Create Partner</button>
-    </div>
-    <div>
-      <select id="partnerSelect"></select>
-      <select id="partnerStatus"><option>ACTIVE</option><option>SUSPENDED</option></select>
-      <button onclick="updatePartner()">Update Partner</button>
-      <button onclick="loadPartnerDashboard()">Load Dashboard</button>
-    </div>
-    <p id="partnerMsg"></p>
+    <section class="saas-view" id="view-reports" data-title="Cloud Reports" data-hint="Review owner-level cloud sales, payment mode and item performance.">
+      <div class="section-heading"><h2>Owner Cloud Reports</h2><p>Sales and sync data pushed from the local POS.</p></div>
+      <div class="form-grid compact">
+        <select id="reportRestaurant"></select>
+        <input id="reportFromDate" type="date">
+        <input id="reportToDate" type="date">
+        <button onclick="loadOwnerReports()">Load Reports</button>
+        <button onclick="requestCloudSync()">Request Sync</button>
+      </div>
+      <p id="reportMsg" class="form-message"></p>
+      <div class="cards">
+        <div class="card">Today Sales<strong id="todaySales">0</strong></div>
+        <div class="card">Yesterday Sales<strong id="yesterdaySales">0</strong></div>
+        <div class="card">Month-to-Date<strong id="mtdSales">0</strong></div>
+        <div class="card">Orders<strong id="reportOrders">0</strong></div>
+        <div class="card">Payment Modes<strong id="paymentSummary">Cash 0 | Card 0 | UPI 0</strong></div>
+        <div class="card">Last Sync<strong id="syncStatus">Not synced</strong></div>
+      </div>
+      <div class="table-wrap"><table id="topItemsTable"><thead><tr><th>Item</th><th>Qty Sold</th><th>Total Sales</th></tr></thead><tbody></tbody></table></div>
+    </section>
 
-    <div class="cards">
-      <div class="card">Restaurants<strong id="partnerTotalRestaurants">0</strong></div>
-      <div class="card">Active Licenses<strong id="partnerActiveLicenses">0</strong></div>
-      <div class="card">Expired Licenses<strong id="partnerExpiredLicenses">0</strong></div>
-      <div class="card">MRR<strong id="partnerMrr">0.00</strong></div>
-      <div class="card">Online<strong id="partnerOnline">0</strong></div>
-      <div class="card">Offline<strong id="partnerOffline">0</strong></div>
-    </div>
-
-    <table id="partnerTable">
-      <thead><tr><th>Name</th><th>Business</th><th>Status</th><th>Commission %</th><th>Restaurants</th><th>Active Licenses</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
-
-  <hr>
-
-  <section>
-    <h3>Organizations / Multi-Branch</h3>
-    <input id="orgName" placeholder="Organization name">
-    <input id="orgEmail" placeholder="Email">
-    <button onclick="createOrganization()">Create Organization</button>
-    <select id="orgSelect"></select>
-    <input id="branchGroupName" placeholder="Branch group name">
-    <button onclick="saveBranchGroup()">Save Branch Group</button>
-    <select id="orgRestaurantSelect"></select>
-    <select id="orgBranchGroupSelect"></select>
-    <input id="orgBranchName" placeholder="Branch name">
-    <button onclick="assignOrganizationRestaurant()">Assign Restaurant</button>
-    <p id="orgMsg"></p>
-    <table id="orgTable"><thead><tr><th>Name</th><th>Status</th><th>Restaurants</th><th>Active Licenses</th></tr></thead><tbody></tbody></table>
-    <table id="orgBranchesTable"><thead><tr><th>Restaurant</th><th>Group</th><th>Status</th><th>POS</th></tr></thead><tbody></tbody></table>
-    <div class="cards">
-      <div class="card">Net Sales<strong id="orgNetSales">0.00</strong></div>
-      <div class="card">Orders<strong id="orgOrders">0</strong></div>
-    </div>
-  </section>
-
-  <hr>
-
-  <section>
-    <h3>Support Diagnostics</h3>
-    <select id="supportRestaurant"></select>
-    <button onclick="loadSupportDiagnostics()">Load Diagnostics</button>
-    <input id="supportNote" placeholder="Support note">
-    <button onclick="saveSupportNote()">Add Note</button>
-    <p id="supportMsg"></p>
-    <pre id="supportDiagnostics"></pre>
-  </section>
-
-  <hr>
-
-  <section>
-    <h3>Partner Users</h3>
-    <input id="partnerUserName" placeholder="Name">
-    <input id="partnerUserEmail" placeholder="Email">
-    <input id="partnerUserPassword" type="password" placeholder="Temporary password">
-    <select id="partnerUserRole"><option>PARTNER_ADMIN</option><option>PARTNER_SUPPORT</option></select>
-    <button onclick="createPartnerUser()">Create Partner User</button>
-    <table id="partnerUserTable">
-      <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
-
-  <hr>
-
-  <section>
-    <h3>Partner Branding</h3>
-    <input id="brandName" placeholder="Brand name">
-    <input id="brandLogo" placeholder="Logo URL">
-    <input id="brandPrimary" placeholder="Primary color">
-    <input id="brandSecondary" placeholder="Secondary color">
-    <input id="brandSupportEmail" placeholder="Support email">
-    <input id="brandSupportPhone" placeholder="Support phone">
-    <input id="brandDomain" placeholder="Custom domain placeholder">
-    <button onclick="savePartnerBranding()">Save Branding</button>
-  </section>
-
-  <hr>
-
-  <section>
-    <h3>Partner Restaurants</h3>
-    <input id="partnerRestaurantName" placeholder="Restaurant name">
-    <input id="partnerRestaurantExpiry" type="date">
-    <select id="partnerRestaurantPlan"></select>
-    <input id="partnerRestaurantPayment" type="number" min="0" step="0.01" placeholder="Initial payment">
-    <button onclick="createPartnerRestaurant()">Create Restaurant Under Partner</button>
-    <table id="partnerRestaurantTable">
-      <thead><tr><th>Restaurant</th><th>License</th><th>Online</th><th>POS</th><th>Backup</th><th>Printer</th><th>Last Sync</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
-
-  <hr>
-
-  <section>
-    <h3>Partner Commissions & Payouts</h3>
-    <button onclick="loadPartnerCommissions()">Refresh Commissions</button>
-    <input id="partnerPayoutRef" placeholder="Payout reference">
-    <button onclick="markPartnerPayoutPaid()">Mark Selected Paid</button>
-    <p id="partnerCommissionMsg"></p>
-    <div class="cards">
-      <div class="card">Revenue<strong id="partnerRevenue">0.00</strong></div>
-      <div class="card">Commission<strong id="partnerCommissionTotal">0.00</strong></div>
-      <div class="card">Pending<strong id="partnerCommissionPending">0.00</strong></div>
-      <div class="card">Paid<strong id="partnerCommissionPaid">0.00</strong></div>
-    </div>
-    <table id="partnerCommissionTable">
-      <thead><tr><th>Select</th><th>Restaurant</th><th>Revenue</th><th>Commission %</th><th>Commission</th><th>Status</th><th>Created</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
-
-  <hr>
-
-  <section>
-    <h3>Owner Cloud Reports</h3>
-    <select id="reportRestaurant"></select>
-    <input id="reportFromDate" type="date">
-    <input id="reportToDate" type="date">
-    <button onclick="loadOwnerReports()">Load Reports</button>
-    <button onclick="requestCloudSync()">Request Sync</button>
-    <p id="reportMsg"></p>
-
-    <div class="cards">
-      <div class="card">Today Sales<strong id="todaySales">0</strong></div>
-      <div class="card">Yesterday Sales<strong id="yesterdaySales">0</strong></div>
-      <div class="card">Month-to-Date<strong id="mtdSales">0</strong></div>
-      <div class="card">Orders<strong id="reportOrders">0</strong></div>
-      <div class="card">Payment Modes<strong id="paymentSummary">Cash 0 | Card 0 | UPI 0</strong></div>
-      <div class="card">Last Sync<strong id="syncStatus">Not synced</strong></div>
-    </div>
-
-    <table id="topItemsTable">
-      <thead>
-        <tr>
-          <th>Item</th>
-          <th>Qty Sold</th>
-          <th>Total Sales</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </section>
+    <section class="saas-view" id="view-releases" data-title="Releases" data-hint="Create POS update releases and mark the active installer/update package.">
+      <div class="section-heading"><h2>Releases</h2><p>Manage release packages consumed by POS update checks.</p></div>
+      <div class="form-grid">
+        <input id="releaseVersion" placeholder="Version e.g. 1.0.1">
+        <label class="inline-check"><input id="releaseMandatory" type="checkbox"> Mandatory update</label>
+        <input id="releaseFileName" placeholder="File name e.g. pos-update.zip">
+        <input id="releaseFileUrl" placeholder="File URL">
+        <input id="releaseChecksum" placeholder="SHA256 checksum optional">
+        <button onclick="createRelease()">Create Release</button>
+      </div>
+      <textarea id="releaseNotes" placeholder="Release notes" rows="4"></textarea>
+      <p id="releaseMsg" class="form-message"></p>
+      <div class="table-wrap"><table id="releaseTable"><thead><tr><th>Version</th><th>Status</th><th>Mandatory</th><th>Files</th><th>Notes</th><th>Action</th></tr></thead><tbody></tbody></table></div>
+    </section>
+  </main>
 
   <script src="/js/admin.js"></script>
 </body>
 </html>
-
