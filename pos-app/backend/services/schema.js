@@ -219,6 +219,12 @@ function ensureRestaurantSchema(db) {
   // Phase 8: bcrypt hashes are stored beside legacy PINs so old users can migrate on login.
   addColumn(db, 'users', 'pin_hash TEXT');
   addColumn(db, 'users', 'updated_at DATETIME');
+  addColumn(db, 'users', 'failed_login_attempts INTEGER DEFAULT 0');
+  addColumn(db, 'users', 'locked_until DATETIME');
+  addColumn(db, 'users', 'lock_reason TEXT');
+  addColumn(db, 'users', 'unlock_requested_at DATETIME');
+  addColumn(db, 'users', 'last_login_at DATETIME');
+  addColumn(db, 'users', 'last_failed_login_at DATETIME');
 
   // Admin CRUD needs soft activity flags and kitchen printer routing.
   db.exec(`

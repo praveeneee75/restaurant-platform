@@ -1089,14 +1089,51 @@ db.close();
 // ========================
 // LOGIN
 // ========================
+const MAX_LOGIN_ATTEMPTS = 5;
+const ACCOUNT_LOCK_MINUTES = 15;
+
+function dbTimestampMs(value) {
+  if (!value) return 0;
+  const text = String(value);
+  const isoText = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text)
+    ? `${text.replace(' ', 'T')}Z`
+    : text;
+  const ms = new Date(isoText).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function formatDbTimestamp(value) {
+  const ms = dbTimestampMs(value);
+  return ms ? new Date(ms).toLocaleString() : String(value || '');
+}
+
 function authenticateUserWithPin(db, restaurantId, username, pin, req) {
   const user = db.prepare(`
-    SELECT id, name, username, pin, pin_hash, role
+    SELECT id, name, username, pin, pin_hash, role,
+           COALESCE(failed_login_attempts, 0) AS failed_login_attempts,
+           locked_until,
+           lock_reason
     FROM users
     WHERE username = ? AND active = 1
   `).get(username);
 
-  const pinMatches = user && (
+  if (!user) {
+    writeAudit(db, { role: 'UNKNOWN' }, 'FAILED_LOGIN', 'USER', null, null, { username }, { restaurantId, ipAddress: requestIp(req) });
+    writeCompliance(db, 'FAILED_LOGIN', 'MEDIUM', `Failed login for ${username}`, 'USER', null);
+    return { ok: false, status: 401, message: 'Invalid credentials' };
+  }
+
+  if (dbTimestampMs(user.locked_until) > Date.now()) {
+    writeAudit(db, { role: 'UNKNOWN' }, 'LOCKED_LOGIN', 'USER', user.id, null, { username }, { restaurantId, ipAddress: requestIp(req) });
+    return {
+      ok: false,
+      status: 423,
+      locked: true,
+      message: `User account is locked until ${formatDbTimestamp(user.locked_until)}. Ask admin or owner to unlock.`
+    };
+  }
+
+  const pinMatches = (
     (user.pin_hash && bcrypt.compareSync(pin, user.pin_hash)) ||
     (!user.pin_hash && user.pin === pin)
   );
@@ -1110,13 +1147,48 @@ function authenticateUserWithPin(db, restaurantId, username, pin, req) {
   }
 
   if (!pinMatches) {
-    writeAudit(db, { role: 'UNKNOWN' }, 'FAILED_LOGIN', 'USER', null, null, { username }, { restaurantId, ipAddress: requestIp(req) });
+    const attempts = Number(user.failed_login_attempts || 0) + 1;
+    const shouldLock = attempts >= MAX_LOGIN_ATTEMPTS;
+    db.prepare(`
+      UPDATE users
+      SET failed_login_attempts = ?,
+          last_failed_login_at = CURRENT_TIMESTAMP,
+          locked_until = CASE WHEN ? THEN DATETIME('now', '+' || ? || ' minutes') ELSE locked_until END,
+          lock_reason = CASE WHEN ? THEN 'Too many failed PIN attempts' ELSE lock_reason END,
+          unlock_requested_at = NULL,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(attempts, shouldLock ? 1 : 0, ACCOUNT_LOCK_MINUTES, shouldLock ? 1 : 0, user.id);
+    writeAudit(db, { role: 'UNKNOWN' }, shouldLock ? 'LOCK_USER' : 'FAILED_LOGIN', 'USER', user.id, null, { username, attempts }, { restaurantId, ipAddress: requestIp(req) });
     writeCompliance(db, 'FAILED_LOGIN', 'MEDIUM', `Failed login for ${username}`, 'USER', null);
-    return null;
+    if (shouldLock) {
+      writeCompliance(db, 'ACCOUNT_LOCKED', 'HIGH', `User ${username} locked after ${MAX_LOGIN_ATTEMPTS} failed PIN attempts`, 'USER', user.id);
+    }
+    return {
+      ok: false,
+      status: shouldLock ? 423 : 401,
+      locked: shouldLock,
+      remainingAttempts: Math.max(MAX_LOGIN_ATTEMPTS - attempts, 0),
+      message: shouldLock
+        ? `Account locked after ${MAX_LOGIN_ATTEMPTS} failed attempts. Ask admin or owner to unlock.`
+        : `Invalid credentials. ${Math.max(MAX_LOGIN_ATTEMPTS - attempts, 0)} attempt(s) remaining before lock.`
+    };
   }
 
+  db.prepare(`
+    UPDATE users
+    SET failed_login_attempts = 0,
+        locked_until = NULL,
+        lock_reason = NULL,
+        unlock_requested_at = NULL,
+        last_login_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(user.id);
+
   return {
-    forcePasswordChange: user.username === 'admin' && pin === '1234',
+    ok: true,
+    forcePasswordChange: false,
     user: { id: user.id, name: user.name, username: user.username, role: user.role }
   };
 }
@@ -1134,7 +1206,7 @@ app.post('/login', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     const auth = authenticateUserWithPin(db, restaurantId, username, pin, req);
-    if (!auth) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    if (!auth.ok) return res.status(auth.status || 401).json({ success: false, message: auth.message, locked: auth.locked, remainingAttempts: auth.remainingAttempts });
     res.json({
       success: true,
       forcePasswordChange: auth.forcePasswordChange,
@@ -1163,7 +1235,7 @@ app.post('/mobile-app/login', (req, res) => {
       return res.status(403).json({ success: false, message: 'Mobile app is disabled in POS admin' });
     }
     const auth = authenticateUserWithPin(db, restaurantId, username, pin, req);
-    if (!auth) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    if (!auth.ok) return res.status(auth.status || 401).json({ success: false, message: auth.message, locked: auth.locked, remainingAttempts: auth.remainingAttempts });
     res.json({
       success: true,
       forcePasswordChange: auth.forcePasswordChange,
@@ -3171,7 +3243,14 @@ app.get('/admin/bootstrap', (req, res) => {
         WHERE (? = 'true' OR i.active = 1)
         ORDER BY i.name
       `).all(includeInactive),
-      users: db.prepare("SELECT id, name, username, role, active, created_at FROM users WHERE (? = 'true' OR active = 1) ORDER BY name").all(includeInactive),
+      users: db.prepare(`
+        SELECT id, name, username, role, active, created_at,
+               failed_login_attempts, locked_until, lock_reason,
+               unlock_requested_at, last_login_at, last_failed_login_at
+        FROM users
+        WHERE (? = 'true' OR active = 1)
+        ORDER BY name
+      `).all(includeInactive),
       tables: db.prepare("SELECT id, table_name, status, active, created_at FROM tables WHERE (? = 'true' OR active = 1) ORDER BY id").all(includeInactive),
       enabledModules: enabledModules(db)
     });
@@ -4109,7 +4188,7 @@ app.post('/admin/items/toggle', (req, res) => {
 
 app.post('/admin/users/save', (req, res) => {
   const { restaurantId, actor, id, name, username, pin, role, active } = req.body;
-  const roles = ['OWNER', 'MANAGER', 'MANAGER_2', 'CASHIER', 'WAITER', 'KITCHEN'];
+  const roles = ['OWNER', 'MANAGER', 'MANAGER_2', 'MANAGER_1', 'CAPTAIN', 'CASHIER', 'WAITER', 'KITCHEN'];
   if (!restaurantId || !name || !username || !roles.includes(role) || !canManage(actor?.role)) {
     return res.status(400).json({ success: false, message: 'User name, username, role and manager permission are required' });
   }
@@ -4150,6 +4229,54 @@ app.post('/admin/users/disable', (req, res) => {
     const newValue = db.prepare('SELECT id, name, username, role, active FROM users WHERE id = ?').get(id);
     writeAudit(db, actor, 'DELETE', 'USER', id, oldValue, newValue);
     res.json({ success: true });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/admin/users/unlock', (req, res) => {
+  const { restaurantId, actor, id } = req.body;
+  if (!restaurantId || !id || !canManage(actor?.role)) return res.status(400).json({ success: false, message: 'User and manager permission are required' });
+
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const oldValue = db.prepare('SELECT id, name, username, role, failed_login_attempts, locked_until, unlock_requested_at FROM users WHERE id = ?').get(id);
+    if (!oldValue) throw new Error('User not found');
+    db.prepare(`
+      UPDATE users
+      SET failed_login_attempts = 0,
+          locked_until = NULL,
+          lock_reason = NULL,
+          unlock_requested_at = NULL,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(id);
+    const newValue = db.prepare('SELECT id, name, username, role, failed_login_attempts, locked_until, unlock_requested_at FROM users WHERE id = ?').get(id);
+    writeAudit(db, actor, 'UNLOCK', 'USER', id, oldValue, newValue);
+    res.json({ success: true, message: 'User unlocked' });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/users/request-unlock', (req, res) => {
+  const { restaurantId, username } = req.body;
+  if (!restaurantId || !hasText(username)) return res.status(400).json({ success: false, message: 'Restaurant and username are required' });
+
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const user = db.prepare('SELECT id, username, locked_until FROM users WHERE username = ? AND active = 1').get(username);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    if (dbTimestampMs(user.locked_until) <= Date.now()) {
+      return res.status(400).json({ success: false, message: 'User is not currently locked' });
+    }
+    db.prepare('UPDATE users SET unlock_requested_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
+    writeAudit(db, { role: 'UNKNOWN' }, 'REQUEST_UNLOCK', 'USER', user.id, null, { username }, { restaurantId, ipAddress: requestIp(req) });
+    res.json({ success: true, message: 'Unlock request sent to admin/owner' });
   } catch (err) {
     sendError(res, err);
   } finally {

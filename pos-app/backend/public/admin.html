@@ -16,6 +16,7 @@
       <div class="nav-group">
         <p class="nav-group-title">Menu Setup</p>
         <button class="nav-btn active" data-view="kitchens">Kitchens</button>
+        <button class="nav-btn" data-view="printers">Printers</button>
         <button class="nav-btn" data-view="categories">Categories</button>
         <button class="nav-btn" data-view="items">Menu Items</button>
         <button class="nav-btn" data-view="modifiers">Modifiers & Combos</button>
@@ -75,6 +76,10 @@
         <label class="check-row"><input id="kitchenActive" type="checkbox" checked> Active</label>
         <button>Save Kitchen</button>
       </form>
+      <div class="table-panel"><table><thead><tr><th>Name</th><th>KOT Printer</th><th>Status</th><th></th></tr></thead><tbody id="kitchensTable"></tbody></table></div>
+    </section>
+
+    <section class="admin-view" id="view-printers">
       <form class="editor-panel" id="printerForm">
         <input type="hidden" id="printerId">
         <label>Printer name<input id="printerName" placeholder="Kitchen thermal printer" required></label>
@@ -84,7 +89,6 @@
         <label class="check-row"><input id="printerActive" type="checkbox" checked> Active</label>
         <button>Save Printer</button>
       </form>
-      <div class="table-panel"><table><thead><tr><th>Name</th><th>KOT Printer</th><th>Status</th><th></th></tr></thead><tbody id="kitchensTable"></tbody></table></div>
       <div class="table-panel"><table><thead><tr><th>Printer</th><th>Type</th><th>Connection</th><th>Address</th><th>Status</th><th></th></tr></thead><tbody id="printersTable"></tbody></table></div>
     </section>
 

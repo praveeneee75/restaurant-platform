@@ -38,6 +38,36 @@ function actions(type, id) {
   return `<button class="mini-btn" data-edit-${type}="${id}" type="button">Edit</button><button class="danger-btn" data-delete-${type}="${id}" type="button">Delete</button>`;
 }
 
+function formatDateTime(value) {
+  if (!value) return "";
+  const text = String(value);
+  const date = new Date(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text) ? `${text.replace(" ", "T")}Z` : text);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+}
+
+function isFutureDate(value) {
+  if (!value) return false;
+  const text = String(value);
+  const time = new Date(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text) ? `${text.replace(" ", "T")}Z` : text).getTime();
+  return Number.isFinite(time) && time > Date.now();
+}
+
+function userStatusCell(userRow) {
+  const locked = isFutureDate(userRow.locked_until);
+  const failedAttempts = Number(userRow.failed_login_attempts || 0);
+  const parts = [];
+  if (Number(userRow.active) === 0) {
+    parts.push(`<span class="status-pill danger">Disabled</span>`);
+  } else if (locked) {
+    parts.push(`<span class="status-pill danger">Locked until ${esc(formatDateTime(userRow.locked_until))}</span>`);
+  } else {
+    parts.push(`<span class="status-pill success">Active</span>`);
+  }
+  if (userRow.unlock_requested_at) parts.push(`<span class="status-pill warning">Unlock requested ${esc(formatDateTime(userRow.unlock_requested_at))}</span>`);
+  if (failedAttempts > 0 && !locked) parts.push(`<small>${failedAttempts} failed attempt(s)</small>`);
+  return `<div class="status-stack">${parts.join("")}</div>`;
+}
+
 function fillSelect(element, rows, label = "name") {
   element.innerHTML = rows.map((row) => `<option value="${row.id}">${esc(row[label])}</option>`).join("");
 }
@@ -210,7 +240,20 @@ function renderAdmin() {
   categoriesTable.innerHTML = categories.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.kitchen_name || "")}</td><td>${c.active ? "Active" : "Inactive"}</td><td>${actions("category", c.id)}</td></tr>`).join("");
   const term = (itemSearch?.value || "").toLowerCase();
   itemsTable.innerHTML = items.filter((i) => !term || i.name.toLowerCase().includes(term)).map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td><td>${i.active ? "Active" : "Inactive"}${Number(i.online_enabled ?? 1) ? "" : " / Hidden online"}</td><td>${actions("item", i.id)}</td></tr>`).join("");
-  usersTable.innerHTML = users.map((u) => `<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td>${esc(u.role)}</td><td>${u.active ? "Active" : "Disabled"}</td><td><button class="mini-btn" data-edit-user="${u.id}" type="button">Edit</button><button class="danger-btn" data-disable-user="${u.id}" type="button">Disable</button></td></tr>`).join("");
+  usersTable.innerHTML = users.map((u) => {
+    const canUnlock = isFutureDate(u.locked_until) || u.unlock_requested_at || Number(u.failed_login_attempts || 0) > 0;
+    return `<tr>
+      <td>${esc(u.name)}</td>
+      <td>${esc(u.username)}</td>
+      <td>${esc(u.role)}</td>
+      <td>${userStatusCell(u)}</td>
+      <td class="action-cell">
+        <button class="mini-btn" data-edit-user="${u.id}" type="button">Edit</button>
+        ${canUnlock ? `<button class="mini-btn" data-unlock-user="${u.id}" type="button">Unlock</button>` : ""}
+        <button class="danger-btn" data-disable-user="${u.id}" type="button">Disable</button>
+      </td>
+    </tr>`;
+  }).join("");
   tablesTable.innerHTML = tables.map((t) => `<tr><td>${esc(t.table_name)}</td><td>${esc(t.status)}</td><td>${actions("table", t.id)}</td></tr>`).join("");
   qrLinksTable.innerHTML = tables.map((t) => {
     const url = `${location.origin}/qr-menu.html?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${t.id}`;
@@ -395,7 +438,7 @@ function editKitchen(id) {
 function editPrinter(id) {
   const row = findById(state.admin.printers || [], id);
   if (!row) return;
-  showView("kitchens");
+  showView("printers");
   printerId.value = row.id;
   printerName.value = row.name || "";
   printerType.value = row.type || "KITCHEN";
@@ -957,6 +1000,7 @@ document.addEventListener("click", async (event) => {
     if (pick("deleteCategory") && confirm("Delete this category?")) await postJson("/admin/categories/delete", { id: pick("deleteCategory") }).then(loadAdmin);
     if (pick("deleteItem") && confirm("Delete this item?")) await postJson("/admin/items/delete", { id: pick("deleteItem") }).then(loadAdmin);
     if (pick("disableUser") && confirm("Disable this user?")) await postJson("/admin/users/disable", { id: pick("disableUser") }).then(loadAdmin);
+    if (pick("unlockUser")) await postJson("/admin/users/unlock", { id: pick("unlockUser") }).then(loadAdmin);
     if (pick("deleteTable") && confirm("Delete this table?")) await postJson("/tables/delete", { id: pick("deleteTable") }).then(loadAdmin);
     if (pick("cancelReservation") && confirm("Cancel this reservation?")) await postJson("/reservations/cancel", { id: pick("cancelReservation") }).then(loadReservations);
     if (pick("deleteSupplier") && confirm("Delete this supplier?")) await postJson("/inventory/suppliers/delete", { id: pick("deleteSupplier") }).then(loadInventory);

@@ -1,42 +1,27 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Restaurant POS Login</title>
-
-  <style>
-    body {
-      font-family: Arial;
-      text-align: center;
-      margin-top: 100px;
-    }
-
-    input {
-      padding: 10px;
-      margin: 10px;
-      width: 200px;
-    }
-
-    button {
-      padding: 10px 20px;
-      cursor: pointer;
-    }
-  </style>
+  <link rel="stylesheet" href="/css/style.css">
 
 </head>
 
 <body>
-
-<h2>Restaurant POS Login</h2>
-
-<input id="username" placeholder="Username">
-<br>
-
-<input id="pin" type="password" placeholder="4 Digit PIN">
-<br>
-
-<button onclick="login()">Login</button>
-
-<p id="msg"></p>
+  <main class="login-box">
+    <h2>Restaurant POS Login</h2>
+    <label>
+      Username
+      <input id="username" autocomplete="username" placeholder="Username">
+    </label>
+    <label>
+      PIN
+      <input id="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password" placeholder="4 digit PIN">
+    </label>
+    <button id="loginButton" type="button">Login</button>
+    <button id="requestUnlockButton" class="secondary-btn" type="button" hidden>Request unlock</button>
+    <p id="msg" role="status"></p>
+  </main>
 
 <script src="/js/login.js"></script>
 
