@@ -100,6 +100,7 @@ app.use('/subscriptions', require('./routes/subscriptions'));
 app.use('/monitoring', require('./routes/monitoring'));
 app.use('/partners', require('./routes/partners'));
 app.use('/modules', require('./routes/modules'));
+app.use('/messaging', require('./routes/messaging'));
 app.use('/mobile', require('./routes/mobile'));
 app.use('/tenants', require('./routes/tenantModules'));
 app.use('/organizations', require('./routes/organizations'));

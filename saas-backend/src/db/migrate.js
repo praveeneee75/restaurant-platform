@@ -356,6 +356,67 @@ async function migrate() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_messaging_accounts (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL DEFAULT 'SMPP',
+      provider_account_name TEXT,
+      sender_id TEXT,
+      sms_enabled BOOLEAN NOT NULL DEFAULT true,
+      whatsapp_enabled BOOLEAN NOT NULL DEFAULT false,
+      email_enabled BOOLEAN NOT NULL DEFAULT false,
+      smpp_host TEXT,
+      smpp_port INTEGER,
+      smpp_system_id TEXT,
+      smpp_password TEXT,
+      api_base_url TEXT,
+      api_key TEXT,
+      whatsapp_business_id TEXT,
+      email_from_name TEXT,
+      email_from_address TEXT,
+      status TEXT NOT NULL DEFAULT 'DRAFT',
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ,
+      UNIQUE(tenant_id)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS messaging_campaigns (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      channel TEXT NOT NULL,
+      audience TEXT NOT NULL DEFAULT 'ALL_CUSTOMERS',
+      campaign_name TEXT NOT NULL,
+      message_body TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'DRAFT',
+      recipients_estimate INTEGER NOT NULL DEFAULT 0,
+      scheduled_at TIMESTAMPTZ,
+      created_by TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS messaging_delivery_logs (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      campaign_id UUID NOT NULL REFERENCES messaging_campaigns(id) ON DELETE CASCADE,
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      recipient_name TEXT,
+      recipient_phone TEXT,
+      recipient_email TEXT,
+      channel TEXT NOT NULL,
+      provider_message_id TEXT,
+      status TEXT NOT NULL DEFAULT 'QUEUED',
+      error_message TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ
+    )
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS partner_allowed_modules (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
       partner_id UUID NOT NULL REFERENCES partners(id) ON DELETE CASCADE,
@@ -530,7 +591,8 @@ async function migrate() {
       ('MULTI_BRANCH', 'Multi Branch', 'Franchise and multi-location management placeholder', 'ENTERPRISE', 'ACTIVE'),
       ('WHITE_LABEL', 'White Label', 'Partner branding and reseller management', 'ENTERPRISE', 'ACTIVE'),
       ('ONLINE_ORDERING', 'Online Ordering', 'Customer web ordering for takeaway, delivery and prepaid/cash orders', 'SALES', 'ACTIVE'),
-      ('MOBILE_APP', 'White-label Mobile App', 'Cross-platform owner, captain and waiter mobile app packaging', 'PREMIUM', 'ACTIVE')
+      ('MOBILE_APP', 'White-label Mobile App', 'Cross-platform owner, captain and waiter mobile app packaging', 'PREMIUM', 'ACTIVE'),
+      ('MESSAGING', 'SMS / WhatsApp / Email Marketing', 'Bulk customer communication with per-restaurant sender and gateway configuration', 'CUSTOMER', 'ACTIVE')
     ON CONFLICT(code) DO NOTHING
   `);
 
@@ -555,6 +617,7 @@ async function migrate() {
         ('PREMIUM', 'CLOUD_REPORTING'),
         ('PREMIUM', 'ONLINE_ORDERING'),
         ('PREMIUM', 'MOBILE_APP'),
+        ('PREMIUM', 'MESSAGING'),
         ('ENTERPRISE', 'KDS'),
         ('ENTERPRISE', 'INVENTORY'),
         ('ENTERPRISE', 'LOYALTY'),
@@ -563,6 +626,7 @@ async function migrate() {
         ('ENTERPRISE', 'CLOUD_REPORTING'),
         ('ENTERPRISE', 'ONLINE_ORDERING'),
         ('ENTERPRISE', 'MOBILE_APP'),
+        ('ENTERPRISE', 'MESSAGING'),
         ('ENTERPRISE', 'MULTI_BRANCH'),
         ('ENTERPRISE', 'WHITE_LABEL')
     )
@@ -576,10 +640,16 @@ async function migrate() {
 
   await pool.query(`
     INSERT INTO tenant_modules (tenant_id, module_id, enabled, activated_at)
-    SELECT t.id, m.id, true, NOW()
+    SELECT t.id, spm.module_id, true, NOW()
     FROM tenants t
-    CROSS JOIN modules m
-    WHERE m.code != 'MOBILE_APP'
+    JOIN LATERAL (
+      SELECT s.plan_id
+      FROM subscriptions s
+      WHERE s.tenant_id = t.id AND s.status = 'ACTIVE'
+      ORDER BY s.created_at DESC
+      LIMIT 1
+    ) s ON true
+    JOIN subscription_plan_modules spm ON spm.plan_id = s.plan_id AND spm.included = true
     ON CONFLICT(tenant_id, module_id) DO NOTHING
   `);
 
@@ -605,6 +675,9 @@ async function migrate() {
   await pool.query('CREATE INDEX IF NOT EXISTS idx_modules_code ON modules(code)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_tenant_modules_tenant ON tenant_modules(tenant_id, enabled)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_module_usage_tenant ON module_usage_logs(tenant_id, module_code, created_at DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_tenant_messaging_accounts_tenant ON tenant_messaging_accounts(tenant_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_messaging_campaigns_tenant ON messaging_campaigns(tenant_id, created_at DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_messaging_delivery_logs_campaign ON messaging_delivery_logs(campaign_id, status)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_partner_allowed_modules_partner ON partner_allowed_modules(partner_id, allowed)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_organization_users_org ON organization_users(organization_id, active)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_organization_restaurants_org ON organization_restaurants(organization_id, active)');

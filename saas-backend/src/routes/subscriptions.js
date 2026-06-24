@@ -36,6 +36,118 @@ router.get('/plans', async (_req, res) => {
   }
 });
 
+router.get('/plan-modules', async (_req, res) => {
+  try {
+    const [plans, modules, mappings] = await Promise.all([
+      pool.query(`
+        SELECT id, code, name, duration_days, price, active
+        FROM subscription_plans
+        WHERE active = true
+        ORDER BY
+          CASE code
+            WHEN 'TRIAL' THEN 0
+            WHEN 'BASIC' THEN 1
+            WHEN 'STANDARD' THEN 2
+            WHEN 'PREMIUM' THEN 3
+            WHEN 'ENTERPRISE' THEN 4
+            ELSE 10
+          END,
+          duration_days
+      `),
+      pool.query(`
+        SELECT id, code, name, description, category, status
+        FROM modules
+        WHERE status = 'ACTIVE'
+        ORDER BY category, name
+      `),
+      pool.query(`
+        SELECT p.code AS plan_code, m.code AS module_code, spm.included
+        FROM subscription_plan_modules spm
+        JOIN subscription_plans p ON p.id = spm.plan_id
+        JOIN modules m ON m.id = spm.module_id
+        WHERE p.active = true AND m.status = 'ACTIVE'
+      `)
+    ]);
+    const includedByPlan = mappings.rows.reduce((acc, row) => {
+      if (!acc[row.plan_code]) acc[row.plan_code] = [];
+      if (row.included) acc[row.plan_code].push(row.module_code);
+      return acc;
+    }, {});
+    res.json({ success: true, plans: plans.rows, modules: modules.rows, includedByPlan });
+  } catch (err) {
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.post('/plan-modules', async (req, res) => {
+  const { planCode, moduleCodes, applyToExisting } = req.body || {};
+  if (!planCode || !Array.isArray(moduleCodes)) {
+    return res.status(400).json({ success: false, message: 'planCode and moduleCodes are required' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const plan = await client.query('SELECT * FROM subscription_plans WHERE code = $1 AND active = true', [planCode]);
+    if (plan.rowCount === 0) throw new Error('Plan not found');
+    const modules = await client.query('SELECT id, code FROM modules WHERE status = $1', ['ACTIVE']);
+    const selected = new Set(moduleCodes.map((code) => String(code).toUpperCase()));
+    const validCodes = new Set(modules.rows.map((module) => module.code));
+    for (const code of selected) {
+      if (!validCodes.has(code)) throw new Error(`Unknown module ${code}`);
+    }
+    const oldValue = await client.query(`
+      SELECT m.code
+      FROM subscription_plan_modules spm
+      JOIN modules m ON m.id = spm.module_id
+      WHERE spm.plan_id = $1 AND spm.included = true
+      ORDER BY m.code
+    `, [plan.rows[0].id]);
+    for (const module of modules.rows) {
+      await client.query(`
+        INSERT INTO subscription_plan_modules (plan_id, module_id, included)
+        VALUES ($1, $2, $3)
+        ON CONFLICT(plan_id, module_id) DO UPDATE SET included = EXCLUDED.included
+      `, [plan.rows[0].id, module.id, selected.has(module.code)]);
+    }
+    let affectedRestaurants = 0;
+    if (applyToExisting === true) {
+      const tenants = await client.query(`
+        SELECT t.id
+        FROM tenants t
+        JOIN LATERAL (
+          SELECT s.plan_id, s.status
+          FROM subscriptions s
+          WHERE s.tenant_id = t.id
+          ORDER BY s.created_at DESC
+          LIMIT 1
+        ) s ON true
+        WHERE s.plan_id = $1 AND s.status = 'ACTIVE'
+      `, [plan.rows[0].id]);
+      affectedRestaurants = tenants.rowCount;
+      for (const tenant of tenants.rows) {
+        await applyPlanModules(client, tenant.id, plan.rows[0].id);
+      }
+    }
+    await client.query(`
+      INSERT INTO saas_audit_logs (actor_id, actor_role, action, entity_type, entity_id, old_value, new_value)
+      VALUES ($1, $2, 'UPDATE_PLAN_MODULES', 'SUBSCRIPTION_PLAN', $3, $4, $5)
+    `, [
+      req.user?.id || null,
+      req.user?.role || null,
+      plan.rows[0].id,
+      JSON.stringify({ modules: oldValue.rows.map((row) => row.code) }),
+      JSON.stringify({ planCode, modules: [...selected].sort(), applyToExisting: applyToExisting === true, affectedRestaurants })
+    ]).catch(() => {});
+    await client.query('COMMIT');
+    res.json({ success: true, message: applyToExisting ? `Plan updated and applied to ${affectedRestaurants} live restaurant(s).` : 'Plan updated for future renewals/new customers.', affectedRestaurants });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ success: false, message: publicError(err) });
+  } finally {
+    client.release();
+  }
+});
+
 async function applyPlanModules(client, tenantId, planId) {
   await client.query(`
     INSERT INTO tenant_modules (tenant_id, module_id, enabled, activated_at, deactivated_at)

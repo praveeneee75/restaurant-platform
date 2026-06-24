@@ -875,6 +875,48 @@ body.saas-shell {
   margin: 0 !important;
 }
 
+.feature-check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.feature-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 68px;
+  margin: 0 !important;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.feature-check input {
+  flex: 0 0 auto;
+  width: 18px;
+  min-height: 18px;
+  margin: 2px 0 0 !important;
+}
+
+.feature-check span {
+  min-width: 0;
+}
+
+.feature-check strong,
+.feature-check small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.feature-check small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .saas-view pre {
   max-height: 460px;
   overflow: auto;

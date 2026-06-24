@@ -1,4 +1,6 @@
 const token = localStorage.getItem("adminToken");
+const planBuilderState = { plans: [], modules: [], includedByPlan: {} };
+const messagingProviders = [];
 
 if (!token) {
   window.location.href = "/login.html";
@@ -61,6 +63,7 @@ async function loadTenants() {
     const ownerRestaurant = document.getElementById("ownerRestaurantSelect");
     const subscriptionRestaurantSelect = document.getElementById("subscriptionRestaurant");
     const moduleRestaurantSelect = document.getElementById("moduleRestaurant");
+    const messagingRestaurantSelect = document.getElementById("messagingRestaurant");
     const orgRestaurant = document.getElementById("orgRestaurantSelect");
     const supportRestaurantSelect = document.getElementById("supportRestaurant");
     tbody.innerHTML = "";
@@ -68,6 +71,7 @@ async function loadTenants() {
     if (ownerRestaurant) ownerRestaurant.innerHTML = "";
     if (subscriptionRestaurantSelect) subscriptionRestaurantSelect.innerHTML = "";
     if (moduleRestaurantSelect) moduleRestaurantSelect.innerHTML = "";
+    if (messagingRestaurantSelect) messagingRestaurantSelect.innerHTML = "";
     if (orgRestaurant) orgRestaurant.innerHTML = "";
     if (supportRestaurantSelect) supportRestaurantSelect.innerHTML = "";
     data.tenants.forEach((tenant) => {
@@ -94,7 +98,7 @@ async function loadTenants() {
         option.textContent = `${tenant.name} (${tenant.restaurant_code})`;
         reportSelect.appendChild(option);
       }
-      [ownerRestaurant, subscriptionRestaurantSelect, moduleRestaurantSelect, orgRestaurant, supportRestaurantSelect].forEach((select) => {
+      [ownerRestaurant, subscriptionRestaurantSelect, moduleRestaurantSelect, messagingRestaurantSelect, orgRestaurant, supportRestaurantSelect].forEach((select) => {
         if (!select) return;
         const option = document.createElement("option");
         option.value = tenant.restaurant_code;
@@ -104,6 +108,7 @@ async function loadTenants() {
     });
     if (reportSelect && reportSelect.value) loadOwnerReports();
     if (moduleRestaurantSelect && moduleRestaurantSelect.value) loadTenantModules();
+    if (messagingRestaurantSelect && messagingRestaurantSelect.value) loadMessagingAccount();
   } catch (err) {
     document.getElementById("createMsg").innerText = err.message;
   }
@@ -368,6 +373,182 @@ async function disableTenantModule() {
     loadTenantModules();
   } catch (err) {
     moduleMsg.innerText = err.message;
+  }
+}
+
+function renderPlanFeatureGrid() {
+  if (!window.planFeatureGrid || !window.planBuilderSelect) return;
+  const planCode = planBuilderSelect.value;
+  const included = new Set(planBuilderState.includedByPlan[planCode] || []);
+  planFeatureGrid.innerHTML = planBuilderState.modules.map((module) => `
+    <label class="feature-check">
+      <input type="checkbox" value="${module.code}" ${included.has(module.code) ? "checked" : ""}>
+      <span><strong>${module.name}</strong><small>${module.code} · ${module.category || "GENERAL"}</small></span>
+    </label>
+  `).join("");
+}
+
+async function loadPlanBuilder() {
+  if (!window.planBuilderSelect || !window.planFeatureGrid) return;
+  try {
+    const data = await api("/subscriptions/plan-modules");
+    planBuilderState.plans = data.plans || [];
+    planBuilderState.modules = data.modules || [];
+    planBuilderState.includedByPlan = data.includedByPlan || {};
+    const previous = planBuilderSelect.value;
+    planBuilderSelect.innerHTML = planBuilderState.plans.map((plan) => `<option value="${plan.code}">${plan.code} - ${plan.name}</option>`).join("");
+    if (previous && [...planBuilderSelect.options].some((option) => option.value === previous)) planBuilderSelect.value = previous;
+    if (!planBuilderSelect.value && [...planBuilderSelect.options].some((option) => option.value === "PREMIUM")) planBuilderSelect.value = "PREMIUM";
+    renderPlanFeatureGrid();
+  } catch (err) {
+    planBuilderMsg.innerText = err.message;
+  }
+}
+
+async function savePlanFeatures() {
+  try {
+    const selected = [...planFeatureGrid.querySelectorAll("input[type='checkbox']:checked")].map((input) => input.value);
+    const data = await api("/subscriptions/plan-modules", {
+      method: "POST",
+      body: JSON.stringify({
+        planCode: planBuilderSelect.value,
+        moduleCodes: selected,
+        applyToExisting: planApplyExisting.checked
+      })
+    });
+    planBuilderMsg.innerText = data.message;
+    planApplyExisting.checked = false;
+    await loadPlanBuilder();
+    await loadSubscriptions();
+    await loadModules();
+    if (window.messagingRestaurant?.value) await loadMessagingAccount();
+  } catch (err) {
+    planBuilderMsg.innerText = err.message;
+  }
+}
+
+function renderMessagingProviders() {
+  if (!window.messagingProvider) return;
+  messagingProvider.innerHTML = messagingProviders.map((provider) => `<option value="${provider.code}">${provider.name}</option>`).join("");
+  renderMessagingProviderHelp();
+}
+
+function renderMessagingProviderHelp() {
+  if (!window.messagingProviderHelp || !window.messagingProvider) return;
+  const selected = messagingProviders.find((provider) => provider.code === messagingProvider.value);
+  messagingProviderHelp.innerHTML = selected
+    ? `<p><strong>${selected.name}</strong></p><p>${selected.bestFor}</p><p>For India, keep DLT entity ID, approved templates and sender/header records with the provider account.</p>`
+    : "<p>Choose a provider to see setup guidance.</p>";
+}
+
+async function loadMessagingProviders() {
+  if (!window.messagingProvider) return;
+  try {
+    const data = await api("/messaging/providers");
+    messagingProviders.splice(0, messagingProviders.length, ...(data.providers || []));
+    renderMessagingProviders();
+  } catch (err) {
+    if (window.messagingMsg) messagingMsg.innerText = err.message;
+  }
+}
+
+function renderMessagingCampaigns(campaigns = []) {
+  const tbody = document.querySelector("#messagingCampaignTable tbody");
+  if (!tbody) return;
+  tbody.innerHTML = campaigns.map((campaign) => `
+    <tr>
+      <td>${campaign.campaign_name}</td>
+      <td>${campaign.channel}</td>
+      <td>${campaign.audience}</td>
+      <td>${campaign.status}</td>
+      <td>${campaign.recipients_estimate ?? 0}</td>
+      <td>${campaign.created_at ? new Date(campaign.created_at).toLocaleString() : ""}</td>
+    </tr>
+  `).join("");
+}
+
+async function loadMessagingAccount() {
+  if (!window.messagingRestaurant || !messagingRestaurant.value) return;
+  try {
+    const data = await api(`/messaging/account?restaurantId=${encodeURIComponent(messagingRestaurant.value)}`);
+    const account = data.account || {};
+    messagingProvider.value = account.provider || messagingProvider.value || "SMPP";
+    messagingAccountName.value = account.provider_account_name || "";
+    messagingSenderId.value = account.sender_id || "";
+    messagingStatus.value = account.status || "DRAFT";
+    messagingSmsEnabled.checked = account.sms_enabled !== false;
+    messagingWhatsappEnabled.checked = account.whatsapp_enabled === true;
+    messagingEmailEnabled.checked = account.email_enabled === true;
+    messagingSmppHost.value = account.smpp_host || "";
+    messagingSmppPort.value = account.smpp_port || "";
+    messagingSmppSystemId.value = account.smpp_system_id || "";
+    messagingSmppPassword.value = "";
+    messagingApiBaseUrl.value = account.api_base_url || "";
+    messagingApiKey.value = "";
+    messagingWhatsappBusinessId.value = account.whatsapp_business_id || "";
+    messagingEmailFrom.value = account.email_from_address || "";
+    messagingNotes.value = account.notes || "";
+    renderMessagingProviderHelp();
+    renderMessagingCampaigns(data.campaigns || []);
+    messagingMsg.innerText = data.enabled ? "Messaging module is enabled for this restaurant." : "Messaging module is not enabled. Add it in Plan Builder or tenant modules.";
+  } catch (err) {
+    messagingMsg.innerText = err.message;
+  }
+}
+
+async function saveMessagingAccount() {
+  try {
+    const data = await api("/messaging/account", {
+      method: "POST",
+      body: JSON.stringify({
+        restaurantId: messagingRestaurant.value,
+        provider: messagingProvider.value,
+        providerAccountName: messagingAccountName.value,
+        senderId: messagingSenderId.value,
+        status: messagingStatus.value,
+        smsEnabled: messagingSmsEnabled.checked,
+        whatsappEnabled: messagingWhatsappEnabled.checked,
+        emailEnabled: messagingEmailEnabled.checked,
+        smppHost: messagingSmppHost.value,
+        smppPort: messagingSmppPort.value,
+        smppSystemId: messagingSmppSystemId.value,
+        smppPassword: messagingSmppPassword.value,
+        apiBaseUrl: messagingApiBaseUrl.value,
+        apiKey: messagingApiKey.value,
+        whatsappBusinessId: messagingWhatsappBusinessId.value,
+        emailFromAddress: messagingEmailFrom.value,
+        notes: messagingNotes.value
+      })
+    });
+    messagingMsg.innerText = data.message;
+    messagingSmppPassword.value = "";
+    messagingApiKey.value = "";
+    await loadMessagingAccount();
+  } catch (err) {
+    messagingMsg.innerText = err.message;
+  }
+}
+
+async function createMessagingCampaign() {
+  try {
+    const data = await api("/messaging/campaigns", {
+      method: "POST",
+      body: JSON.stringify({
+        restaurantId: messagingRestaurant.value,
+        channel: campaignChannel.value,
+        audience: campaignAudience.value,
+        campaignName: campaignName.value,
+        messageBody: campaignMessage.value,
+        scheduledAt: campaignSchedule.value || null
+      })
+    });
+    messagingMsg.innerText = data.message;
+    campaignName.value = "";
+    campaignMessage.value = "";
+    campaignSchedule.value = "";
+    await loadMessagingAccount();
+  } catch (err) {
+    messagingMsg.innerText = err.message;
   }
 }
 
@@ -912,6 +1093,9 @@ partnerSelect?.addEventListener("change", () => {
   loadPartnerCommissions();
 });
 moduleRestaurant?.addEventListener("change", () => loadTenantModules());
+planBuilderSelect?.addEventListener("change", renderPlanFeatureGrid);
+messagingRestaurant?.addEventListener("change", () => loadMessagingAccount());
+messagingProvider?.addEventListener("change", renderMessagingProviderHelp);
 orgSelect?.addEventListener("change", () => {
   loadBranchGroups();
   loadOrganizationRestaurants();
@@ -924,5 +1108,8 @@ loadSubscriptions();
 loadMonitoring();
 loadPartners();
 loadModules();
+loadPlanBuilder();
+loadMessagingProviders();
+loadMessagingAccount();
 loadOrganizations();
 showSaasView((location.hash || "#overview").slice(1));

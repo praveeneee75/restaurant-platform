@@ -20,12 +20,14 @@
       <button class="saas-nav-btn" data-saas-view="customers" type="button">Create Customer</button>
       <button class="saas-nav-btn" data-saas-view="restaurants" type="button">Restaurants</button>
       <button class="saas-nav-btn" data-saas-view="subscriptions" type="button">Subscriptions</button>
+      <button class="saas-nav-btn" data-saas-view="plan-builder" type="button">Plan Builder</button>
       <button class="saas-nav-btn" data-saas-view="modules" type="button">Modules</button>
 
       <p class="nav-group-title">Operations</p>
       <button class="saas-nav-btn" data-saas-view="monitoring" type="button">Monitoring</button>
       <button class="saas-nav-btn" data-saas-view="owners" type="button">Owner Accounts</button>
       <button class="saas-nav-btn" data-saas-view="reports" type="button">Cloud Reports</button>
+      <button class="saas-nav-btn" data-saas-view="messaging" type="button">Messaging</button>
       <button class="saas-nav-btn" data-saas-view="support" type="button">Support</button>
 
       <p class="nav-group-title">Growth</p>
@@ -159,6 +161,17 @@
       <div class="table-wrap"><table id="subscriptionTable"><thead><tr><th>Restaurant</th><th>Plan</th><th>Status</th><th>Expires</th><th>Days</th><th>Warning</th><th>Paid</th><th>Monthly Add-ons</th></tr></thead><tbody></tbody></table></div>
     </section>
 
+    <section class="saas-view" id="view-plan-builder" data-title="Plan Builder" data-hint="Choose which features each package includes and optionally push changes to live customers.">
+      <div class="section-heading"><h2>Customize Plans</h2><p>Tick features for each plan. Use live sync only when existing restaurants should receive the same feature change.</p></div>
+      <div class="form-grid compact">
+        <select id="planBuilderSelect"></select>
+        <label class="inline-check"><input id="planApplyExisting" type="checkbox"> Apply this change to existing live restaurants on this plan</label>
+        <button onclick="savePlanFeatures()">Save Plan Features</button>
+      </div>
+      <p id="planBuilderMsg" class="form-message"></p>
+      <div id="planFeatureGrid" class="feature-check-grid"></div>
+    </section>
+
     <section class="saas-view" id="view-modules" data-title="Modules" data-hint="Configure marketplace add-ons and enable modules per restaurant.">
       <div class="section-heading"><h2>Marketplace / Add-on Modules</h2><p>Package optional capabilities such as mobile app, inventory and online ordering.</p></div>
       <div class="form-grid">
@@ -185,6 +198,54 @@
       </div>
       <div class="table-wrap"><table id="moduleTable"><thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Status</th><th>Pricing</th></tr></thead><tbody></tbody></table></div>
       <div class="table-wrap"><table id="tenantModuleTable"><thead><tr><th>Module</th><th>Status</th><th>Trial Ends</th><th>Monthly</th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section class="saas-view" id="view-messaging" data-title="Messaging" data-hint="Configure restaurant-specific SMS, WhatsApp and email gateway accounts and campaign drafts.">
+      <div class="section-heading"><h2>SMS / WhatsApp / Email</h2><p>Messaging is a Premium module. Each restaurant should use its own sender ID, SMPP/API account and approved templates.</p></div>
+      <div class="form-grid">
+        <select id="messagingRestaurant"></select>
+        <select id="messagingProvider"></select>
+        <input id="messagingAccountName" placeholder="Provider account name">
+        <input id="messagingSenderId" placeholder="Sender ID / Header">
+        <select id="messagingStatus"><option>DRAFT</option><option>ACTIVE</option><option>DISABLED</option></select>
+        <label class="inline-check"><input id="messagingSmsEnabled" type="checkbox" checked> SMS</label>
+        <label class="inline-check"><input id="messagingWhatsappEnabled" type="checkbox"> WhatsApp</label>
+        <label class="inline-check"><input id="messagingEmailEnabled" type="checkbox"> Email</label>
+      </div>
+      <div class="form-grid">
+        <input id="messagingSmppHost" placeholder="SMPP host">
+        <input id="messagingSmppPort" type="number" placeholder="SMPP port">
+        <input id="messagingSmppSystemId" placeholder="SMPP system ID">
+        <input id="messagingSmppPassword" type="password" placeholder="SMPP password">
+        <input id="messagingApiBaseUrl" placeholder="HTTP API base URL">
+        <input id="messagingApiKey" type="password" placeholder="API key">
+        <input id="messagingWhatsappBusinessId" placeholder="WhatsApp Business ID">
+        <input id="messagingEmailFrom" placeholder="Email from address">
+      </div>
+      <textarea id="messagingNotes" placeholder="DLT entity ID, template notes, provider instructions" rows="2"></textarea>
+      <div class="form-grid compact">
+        <button onclick="saveMessagingAccount()">Save Gateway</button>
+        <button onclick="loadMessagingAccount()">Refresh Messaging</button>
+      </div>
+      <p id="messagingMsg" class="form-message"></p>
+      <div class="split-grid">
+        <article class="info-panel">
+          <h3>Campaign Draft</h3>
+          <div class="form-grid compact">
+            <input id="campaignName" placeholder="Campaign name">
+            <select id="campaignChannel"><option>SMS</option><option>WHATSAPP</option><option>EMAIL</option></select>
+            <select id="campaignAudience"><option value="ALL_CUSTOMERS">All customers</option><option value="ONLINE_CUSTOMERS">Online customers</option><option value="NEW_LEADS">New leads</option><option value="INACTIVE_CUSTOMERS">Inactive customers</option></select>
+            <input id="campaignSchedule" type="datetime-local">
+          </div>
+          <textarea id="campaignMessage" placeholder="Message body. Use approved DLT/WhatsApp templates for production sends." rows="4"></textarea>
+          <button onclick="createMessagingCampaign()">Save Campaign</button>
+        </article>
+        <article class="info-panel">
+          <h3>Provider Guidance</h3>
+          <div id="messagingProviderHelp" class="steps-list"></div>
+        </article>
+      </div>
+      <div class="table-wrap"><table id="messagingCampaignTable"><thead><tr><th>Campaign</th><th>Channel</th><th>Audience</th><th>Status</th><th>Recipients</th><th>Created</th></tr></thead><tbody></tbody></table></div>
     </section>
 
     <section class="saas-view" id="view-monitoring" data-title="Monitoring" data-hint="Track POS heartbeat, backup, printer and license health.">
