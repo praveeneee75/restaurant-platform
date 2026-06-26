@@ -1,26 +1,16 @@
 const Database = require('better-sqlite3');
-const path = require('path');
 const fs = require('fs-extra');
+const { dataDir, restaurantDbPath } = require('../utils/dataPaths');
 
-/**
- * Opens (or creates) a SQLite database for a restaurant
- * Each restaurant gets its own DB file
- */
 function openDatabase(restaurantId) {
   if (!restaurantId) {
     throw new Error('restaurantId is required');
   }
 
   const cleanRestaurantId = restaurantId.trim();
+  fs.ensureDirSync(dataDir());
 
-  const dataDir = path.join(__dirname, '../../data');
-  fs.ensureDirSync(dataDir);
-
-  // ✅ NO TEMPLATE STRING, NO COPY-PASTE ISSUES
-  const dbPath = path.join(
-    dataDir,
-    'restaurant_' + cleanRestaurantId + '.db'
-  );
+  const dbPath = restaurantDbPath(cleanRestaurantId);
 
   if (process.env.POS_DB_DEBUG === '1') {
     console.log('OPENING DATABASE:', dbPath);
@@ -31,6 +21,5 @@ function openDatabase(restaurantId) {
 
   return db;
 }
-
 
 module.exports = { openDatabase };

@@ -1,17 +1,18 @@
 const fs = require('fs');
 const path = require('path');
+const { dataDir } = require('./dataPaths');
 
 function getAllRestaurantIds() {
-  const dataDir = path.join(__dirname, '../../data');
+  const restaurantDataDir = dataDir();
 
-  if (!fs.existsSync(dataDir)) {
+  if (!fs.existsSync(restaurantDataDir)) {
     return [];
   }
 
-  return fs.readdirSync(dataDir)
+  return fs.readdirSync(restaurantDataDir)
     .filter(file => file.startsWith('restaurant_') && file.endsWith('.db'))
     .map(file => {
-      const filePath = path.join(dataDir, file);
+      const filePath = path.join(restaurantDataDir, file);
       const stats = fs.statSync(filePath);
       return {
         restaurantId: file.replace('restaurant_', '').replace('.db', ''),

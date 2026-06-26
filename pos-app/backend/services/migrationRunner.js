@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { ensureRestaurantSchema } = require('./schema');
+const { backupsDir, restaurantDbPath } = require('../utils/dataPaths');
 const ensuredRestaurants = new Set();
 
 const migrations = [
@@ -150,15 +151,15 @@ const migrations = [
 ];
 
 function dbPathForRestaurant(restaurantId) {
-  return path.join(__dirname, '../../data', 'restaurant_' + restaurantId.trim() + '.db');
+  return restaurantDbPath(restaurantId);
 }
 
 function backupDatabase(restaurantId) {
   const source = dbPathForRestaurant(restaurantId);
   if (!fs.existsSync(source)) return null;
 
-  const backupsDir = path.join(__dirname, '../../backups');
-  fs.mkdirSync(backupsDir, { recursive: true });
+  const backupRoot = backupsDir();
+  fs.mkdirSync(backupRoot, { recursive: true });
 
   const compact = new Date()
     .toISOString()
@@ -166,7 +167,7 @@ function backupDatabase(restaurantId) {
     .slice(0, 14);
   const stamp = compact.slice(0, 8) + '_' + compact.slice(8);
   const backupName = 'restaurant_' + restaurantId.trim() + '_' + stamp + '.db';
-  const target = path.join(backupsDir, backupName);
+  const target = path.join(backupRoot, backupName);
   try {
     fs.copyFileSync(source, target);
     return target;

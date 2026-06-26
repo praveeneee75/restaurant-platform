@@ -1,7 +1,27 @@
 require('dotenv').config()
 
-console.log('🔥🔥🔥 SERVER.JS VERSION: 2026-01-25 A 🔥🔥🔥');
-console.log('🔥🔥🔥 ACTIVE DATABASE.JS – VERSION A 🔥🔥🔥');
+if (process.env.POS_DESKTOP === '1') {
+  const fs = require('fs');
+  const path = require('path');
+  const logDir = path.join(process.env.APPDATA || process.cwd(), 'pos-app', 'logs');
+  const logFile = path.join(logDir, 'backend.log');
+  fs.mkdirSync(logDir, { recursive: true });
+  const writeDesktopLog = (level, args) => {
+    try {
+      fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${level} ${args.map((arg) => (
+        arg instanceof Error ? (arg.stack || arg.message) : String(arg)
+      )).join(' ')}\n`);
+    } catch {
+      // Desktop logging must never prevent app startup.
+    }
+  };
+  console.log = (...args) => writeDesktopLog('INFO', args);
+  console.warn = (...args) => writeDesktopLog('WARN', args);
+  console.error = (...args) => writeDesktopLog('ERROR', args);
+}
+
+console.log('SERVER.JS VERSION: 2026-01-25 A');
+console.log('ACTIVE DATABASE.JS - VERSION A');
 const express = require('express');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
@@ -15,6 +35,7 @@ const { setupDatabase } = require('./services/dbSetup');
 const { openDatabase } = require('./db/database');
 const { hasPermission, permissionsForRole, seedDefaultPermissions } = require('./services/permissions');
 const { getSingleRestaurantId } = require('./utils/restaurantScanner');
+const { dataDir, restaurantDbPath } = require('./utils/dataPaths');
 const { ensureRestaurantSchema, seedDefaultSettings, DEFAULT_SYSTEM_SETTINGS } = require('./services/schema');
 const { runMigrations } = require('./services/migrationRunner');
 const { logAudit, logComplianceEvent } = require('./services/audit');
@@ -102,8 +123,7 @@ function isValidPin(pin) {
 
 function openRestaurantDatabase(restaurantId) {
   const requestedRestaurantId = String(restaurantId || '').trim();
-  const dataDir = path.join(__dirname, '../data');
-  const requestedPath = path.join(dataDir, `restaurant_${requestedRestaurantId}.db`);
+  const requestedPath = restaurantDbPath(requestedRestaurantId);
   let activeRestaurantId = requestedRestaurantId;
   const requestedDbValid = requestedRestaurantId
     && fs.existsSync(requestedPath)
@@ -2928,9 +2948,9 @@ async function checkLicenseDaily(restaurantId) {
 
 function getActivatedRestaurant() {
   const fs = require('fs');
-  const path = require('path');
-  const dataDir = path.join(__dirname, '../data');
-  const files = fs.readdirSync(dataDir);
+  const restaurantDataDir = dataDir();
+  if (!fs.existsSync(restaurantDataDir)) return null;
+  const files = fs.readdirSync(restaurantDataDir);
 
   const dbFiles = files.filter(file => file.startsWith('restaurant_') && file.endsWith('.db'));
 
@@ -8840,8 +8860,7 @@ app.get('/health', (req, res) => {
   let db;
   try {
     const fs = require('fs');
-    const path = require('path');
-    const dbPath = path.join(__dirname, '../data', `restaurant_${activeRestaurantId}.db`);
+    const dbPath = restaurantDbPath(activeRestaurantId);
     health.database.fileExists = fs.existsSync(dbPath);
     db = openRestaurantDatabase(activeRestaurantId);
     db.prepare('SELECT 1').get();
