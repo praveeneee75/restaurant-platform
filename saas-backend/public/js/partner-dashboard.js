@@ -4,6 +4,7 @@ const partnerUser = JSON.parse(localStorage.getItem("partnerUser") || "{}");
 if (!partnerToken) window.location.href = "/partner-login.html";
 
 async function partnerApi(url, options = {}) {
+  if (!window.SaasSession?.requireActive?.()) throw new Error("Session expired");
   const res = await fetch(url, {
     ...options,
     headers: {
@@ -12,6 +13,7 @@ async function partnerApi(url, options = {}) {
       ...(options.headers || {})
     }
   });
+  if (window.SaasSession?.handleUnauthorized?.(res)) throw new Error("Session expired");
   const data = await res.json();
   if (!res.ok || data.success === false) throw new Error(data.message || "Request failed");
   return data;

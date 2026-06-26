@@ -40,10 +40,13 @@ async function login() {
       return;
     }
 
-    // Save JWT token
     localStorage.setItem("adminToken", data.token);
+    localStorage.removeItem("ownerToken");
+    localStorage.removeItem("ownerUser");
+    localStorage.removeItem("partnerToken");
+    localStorage.removeItem("partnerUser");
+    localStorage.setItem("adminToken:session", JSON.stringify({ loginAt: Date.now(), lastActiveAt: Date.now() }));
 
-    // Redirect to K'Master POS admin dashboard
     window.location.href = "/admin.html";
 
   } catch (err) {

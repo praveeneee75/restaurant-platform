@@ -24,6 +24,10 @@ async function ownerLogin() {
   }
   localStorage.setItem("ownerToken", data.token);
   localStorage.setItem("ownerUser", JSON.stringify(data.owner));
+  localStorage.removeItem("adminToken");
+  localStorage.removeItem("partnerToken");
+  localStorage.removeItem("partnerUser");
+  localStorage.setItem("ownerToken:session", JSON.stringify({ loginAt: Date.now(), lastActiveAt: Date.now() }));
   window.location.href = "/owner-dashboard.html";
 }
 

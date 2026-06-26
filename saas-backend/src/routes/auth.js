@@ -3,6 +3,8 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const pool = require('../db/db');
 const { config } = require('../config');
+const authenticate = require('../middleware/authMiddleware');
+const { revokeToken, tokenFromRequest } = require('../utils/tokenSessions');
 
 const router = express.Router();
 
@@ -57,6 +59,16 @@ router.post('/login', async (req, res) => {
       success: false,
       message: 'Server error'
     });
+  }
+});
+
+router.post('/logout', authenticate, async (req, res) => {
+  try {
+    await revokeToken(tokenFromRequest(req));
+    res.json({ success: true, message: 'Logged out' });
+  } catch (err) {
+    console.error('ADMIN LOGOUT ERROR:', err.message);
+    res.status(500).json({ success: false, message: 'Logout failed' });
   }
 });
 

@@ -3,7 +3,7 @@
 <head>
   <title>K'Master POS Admin Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/css/app.css?v=kmaster-ui">
+  <link rel="stylesheet" href="/css/app.css?v=kmaster-plan-messaging-ui">
 </head>
 <body class="saas-shell">
   <aside class="saas-sidebar">
@@ -202,7 +202,7 @@
 
     <section class="saas-view" id="view-messaging" data-title="Messaging" data-hint="Configure restaurant-specific SMS, WhatsApp and email gateway accounts and campaign drafts.">
       <div class="section-heading"><h2>SMS / WhatsApp / Email</h2><p>Messaging is a Premium module. Each restaurant should use its own sender ID, SMPP/API account and approved templates.</p></div>
-      <div class="form-grid">
+      <div class="form-grid messaging-grid">
         <select id="messagingRestaurant"></select>
         <select id="messagingProvider"></select>
         <input id="messagingAccountName" placeholder="Provider account name">
@@ -212,7 +212,7 @@
         <label class="inline-check"><input id="messagingWhatsappEnabled" type="checkbox"> WhatsApp</label>
         <label class="inline-check"><input id="messagingEmailEnabled" type="checkbox"> Email</label>
       </div>
-      <div class="form-grid">
+      <div class="form-grid messaging-grid">
         <input id="messagingSmppHost" placeholder="SMPP host">
         <input id="messagingSmppPort" type="number" placeholder="SMPP port">
         <input id="messagingSmppSystemId" placeholder="SMPP system ID">
@@ -404,6 +404,7 @@
     </section>
   </main>
 
-  <script src="/js/admin.js"></script>
+  <script src="/js/saas-session.js" data-session-scope="admin"></script>
+  <script src="/js/admin.js?v=kmaster-plan-messaging-ui"></script>
 </body>
 </html>

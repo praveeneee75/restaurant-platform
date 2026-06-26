@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const pool = require('../db/db');
 const authenticate = require('../middleware/authMiddleware');
 const { config, publicError } = require('../config');
+const { isTokenRevoked, revokeToken, tokenFromRequest } = require('../utils/tokenSessions');
 
 const router = express.Router();
 
@@ -11,12 +12,14 @@ function ownerToken(user) {
   return jwt.sign({ id: user.id, role: 'OWNER_USER', type: 'OWNER' }, config.jwtSecret, { expiresIn: '8h' });
 }
 
-function authenticateOwner(req, res, next) {
+async function authenticateOwner(req, res, next) {
   const header = req.headers.authorization;
   if (!header) return res.status(401).json({ success: false, message: 'Invalid token' });
   try {
-    const decoded = jwt.verify(header.split(' ')[1], config.jwtSecret);
+    const token = tokenFromRequest(req);
+    const decoded = jwt.verify(token, config.jwtSecret);
     if (decoded.type !== 'OWNER') return res.status(403).json({ success: false, message: 'Owner access required' });
+    if (await isTokenRevoked(token)) return res.status(401).json({ success: false, message: 'Session expired' });
     req.owner = decoded;
     next();
   } catch (_) {
@@ -53,6 +56,16 @@ router.post('/change-password', authenticateOwner, async (req, res) => {
     res.json({ success: true, message: 'Password changed' });
   } catch (err) {
     console.error('OWNER CHANGE PASSWORD ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.post('/logout', authenticateOwner, async (req, res) => {
+  try {
+    await revokeToken(tokenFromRequest(req));
+    res.json({ success: true, message: 'Logged out' });
+  } catch (err) {
+    console.error('OWNER LOGOUT ERROR:', err.message);
     res.status(500).json({ success: false, message: publicError(err) });
   }
 });

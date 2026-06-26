@@ -29,6 +29,10 @@ async function partnerLogin() {
     }
     localStorage.setItem("partnerToken", data.token);
     localStorage.setItem("partnerUser", JSON.stringify(data.user));
+    localStorage.removeItem("adminToken");
+    localStorage.removeItem("ownerToken");
+    localStorage.removeItem("ownerUser");
+    localStorage.setItem("partnerToken:session", JSON.stringify({ loginAt: Date.now(), lastActiveAt: Date.now() }));
     window.location.href = "/partner-dashboard.html";
   } catch (err) {
     msg.innerText = "Server error";

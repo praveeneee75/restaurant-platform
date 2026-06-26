@@ -6,7 +6,7 @@ if (!token) {
   window.location.href = "/login.html";
 }
 
-function showSaasView(viewName = "overview") {
+function showSaasView(viewName = "overview", updateHistory = true) {
   const viewId = `view-${viewName}`;
   const target = document.getElementById(viewId) || document.getElementById("view-overview");
   if (!target) return;
@@ -21,7 +21,7 @@ function showSaasView(viewName = "overview") {
 
   if (window.saasViewTitle) window.saasViewTitle.innerText = target.dataset.title || "K'Master POS";
   if (window.saasViewHint) window.saasViewHint.innerText = target.dataset.hint || "";
-  if (location.hash !== `#${activeView}`) history.replaceState(null, "", `#${activeView}`);
+  if (updateHistory && location.hash !== `#${activeView}`) history.pushState(null, "", `#${activeView}`);
 }
 
 document.addEventListener("click", (event) => {
@@ -38,10 +38,11 @@ document.addEventListener("click", (event) => {
 });
 
 window.addEventListener("hashchange", () => {
-  showSaasView((location.hash || "#overview").slice(1));
+  showSaasView((location.hash || "#overview").slice(1), false);
 });
 
 async function api(url, options = {}) {
+  if (!window.SaasSession?.requireActive?.()) throw new Error("Session expired");
   const res = await fetch(url, {
     ...options,
     headers: {
@@ -50,6 +51,7 @@ async function api(url, options = {}) {
       ...(options.headers || {})
     }
   });
+  if (window.SaasSession?.handleUnauthorized?.(res)) throw new Error("Session expired");
   const data = await res.json();
   if (!res.ok || data.success === false) throw new Error(data.message || "Request failed");
   return data;
@@ -397,8 +399,12 @@ async function loadPlanBuilder() {
     planBuilderState.includedByPlan = data.includedByPlan || {};
     const previous = planBuilderSelect.value;
     planBuilderSelect.innerHTML = planBuilderState.plans.map((plan) => `<option value="${plan.code}">${plan.code} - ${plan.name}</option>`).join("");
-    if (previous && [...planBuilderSelect.options].some((option) => option.value === previous)) planBuilderSelect.value = previous;
-    if (!planBuilderSelect.value && [...planBuilderSelect.options].some((option) => option.value === "PREMIUM")) planBuilderSelect.value = "PREMIUM";
+    const hasOption = (code) => [...planBuilderSelect.options].some((option) => option.value === code);
+    if (previous && hasOption(previous)) {
+      planBuilderSelect.value = previous;
+    } else if (hasOption("PREMIUM")) {
+      planBuilderSelect.value = "PREMIUM";
+    }
     renderPlanFeatureGrid();
   } catch (err) {
     planBuilderMsg.innerText = err.message;
@@ -1112,4 +1118,4 @@ loadPlanBuilder();
 loadMessagingProviders();
 loadMessagingAccount();
 loadOrganizations();
-showSaasView((location.hash || "#overview").slice(1));
+showSaasView((location.hash || "#overview").slice(1), false);

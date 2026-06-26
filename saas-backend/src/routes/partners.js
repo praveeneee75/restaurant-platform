@@ -5,6 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const pool = require('../db/db');
 const authenticate = require('../middleware/authMiddleware');
 const { config, publicError } = require('../config');
+const { isTokenRevoked, revokeToken, tokenFromRequest } = require('../utils/tokenSessions');
 
 const router = express.Router();
 
@@ -36,11 +37,13 @@ function audit(actor, action, entityType, entityId, oldValue, newValue) {
   ).catch(() => {});
 }
 
-function authenticateEither(req, res, next) {
+async function authenticateEither(req, res, next) {
   const header = req.headers.authorization;
   if (!header) return res.status(401).json({ success: false, message: 'Invalid token' });
   try {
-    const decoded = jwt.verify(header.split(' ')[1], config.jwtSecret);
+    const token = tokenFromRequest(req);
+    const decoded = jwt.verify(token, config.jwtSecret);
+    if (await isTokenRevoked(token)) return res.status(401).json({ success: false, message: 'Session expired' });
     req.auth = decoded.type === 'PARTNER'
       ? { id: decoded.id, role: decoded.role, partnerId: decoded.partnerId, type: 'PARTNER' }
       : { id: decoded.id, role: decoded.role, type: 'DEV' };
@@ -114,6 +117,16 @@ router.post('/login', async (req, res) => {
     });
   } catch (err) {
     console.error('PARTNER LOGIN ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.post('/logout', authenticateEither, async (req, res) => {
+  try {
+    await revokeToken(tokenFromRequest(req));
+    res.json({ success: true, message: 'Logged out' });
+  } catch (err) {
+    console.error('PARTNER LOGOUT ERROR:', err.message);
     res.status(500).json({ success: false, message: publicError(err) });
   }
 });

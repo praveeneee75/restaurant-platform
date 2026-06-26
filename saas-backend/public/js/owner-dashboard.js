@@ -2,6 +2,7 @@ const token = localStorage.getItem("ownerToken");
 if (!token) window.location.href = "/owner-login.html";
 
 async function ownerApi(url, options = {}) {
+  if (!window.SaasSession?.requireActive?.()) throw new Error("Session expired");
   const res = await fetch(url, {
     ...options,
     headers: {
@@ -10,6 +11,7 @@ async function ownerApi(url, options = {}) {
       ...(options.headers || {})
     }
   });
+  if (window.SaasSession?.handleUnauthorized?.(res)) throw new Error("Session expired");
   const data = await res.json();
   if (!res.ok || data.success === false) throw new Error(data.message || "Request failed");
   return data;
