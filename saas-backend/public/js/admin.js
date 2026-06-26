@@ -22,6 +22,7 @@ function showSaasView(viewName = "overview", updateHistory = true) {
   if (window.saasViewTitle) window.saasViewTitle.innerText = target.dataset.title || "K'Master POS";
   if (window.saasViewHint) window.saasViewHint.innerText = target.dataset.hint || "";
   if (updateHistory && location.hash !== `#${activeView}`) history.pushState(null, "", `#${activeView}`);
+  window.SaasSession?.updateNavigationControls?.();
 }
 
 document.addEventListener("click", (event) => {

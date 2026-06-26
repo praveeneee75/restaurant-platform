@@ -10,6 +10,7 @@
   const cfg = configs[scope] || null;
   const protectedPage = Boolean(cfg);
   const stateKey = cfg ? `${cfg.tokenKey}:session` : "";
+  const navStateKey = "saasNavigationState";
 
   function token() {
     return cfg ? localStorage.getItem(cfg.tokenKey) : "";
@@ -97,7 +98,40 @@
     el.classList.toggle("session-warning", remaining <= warningMs);
   }
 
+  function navState() {
+    try {
+      return JSON.parse(sessionStorage.getItem(navStateKey) || "{}");
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function saveNavState(next) {
+    sessionStorage.setItem(navStateKey, JSON.stringify({ ...navState(), ...next }));
+  }
+
+  function isHomeLocation() {
+    if (!cfg?.homeUrl) return false;
+    const home = new URL(cfg.homeUrl, location.origin);
+    return location.pathname === home.pathname && !location.hash;
+  }
+
+  function updateNavigationControls() {
+    const nav = document.querySelector(".session-nav");
+    if (!nav) return;
+    const canShowBack = protectedPage && !isHomeLocation();
+    const canShowForward = protectedPage && navState().canForward === true;
+    const canShowHome = protectedPage && !isHomeLocation();
+    const back = nav.querySelector("[data-session-back]");
+    const forward = nav.querySelector("[data-session-forward]");
+    const home = nav.querySelector("[data-session-home]");
+    if (back) back.hidden = !canShowBack;
+    if (forward) forward.hidden = !canShowForward;
+    if (home) home.hidden = !canShowHome;
+  }
+
   function addNavigation() {
+    if (document.body?.classList.contains("auth-page")) return;
     const nav = document.createElement("div");
     nav.className = "session-nav";
     nav.innerHTML = `
@@ -110,20 +144,37 @@
     if (target.classList?.contains("saas-quick-actions")) target.prepend(nav);
     else if (target.classList?.contains("auth-panel")) target.appendChild(nav);
     else document.body.insertBefore(nav, document.body.firstChild);
+    updateNavigationControls();
   }
 
   document.addEventListener("click", (event) => {
     if (event.target.closest("[data-session-back]")) {
+      saveNavState({ canForward: true });
       if (history.length > 1) history.back();
+      setTimeout(updateNavigationControls, 100);
       return;
     }
     if (event.target.closest("[data-session-forward]")) {
+      saveNavState({ canForward: false });
       history.forward();
+      setTimeout(updateNavigationControls, 100);
       return;
+    }
+    if (event.target.closest("a, button")) {
+      const target = event.target.closest("a, button");
+      if (!target?.matches("[data-session-back], [data-session-forward]")) saveNavState({ canForward: false });
     }
     if (event.target.closest("[data-session-logout]")) {
       logout();
     }
+  });
+
+  window.addEventListener("popstate", () => {
+    setTimeout(updateNavigationControls, 100);
+  });
+
+  window.addEventListener("hashchange", () => {
+    updateNavigationControls();
   });
 
   ["click", "keydown", "mousemove", "touchstart"].forEach((name) => {
@@ -168,6 +219,7 @@
       if (!cfg) return;
       saveSessionState({ loginAt: Date.now(), lastActiveAt: Date.now(), ...extra });
     },
+    updateNavigationControls,
     token
   };
 
