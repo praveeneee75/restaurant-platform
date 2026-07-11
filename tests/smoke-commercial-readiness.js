@@ -51,6 +51,11 @@ const mobileApp = read('mobile-app/www/js/app.js');
 assert(mobileApp.includes('`${MOBILE_DIRECTORY_URL}/license/owner-pos-login`'), 'Mobile owner email login must use the cloud endpoint');
 assert(mobileApp.includes('`${base}/mobile-app/login`'), 'Mobile staff PIN login must use the restaurant POS endpoint');
 assert(mobileApp.includes('if (ownerStyleLogin)'), 'Mobile login must distinguish owner email from staff username');
+assert(mobileApp.includes('Connecting to ${restaurant.name || "restaurant"} POS'), 'Mobile role navigation must show POS connection feedback');
+
+const iosInfoPlist = read('mobile-app/ios/App/App/Info.plist');
+assert(iosInfoPlist.includes('<key>NSLocalNetworkUsageDescription</key>'), 'iOS app must explain local network access');
+assert(iosInfoPlist.includes('<key>NSAllowsArbitraryLoadsInWebContent</key>'), 'iOS WebView must allow local HTTP POS pages');
 
 const posServer = read('pos-app/backend/server.js');
 const electronMain = read('pos-app/electron/main.js');

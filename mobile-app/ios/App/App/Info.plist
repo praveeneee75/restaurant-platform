@@ -4,6 +4,15 @@
 <dict>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Use Face ID to securely sign in to K'Master POS.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Connect to your restaurant POS on the local network for ordering, cashier, and administration features.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>

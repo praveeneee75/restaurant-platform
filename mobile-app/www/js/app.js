@@ -470,9 +470,19 @@ document.querySelector(".role-grid").addEventListener("click", async (event) => 
     showLoginView("Login first.");
     return;
   }
-  activeRole.textContent = button.textContent;
-  appFrame.src = paths[role];
-  webviewPanel.hidden = false;
+  button.disabled = true;
+  dashboardStatus.textContent = `Connecting to ${restaurant.name || "restaurant"} POS...`;
+  try {
+    await fetchJson(`${posBase}/mobile-app/config?restaurantId=${encodeURIComponent(restId)}`);
+    activeRole.textContent = button.textContent;
+    appFrame.src = paths[role];
+    webviewPanel.hidden = false;
+    dashboardStatus.textContent = `${button.textContent} opened.`;
+  } catch (err) {
+    dashboardStatus.textContent = err.message || "Cannot open this workspace. Check the POS connection.";
+  } finally {
+    button.disabled = false;
+  }
 });
 
 closeFrame.addEventListener("click", () => {
