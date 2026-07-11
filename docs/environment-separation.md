@@ -17,7 +17,7 @@ Before a production restart, validate the server environment from the server:
 
 ```bash
 cd /opt/kmaster
-node /opt/kmaster/scripts/validate-deployment-env.js production /opt/kmaster/deploy/.env
+docker compose --env-file deploy/.env -f deploy/compose.yml run --rm saas node /app/scripts/validate-deployment-env.js production --process
 docker compose --env-file deploy/.env -f deploy/compose.yml config
 ```
 

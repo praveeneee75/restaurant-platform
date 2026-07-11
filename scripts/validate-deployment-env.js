@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const mode = String(process.argv[2] || '').toLowerCase();
+const processMode = process.argv[3] === '--process';
 const envPath = path.resolve(process.argv[3] || 'deploy/.env');
 
 if (!['local', 'production'].includes(mode)) {
@@ -9,18 +10,20 @@ if (!['local', 'production'].includes(mode)) {
   process.exit(2);
 }
 
-if (!fs.existsSync(envPath)) {
+if (!processMode && !fs.existsSync(envPath)) {
   console.error(`Environment file not found: ${envPath}`);
   process.exit(1);
 }
 
-const values = {};
-for (const rawLine of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
-  const line = rawLine.trim();
-  if (!line || line.startsWith('#')) continue;
-  const separator = line.indexOf('=');
-  if (separator < 1) continue;
-  values[line.slice(0, separator).trim()] = line.slice(separator + 1).trim().replace(/^['"]|['"]$/g, '');
+const values = processMode ? { ...process.env } : {};
+if (!processMode) {
+  for (const rawLine of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const separator = line.indexOf('=');
+    if (separator < 1) continue;
+    values[line.slice(0, separator).trim()] = line.slice(separator + 1).trim().replace(/^['"]|['"]$/g, '');
+  }
 }
 
 const errors = [];
@@ -50,4 +53,4 @@ if (errors.length) {
   process.exit(1);
 }
 
-console.log(`Environment validation passed for ${mode}: ${envPath}`);
+console.log(`Environment validation passed for ${mode}: ${processMode ? 'process environment' : envPath}`);

@@ -8,6 +8,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY saas-backend/public ./public
 COPY saas-backend/src ./src
+COPY scripts/validate-deployment-env.js /app/scripts/validate-deployment-env.js
 
 RUN mkdir -p /app/saas-backend/downloads/pos-installers \
     && chown -R node:node /app
