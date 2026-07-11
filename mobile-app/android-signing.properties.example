@@ -1,0 +1,4 @@
+storeFile=C:\\full\\path\\to\\kmaster-release.keystore
+storePassword=change-me
+keyAlias=kmaster-release
+keyPassword=change-me

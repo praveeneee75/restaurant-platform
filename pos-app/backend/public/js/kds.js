@@ -46,6 +46,11 @@ function renderKitchenOptions() {
   if (state.kitchenId) kitchenSelect.value = state.kitchenId;
 }
 
+function goBack() {
+  if (window.history.length > 1) window.history.back();
+  else window.location.href = "/admin.html";
+}
+
 async function boot() {
   if (!restaurantId) {
     kdsStatus.textContent = "POS is not activated";
@@ -66,13 +71,13 @@ async function boot() {
 
 function renderCard(order, item) {
   const actions = {
-    PENDING: `<button data-item-status="PREPARING" data-order-item="${item.orderItemId}">Start</button>`,
+    PENDING: `<button data-item-status="PREPARING" data-order-item="${item.orderItemId}">Start</button><button class="danger-btn" data-item-status="CANCELLED" data-order-item="${item.orderItemId}">Cancel</button>`,
     PREPARING: `<button data-item-status="READY" data-order-item="${item.orderItemId}">Ready</button>`,
     READY: `<button data-item-status="SERVED" data-order-item="${item.orderItemId}">Served</button>`
   }[item.status] || "";
   return `
     <article class="kds-card">
-      <header><strong>#${order.orderId}</strong><span>${esc(order.tableName || "Parcel")}</span></header>
+      <header><strong>#${order.orderId}${item.kotSequence ? ` · S${item.kotSequence}` : ""}</strong><span>${esc(order.tableName || "Parcel")}</span></header>
       <h3>${esc(item.name)}</h3>
       <p>Qty ${item.quantity} · ${minutesSince(order.createdAt)}</p>
       ${(item.modifiers || []).map((modifier) => `<small>- ${esc(modifier.name)}</small>`).join("")}
@@ -138,6 +143,7 @@ kitchenSelect.addEventListener("change", async () => {
 });
 
 refreshKds.addEventListener("click", loadOrders);
+kdsBackBtn.addEventListener("click", goBack);
 
 boot().catch((err) => {
   kdsStatus.textContent = err.message;

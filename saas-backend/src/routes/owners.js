@@ -1,15 +1,52 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const pool = require('../db/db');
 const authenticate = require('../middleware/authMiddleware');
 const { config, publicError } = require('../config');
 const { isTokenRevoked, revokeToken, tokenFromRequest } = require('../utils/tokenSessions');
+const { sendOwnerTemporaryPasswordEmail, sendOwnerUsernameRecoveryEmail } = require('../services/emailService');
 
 const router = express.Router();
 
 function ownerToken(user) {
-  return jwt.sign({ id: user.id, role: 'OWNER_USER', type: 'OWNER' }, config.jwtSecret, { expiresIn: '8h' });
+  return jwt.sign({
+    id: user.id,
+    role: 'OWNER_USER',
+    type: 'OWNER',
+    resetRequired: Boolean(user.reset_required)
+  }, config.jwtSecret, { expiresIn: '8h' });
+}
+
+function publicRestaurantRows(rows) {
+  return rows.map((row) => ({
+    name: row.name,
+    restaurant_code: row.restaurant_code,
+    notification_email: row.contact_email || ''
+  }));
+}
+
+async function restaurantsForOwnerEmail(email) {
+  return pool.query(`
+    SELECT DISTINCT t.name, t.restaurant_code, t.contact_email, ou.email AS owner_email
+    FROM owner_users ou
+    JOIN restaurant_owners ro ON ro.owner_user_id = ou.id AND ro.active = true
+    JOIN tenants t ON t.id = ro.tenant_id
+    WHERE LOWER(ou.email) = LOWER($1) AND ou.active = true
+    ORDER BY t.name
+  `, [String(email || '').trim()]);
+}
+
+async function restaurantsForNotificationEmail(email) {
+  return pool.query(`
+    SELECT DISTINCT t.name, t.restaurant_code, t.contact_email, ou.email AS owner_email
+    FROM tenants t
+    JOIN restaurant_owners ro ON ro.tenant_id = t.id AND ro.active = true
+    JOIN owner_users ou ON ou.id = ro.owner_user_id AND ou.active = true
+    WHERE LOWER(t.contact_email) = LOWER($1)
+    ORDER BY t.name, ou.email
+  `, [String(email || '').trim()]);
 }
 
 async function authenticateOwner(req, res, next) {
@@ -20,7 +57,20 @@ async function authenticateOwner(req, res, next) {
     const decoded = jwt.verify(token, config.jwtSecret);
     if (decoded.type !== 'OWNER') return res.status(403).json({ success: false, message: 'Owner access required' });
     if (await isTokenRevoked(token)) return res.status(401).json({ success: false, message: 'Session expired' });
+    const currentUser = await pool.query(
+      'SELECT id, name, email, reset_required FROM owner_users WHERE id = $1 AND active = true',
+      [decoded.id]
+    );
+    if (currentUser.rowCount === 0) return res.status(401).json({ success: false, message: 'Owner account is inactive' });
+    if (currentUser.rows[0].reset_required && !['/change-password', '/logout'].includes(req.path)) {
+      return res.status(403).json({
+        success: false,
+        passwordChangeRequired: true,
+        message: 'Change the temporary password before continuing'
+      });
+    }
     req.owner = decoded;
+    req.ownerUser = currentUser.rows[0];
     next();
   } catch (_) {
     res.status(401).json({ success: false, message: 'Invalid token' });
@@ -42,10 +92,116 @@ router.post('/login', async (req, res) => {
   }
 });
 
+router.post('/recovery/password/lookup', async (req, res) => {
+  const { username } = req.body || {};
+  if (!username) return res.status(400).json({ success: false, message: 'Username is required' });
+  try {
+    const result = await restaurantsForOwnerEmail(username);
+    if (result.rowCount === 0) return res.status(404).json({ success: false, message: 'customer doesnt exists' });
+    res.json({
+      success: true,
+      ownerEmail: result.rows[0].owner_email,
+      restaurants: publicRestaurantRows(result.rows)
+    });
+  } catch (err) {
+    console.error('OWNER PASSWORD LOOKUP ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.post('/recovery/password/send', async (req, res) => {
+  const { username } = req.body || {};
+  if (!username) return res.status(400).json({ success: false, message: 'Username is required' });
+  try {
+    const result = await restaurantsForOwnerEmail(username);
+    if (result.rowCount === 0) return res.status(404).json({ success: false, message: 'customer doesnt exists' });
+    const notificationEmails = [...new Set(result.rows.map((row) => row.contact_email).filter(Boolean))];
+    if (notificationEmails.length === 0) return res.status(404).json({ success: false, message: 'customer doesnt exists' });
+
+    const temporaryPassword = `Km!${crypto.randomBytes(8).toString('hex')}`;
+    const passwordHash = await bcrypt.hash(temporaryPassword, 10);
+    await pool.query(
+      'UPDATE owner_users SET password_hash = $1, reset_required = true, updated_at = NOW() WHERE LOWER(email) = LOWER($2) AND active = true',
+      [passwordHash, username]
+    );
+
+    const restaurants = publicRestaurantRows(result.rows);
+    const notifications = [];
+    for (const notificationEmail of notificationEmails) {
+      notifications.push(await sendOwnerTemporaryPasswordEmail({
+        notificationEmail,
+        ownerEmail: result.rows[0].owner_email,
+        temporaryPassword,
+        restaurants: restaurants.filter((restaurant) => restaurant.notification_email === notificationEmail)
+      }));
+    }
+    res.json({ success: true, message: 'Temporary password sent', restaurants, notifications });
+  } catch (err) {
+    console.error('OWNER PASSWORD SEND ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.post('/recovery/username/lookup', async (req, res) => {
+  const { notificationEmail } = req.body || {};
+  if (!notificationEmail) return res.status(400).json({ success: false, message: 'Notification email is required' });
+  try {
+    const result = await restaurantsForNotificationEmail(notificationEmail);
+    if (result.rowCount === 0) return res.status(404).json({ success: false, message: 'customer doesnt exists' });
+    res.json({
+      success: true,
+      ownerEmails: [...new Set(result.rows.map((row) => row.owner_email))],
+      restaurants: publicRestaurantRows(result.rows)
+    });
+  } catch (err) {
+    console.error('OWNER USERNAME LOOKUP ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.post('/recovery/username/send', async (req, res) => {
+  const { notificationEmail } = req.body || {};
+  if (!notificationEmail) return res.status(400).json({ success: false, message: 'Notification email is required' });
+  try {
+    const result = await restaurantsForNotificationEmail(notificationEmail);
+    if (result.rowCount === 0) return res.status(404).json({ success: false, message: 'customer doesnt exists' });
+
+    const grouped = new Map();
+    result.rows.forEach((row) => {
+      if (!grouped.has(row.owner_email)) grouped.set(row.owner_email, []);
+      grouped.get(row.owner_email).push(row);
+    });
+    const notifications = [];
+    for (const [ownerEmail, rows] of grouped.entries()) {
+      notifications.push(await sendOwnerUsernameRecoveryEmail({
+        notificationEmail,
+        ownerEmail,
+        restaurants: publicRestaurantRows(rows)
+      }));
+    }
+    res.json({
+      success: true,
+      message: 'Username sent',
+      ownerEmails: [...grouped.keys()],
+      restaurants: publicRestaurantRows(result.rows),
+      notifications
+    });
+  } catch (err) {
+    console.error('OWNER USERNAME SEND ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
 router.post('/change-password', authenticateOwner, async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
-  if (!currentPassword || !newPassword || String(newPassword).length < 6) {
-    return res.status(400).json({ success: false, message: 'Current password and a 6+ character new password are required' });
+  if (!currentPassword || !newPassword || String(newPassword).length < 10) {
+    return res.status(400).json({ success: false, message: 'Current password and a new password of at least 10 characters are required' });
+  }
+  if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/\d/.test(newPassword)) {
+    return res.status(400).json({ success: false, message: 'New password must include uppercase, lowercase and a number' });
+  }
+  if (currentPassword === newPassword) {
+    return res.status(400).json({ success: false, message: 'New password must be different from the temporary password' });
   }
   try {
     const result = await pool.query('SELECT * FROM owner_users WHERE id = $1 AND active = true', [req.owner.id]);
@@ -53,10 +209,100 @@ router.post('/change-password', authenticateOwner, async (req, res) => {
     if (!await bcrypt.compare(currentPassword, result.rows[0].password_hash)) return res.status(401).json({ success: false, message: 'Current password is incorrect' });
     const hash = await bcrypt.hash(newPassword, 10);
     await pool.query('UPDATE owner_users SET password_hash = $1, reset_required = false, updated_at = NOW() WHERE id = $2', [hash, req.owner.id]);
-    res.json({ success: true, message: 'Password changed' });
+    const refreshedUser = { ...result.rows[0], reset_required: false };
+    res.json({
+      success: true,
+      message: 'Password changed',
+      token: ownerToken(refreshedUser),
+      owner: {
+        id: refreshedUser.id,
+        name: refreshedUser.name,
+        email: refreshedUser.email,
+        resetRequired: false
+      }
+    });
   } catch (err) {
     console.error('OWNER CHANGE PASSWORD ERROR:', err.message);
     res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.get('/profile', authenticateOwner, async (req, res) => {
+  try {
+    const contacts = await pool.query(`
+      SELECT DISTINCT t.contact_name, t.contact_email, t.contact_phone
+      FROM restaurant_owners ro
+      JOIN tenants t ON t.id = ro.tenant_id
+      WHERE ro.owner_user_id = $1 AND ro.active = true
+      ORDER BY t.contact_email NULLS LAST, t.contact_phone NULLS LAST
+      LIMIT 1
+    `, [req.owner.id]);
+    const contact = contacts.rows[0] || {};
+    res.json({
+      success: true,
+      profile: {
+        name: req.ownerUser.name || '',
+        username: req.ownerUser.email,
+        notificationEmail: contact.contact_email || req.ownerUser.email,
+        mobileNumber: contact.contact_phone || ''
+      }
+    });
+  } catch (err) {
+    console.error('OWNER PROFILE ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.post('/profile', authenticateOwner, async (req, res) => {
+  const { name, notificationEmail, mobileNumber } = req.body || {};
+  const normalizedName = String(name || '').trim();
+  const normalizedEmail = String(notificationEmail || '').trim().toLowerCase();
+  const normalizedPhone = String(mobileNumber || '').replace(/[^\d+]/g, '');
+
+  if (!normalizedName) return res.status(400).json({ success: false, message: 'Name is required' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    return res.status(400).json({ success: false, message: 'Enter a valid notification email address' });
+  }
+  if (normalizedPhone && !/^\+?\d{8,15}$/.test(normalizedPhone)) {
+    return res.status(400).json({ success: false, message: 'Enter a valid mobile number with country code' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const updatedOwner = await client.query(
+      'UPDATE owner_users SET name = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name, email, reset_required',
+      [normalizedName, req.owner.id]
+    );
+    await client.query(`
+      UPDATE tenants
+      SET contact_name = $1,
+          contact_email = $2,
+          contact_phone = NULLIF($3, '')
+      WHERE id IN (
+        SELECT tenant_id FROM restaurant_owners WHERE owner_user_id = $4 AND active = true
+      )
+    `, [normalizedName, normalizedEmail, normalizedPhone, req.owner.id]);
+    await client.query('COMMIT');
+
+    const owner = updatedOwner.rows[0];
+    res.json({
+      success: true,
+      message: 'Profile updated',
+      owner: { id: owner.id, name: owner.name, email: owner.email, resetRequired: owner.reset_required },
+      profile: {
+        name: owner.name,
+        username: owner.email,
+        notificationEmail: normalizedEmail,
+        mobileNumber: normalizedPhone
+      }
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('OWNER PROFILE UPDATE ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  } finally {
+    client.release();
   }
 });
 
@@ -82,6 +328,13 @@ router.get('/dashboard', authenticateOwner, async (req, res) => {
              s.status AS subscription_status,
              s.expires_at AS subscription_expires_at,
              GREATEST((s.expires_at::date - CURRENT_DATE), 0) AS days_remaining,
+             EXISTS (
+               SELECT 1
+               FROM tenant_modules tm
+               JOIN modules m ON m.id = tm.module_id
+               WHERE tm.tenant_id = t.id AND tm.enabled = true
+                 AND m.code = 'MOBILE_APP' AND m.status = 'ACTIVE'
+             ) AS mobile_app_enabled,
              hb.last_heartbeat_at,
              CASE WHEN hb.last_heartbeat_at > NOW() - INTERVAL '2 minutes' THEN 'ONLINE' ELSE 'OFFLINE' END AS pos_status,
              hb.pos_version, hb.backup_status, hb.printer_status
@@ -115,7 +368,12 @@ router.get('/dashboard', authenticateOwner, async (req, res) => {
       GROUP BY o.id
       ORDER BY o.name
     `, [req.owner.id]);
-    res.json({ success: true, restaurants: restaurants.rows, organizations: organizations.rows });
+    res.json({
+      success: true,
+      owner: { id: req.ownerUser.id, name: req.ownerUser.name, email: req.ownerUser.email },
+      restaurants: restaurants.rows,
+      organizations: organizations.rows
+    });
   } catch (err) {
     console.error('OWNER DASHBOARD ERROR:', err.message);
     res.status(500).json({ success: false, message: publicError(err) });

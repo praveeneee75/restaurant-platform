@@ -1,0 +1,24 @@
+[SaaS] node:internal/modules/cjs/loader:1424
+[SaaS]   throw err;
+[SaaS]   ^
+[SaaS] Error: Cannot find module 'bcryptjs'
+[SaaS] Require stack:
+[SaaS] - C:\Projects\restaurant-platform\saas-backend\src\routes\tenants.js
+[SaaS] - C:\Projects\restaurant-platform\saas-backend\src\app.js
+[SaaS]     at Module._resolveFilename (node:internal/modules/cjs/loader:1421:15)
+[SaaS]     at defaultResolveImpl (node:internal/modules/cjs/loader:1059:19)
+[SaaS]     at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1064:22)
+[SaaS]     at Module._load (node:internal/modules/cjs/loader:1227:37)
+[SaaS]     at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+[SaaS]     at wrapModuleLoad (node:internal/modules/cjs/loader:245:24)
+[SaaS]     at Module.require (node:internal/modules/cjs/loader:1504:12)
+[SaaS]     at require (node:internal/modules/helpers:152:16)
+[SaaS]     at Object.<anonymous> (C:\Projects\restaurant-platform\saas-backend\src\routes\tenants.js:2:16)
+[SaaS]     at Module._compile (node:internal/modules/cjs/loader:1761:14) {
+[SaaS]   code: 'MODULE_NOT_FOUND',
+[SaaS]   requireStack: [
+[SaaS]     'C:\\Projects\\restaurant-platform\\saas-backend\\src\\routes\\tenants.js',
+[SaaS]     'C:\\Projects\\restaurant-platform\\saas-backend\\src\\app.js'
+[SaaS]   ]
+[SaaS] }
+[SaaS] Node.js v24.13.0

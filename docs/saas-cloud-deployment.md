@@ -55,6 +55,38 @@ Health check:
 https://your-saas-api-domain.com/health
 ```
 
+## DigitalOcean Droplet
+
+The repository includes a Docker Compose deployment in `deploy/` for a
+single-server pilot:
+
+- PostgreSQL is only available on the private Docker network.
+- SaaS is only available through Caddy.
+- Caddy provisions and renews HTTPS certificates automatically.
+- Installer files are mounted read-only from `deploy/installers/`.
+
+Create `deploy/.env` from `deploy/.env.example`, replace every placeholder,
+then run:
+
+```bash
+docker compose --env-file deploy/.env -f deploy/compose.yml build
+docker compose --env-file deploy/.env -f deploy/compose.yml run --rm saas npm run migrate
+docker compose --env-file deploy/.env -f deploy/compose.yml up -d
+```
+
+After the first administrator has been created, remove `ADMIN_PASSWORD` from
+`deploy/.env` and recreate the SaaS container.
+
+Install the daily database backup for the deployment user:
+
+```bash
+(crontab -l 2>/dev/null; echo '30 20 * * * /opt/kmaster/deploy/backup.sh >> /var/backups/kmaster/backup.log 2>&1') | crontab -
+```
+
+DigitalOcean Droplet backups do not replace PostgreSQL backups. Periodically
+copy encrypted database backups to storage outside the Droplet and test a
+restore.
+
 ## Render
 
 1. Create a PostgreSQL database in Render.

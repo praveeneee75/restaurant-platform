@@ -35,6 +35,7 @@
         <p class="nav-group-title">Business</p>
         <button class="nav-btn" data-view="inventory">Inventory</button>
         <button class="nav-btn" data-view="reports">Reports</button>
+        <button class="nav-btn" data-view="invoices">Invoices</button>
         <button class="nav-btn" data-view="audit">Audit</button>
         <button class="nav-btn" data-view="commercial">Commercial Tools</button>
       </div>
@@ -126,7 +127,7 @@
         <input type="hidden" id="userId">
         <label>Name<input id="userName" required></label>
         <label>Username<input id="userUsername" required></label>
-        <label>PIN<input id="userPin" maxlength="4" inputmode="numeric"></label>
+        <label>PIN<input id="userPin" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" placeholder="6 digits"></label>
         <label>Role<select id="userRole"><option>OWNER</option><option>MANAGER</option><option>MANAGER_2</option><option>MANAGER_1</option><option>CAPTAIN</option><option>CASHIER</option><option>WAITER</option><option>KITCHEN</option></select></label>
         <label class="check-row"><input id="userActive" type="checkbox" checked> Active</label>
         <button>Save User</button>
@@ -665,6 +666,26 @@
         <article><h3>Fraud Alerts</h3><div id="commercialFraud"></div></article>
         <article><h3>Credit Accounts</h3><div id="commercialCredit"></div></article>
         <article><h3>Diagnostics</h3><div id="commercialDiagnostics"></div></article>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-invoices">
+      <div class="editor-panel">
+        <h2>Invoices</h2>
+        <div class="toolbar">
+          <input id="invoiceFrom" type="date">
+          <input id="invoiceTo" type="date">
+          <button id="loadInvoices" type="button">Load Invoices</button>
+        </div>
+        <p id="invoiceStatus"></p>
+      </div>
+      <div class="table-panel">
+        <table>
+          <thead>
+            <tr><th>Invoice</th><th>Customer</th><th>Table</th><th>Type</th><th>Total</th><th>Settled</th></tr>
+          </thead>
+          <tbody id="invoicesTable"></tbody>
+        </table>
       </div>
     </section>
   </main>

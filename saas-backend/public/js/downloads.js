@@ -29,4 +29,19 @@ async function loadLatestRelease() {
   }
 }
 
+function goHome() {
+  window.location.href = localStorage.getItem("ownerToken")
+    ? "/owner-dashboard.html"
+    : "/owner-login.html";
+}
+
+document.getElementById("downloadBackButton")?.addEventListener("click", () => {
+  if (history.length > 1) history.back();
+  else goHome();
+});
+document.getElementById("downloadHomeButton")?.addEventListener("click", (event) => {
+  if (event.currentTarget?.tagName === "A") return;
+  goHome();
+});
+
 loadLatestRelease();

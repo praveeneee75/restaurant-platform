@@ -1,6 +1,6 @@
 {
-  "appId": "com.restaurantplatform.whitelabel",
-  "appName": "Restaurant Mobile",
+  "appId": "com.kmaster.mobile",
+  "appName": "K'Master POS",
   "webDir": "www",
   "server": {
     "androidScheme": "https",

@@ -4,6 +4,7 @@
   "private": true,
   "description": "Restaurant SaaS and local POS platform",
   "scripts": {
+    "branding:generate": "powershell -ExecutionPolicy Bypass -File scripts/generate-kmaster-branding.ps1",
     "start:all": "node scripts/start-all.js",
     "start:pos": "node scripts/start-all.js pos",
     "start:saas": "node scripts/start-all.js saas",

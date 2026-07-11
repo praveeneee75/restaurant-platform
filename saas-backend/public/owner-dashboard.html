@@ -2,60 +2,91 @@
 <html>
 <head>
   <title>K'Master POS Owner Dashboard</title>
-  <style>
-    body { font-family: Arial; padding: 20px; }
-    table { border-collapse: collapse; width: 100%; margin-top: 16px; }
-    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-    th { background: #f2f2f2; }
-    input { margin: 4px; padding: 7px; }
-  </style>
-  <link rel="stylesheet" href="/css/app.css?v=kmaster-ui">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/css/app.css?v=20260710-owner-mobile-table">
 </head>
-<body>
-  <h2>K'Master POS Owner Dashboard</h2>
-  <p id="ownerStatus">Loading...</p>
-  <section>
-    <h3>Quick Access</h3>
-    <a href="/downloads.html" target="_blank" rel="noopener">Download POS Installer</a>
-    &nbsp;|&nbsp;
-    <a href="/order.html" target="_blank" rel="noopener">Open Online Ordering</a>
-  </section>
-  <section>
-    <h3>Change Password</h3>
-    <input id="currentPassword" type="password" placeholder="Current password">
-    <input id="newPassword" type="password" placeholder="New password">
-    <button onclick="changePassword()">Change</button>
-    <p id="passwordMsg"></p>
-  </section>
-  <section>
-    <h3>Overall Branch View</h3>
-    <div id="organizationCards" class="cards"></div>
-  </section>
-  <section>
-    <h3>Individual Branch View</h3>
-  <table>
-    <thead>
-      <tr>
-        <th>Restaurant</th>
-        <th>Code</th>
-        <th>License Key</th>
-        <th>Package</th>
-        <th>Subscription</th>
-        <th>License Expiry</th>
-        <th>Days Remaining</th>
-        <th>POS</th>
-        <th>Version</th>
-        <th>Backup</th>
-        <th>Printer</th>
-        <th>Last Heartbeat</th>
-        <th>Download</th>
-      </tr>
-    </thead>
-    <tbody id="ownerRestaurants"></tbody>
-  </table>
-  </section>
+<body class="owner-page">
+  <header class="owner-header owner-hero">
+    <div>
+      <p class="eyebrow">Owner Portal</p>
+      <h1 id="ownerWelcome">Welcome</h1>
+      <p id="ownerStatus">Loading your restaurants...</p>
+    </div>
+    <nav class="owner-actions" aria-label="Owner actions">
+      <a href="/owner-profile.html">Profile</a>
+      <button class="owner-signout" type="button" data-session-logout>Sign out</button>
+    </nav>
+  </header>
+
+  <main class="owner-layout">
+    <section class="owner-section">
+      <div class="section-heading">
+        <h2>Quick Actions</h2>
+      </div>
+      <div class="quick-grid">
+        <a class="quick-card" href="/downloads.html">
+          <strong>Download POS installer</strong>
+          <span>Install or update the desktop POS app.</span>
+        </a>
+        <a class="quick-card" href="/owner-profile.html">
+          <strong>Manage profile</strong>
+          <span>Update contact details or change password.</span>
+        </a>
+        <a class="quick-card" href="/order.html" target="_blank" rel="noopener">
+          <strong>Online ordering</strong>
+          <span>Open the customer ordering page.</span>
+        </a>
+      </div>
+    </section>
+
+    <section class="owner-section">
+      <div class="section-heading">
+        <h2>Apps</h2>
+      </div>
+      <div id="appCards" class="app-download-grid"></div>
+    </section>
+
+    <section class="owner-section">
+      <div class="section-heading">
+        <h2>How To Use The Apps</h2>
+      </div>
+      <div id="ownerSteps" class="owner-steps-grid"></div>
+    </section>
+
+    <section class="owner-section">
+      <div class="section-heading">
+        <h2>Overall Branch View</h2>
+      </div>
+      <div id="organizationCards" class="cards"></div>
+    </section>
+
+    <section class="owner-section">
+      <div class="section-heading">
+        <h2>Individual Branch View</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Restaurant</th>
+              <th>Code</th>
+              <th>License Key</th>
+              <th>Package</th>
+              <th>License Expiry</th>
+              <th>Days Left</th>
+              <th>POS Status</th>
+              <th>Version</th>
+              <th>Last Online</th>
+              <th>Installer</th>
+            </tr>
+          </thead>
+          <tbody id="ownerRestaurants"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
   <script src="/js/saas-session.js" data-session-scope="owner"></script>
-  <script src="/js/owner-dashboard.js"></script>
+  <script src="/js/owner-dashboard.js?v=20260710-mobile-table"></script>
 </body>
 </html>
-

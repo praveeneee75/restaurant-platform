@@ -1,19 +1,31 @@
 {
   "name": "restaurant-platform-mobile-app",
-  "version": "1.0.0",
+  "version": "1.0.6",
   "private": true,
   "description": "White-label mobile shell for restaurant owner, captain and waiter users",
   "scripts": {
     "start": "node scripts/dev-server.js",
     "start:3000": "node scripts/dev-server.js 3000",
     "start:4300": "node scripts/dev-server.js 4300",
-    "build:android": "npx.cmd cap sync android && cd android && gradlew.bat assembleDebug",
-    "open:android": "npx.cmd cap open android"
+    "build:web": "esbuild src/native-plugins.js --bundle --format=iife --outfile=www/js/native-plugins.js",
+    "add:android": "npx cap add android",
+    "add:ios": "npx cap add ios",
+    "sync:android": "npm run build:web && npx cap sync android",
+    "sync:ios": "npm run build:web && npx cap sync ios",
+    "build:android": "npm run sync:android && cd android && gradlew.bat assembleDebug",
+    "build:android:release": "npm run sync:android && cd android && gradlew.bat assembleRelease",
+    "open:android": "npx cap open android",
+    "open:ios": "npx cap open ios"
   },
   "dependencies": {
+    "@aparajita/capacitor-biometric-auth": "^9.1.2",
+    "@aparajita/capacitor-secure-storage": "^7.1.6",
     "@capacitor/android": "^7.0.0",
     "@capacitor/cli": "^7.0.0",
-    "@capacitor/core": "^7.0.0"
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/ios": "^7.0.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
 }

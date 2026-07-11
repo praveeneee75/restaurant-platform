@@ -10,20 +10,36 @@
 <body>
   <main class="login-box">
     <h2>Restaurant POS Login</h2>
+    <span id="appVersion" class="app-version"></span>
+    <div id="activationPanel" class="activation-status-panel">
+      <strong id="activationTitle">Checking activation...</strong>
+      <span id="activationDetails">Please wait.</span>
+      <a id="activateLink" class="secondary-btn" href="/activate.html" hidden>Activate POS</a>
+    </div>
     <label>
-      Username
-      <input id="username" autocomplete="username" placeholder="Username">
+      Username or owner email
+      <input id="username" autocomplete="username" placeholder="Username or owner email">
     </label>
     <label>
-      PIN
-      <input id="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password" placeholder="4 digit PIN">
+      PIN or owner password
+      <input id="pin" type="password" autocomplete="current-password" placeholder="PIN or owner password">
     </label>
     <button id="loginButton" type="button">Login</button>
+    <a id="reactivateLink" class="secondary-btn" href="/activate.html">Activate or change restaurant</a>
     <button id="requestUnlockButton" class="secondary-btn" type="button" hidden>Request unlock</button>
+    <section class="pos-help-panel">
+      <h3>Which login should I use?</h3>
+      <ul>
+        <li><strong>Owner/admin:</strong> use owner email and owner password when internet is available.</li>
+        <li><strong>Staff:</strong> use POS username and PIN created inside the desktop POS.</li>
+        <li><strong>Mobile devices:</strong> keep this desktop POS open and connect the phone/tablet to the same Wi-Fi.</li>
+      </ul>
+    </section>
     <p id="msg" role="status"></p>
   </main>
 
 <script src="/js/login.js"></script>
+<script src="/js/version-badge.js"></script>
 
 </body>
 </html>

@@ -31,6 +31,12 @@
       </div>
       <button id="cancelOrder" class="danger-btn">Cancel</button>
     </header>
+    <div class="order-switcher">
+      <select id="orderSelector">
+        <option value="">Current check</option>
+      </select>
+      <button id="splitBillBtn" type="button" class="secondary-btn">Split Bill</button>
+    </div>
     <div id="cartItems" class="cart-items"></div>
     <div class="payment-panel">
       <strong id="total">Total: 0.00</strong>
@@ -88,6 +94,10 @@
         </div>
       </div>
       <div class="cart-actions">
+        <button id="editItemBtn" type="button" class="secondary-btn">Edit Item</button>
+        <button id="moveTableBtn" type="button" class="secondary-btn">Move Table</button>
+      </div>
+      <div class="cart-actions">
         <button id="saveOrder">Save</button>
         <button id="submitKot">Submit KOT</button>
         <button id="settleOrder">Settle</button>
@@ -107,6 +117,22 @@
       <div id="modifierGroups" class="modifier-groups"></div>
       <div class="cart-actions">
         <button id="addModifiedItem">Add Item</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="splitBillModal" hidden>
+    <div class="modifier-modal">
+      <header>
+        <div>
+          <h2>Split Bill</h2>
+          <p>Select the items for the new check.</p>
+        </div>
+        <button class="secondary-btn" id="closeSplitBillModal">Close</button>
+      </header>
+      <div id="splitBillItems" class="modifier-groups"></div>
+      <div class="cart-actions">
+        <button id="createSplitCheckBtn">Create Split Check</button>
       </div>
     </div>
   </div>

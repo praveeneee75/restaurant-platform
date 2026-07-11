@@ -1,8 +1,11 @@
 const express = require('express');
+const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const pool = require('../db/db');
 const authenticate = require('../middleware/authMiddleware');
 const { publicError } = require('../config');
+const { sendRestaurantWelcomeEmail } = require('../services/emailService');
 
 const router = express.Router();
 
@@ -20,13 +23,24 @@ async function enablePlanModules(client, tenantId, planId) {
 }
 
 router.post('/create', authenticate, async (req, res) => {
-  const { name, country, currency, expiryDate, mobilePosUrl, planCode, startsAt, paymentAmount, paymentMode, referenceNo } = req.body;
+  const {
+    name, ownerName, ownerEmail, ownerPhone, country, currency, expiryDate,
+    planCode, startsAt, paymentAmount, paymentMode, referenceNo
+  } = req.body;
 
-  if (!name) {
-    return res.status(400).json({ success: false, message: 'Restaurant name required' });
+  if (!name || !ownerName || !ownerEmail || !ownerPhone) {
+    return res.status(400).json({ success: false, message: 'Restaurant name, contact name, email and mobile number are required' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(ownerEmail).trim())) {
+    return res.status(400).json({ success: false, message: 'Enter a valid owner email address' });
+  }
+  const normalizedPhone = String(ownerPhone).replace(/[^\d+]/g, '');
+  if (!/^\+?\d{8,15}$/.test(normalizedPhone)) {
+    return res.status(400).json({ success: false, message: 'Enter a valid mobile number with country code' });
   }
 
   const client = await pool.connect();
+  let welcomeDetails;
   try {
     const restaurantCode = `RESTO${Math.floor(10000 + Math.random() * 90000)}`;
     const tenantId = uuidv4();
@@ -36,16 +50,18 @@ router.post('/create', authenticate, async (req, res) => {
 
     await client.query('BEGIN');
     await client.query(
-      `INSERT INTO tenants (id, restaurant_code, name, country, currency, mobile_pos_url)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [tenantId, restaurantCode, name, country || null, currency || null, mobilePosUrl || null]
+      `INSERT INTO tenants (id, restaurant_code, name, country, currency, contact_name, contact_email, contact_phone)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [tenantId, restaurantCode, name, country || null, currency || null, ownerName.trim(), ownerEmail.trim().toLowerCase(), normalizedPhone]
     );
-    await client.query(
+    const license = await client.query(
       `INSERT INTO licenses (tenant_id, license_key, sync_token, expires_at, status)
-       VALUES ($1, $2, $3, COALESCE($4::timestamptz, NOW() + INTERVAL '1 year'), 'ACTIVE')`,
+       VALUES ($1, $2, $3, COALESCE($4::timestamptz, NOW() + INTERVAL '1 year'), 'ACTIVE')
+       RETURNING expires_at`,
       [tenantId, licenseKey, syncToken, expiresAt]
     );
     let subscription = null;
+    let planName = 'Standard';
     if (planCode) {
       const plan = await client.query('SELECT * FROM subscription_plans WHERE code = $1 AND active = true', [planCode]);
       if (plan.rowCount === 0) throw new Error('Selected license package not found');
@@ -56,6 +72,7 @@ router.post('/create', authenticate, async (req, res) => {
         RETURNING *
       `, [tenantId, plan.rows[0].id, startDate, plan.rows[0].duration_days]);
       subscription = sub.rows[0];
+      planName = plan.rows[0].name;
       await client.query('UPDATE licenses SET status = $1, expires_at = $2 WHERE tenant_id = $3', ['ACTIVE', subscription.expires_at, tenantId]);
       await enablePlanModules(client, tenantId, plan.rows[0].id);
       if (Number(paymentAmount || 0) > 0) {
@@ -65,7 +82,54 @@ router.post('/create', authenticate, async (req, res) => {
         `, [subscription.id, tenantId, paymentAmount, paymentMode || null, referenceNo || null]);
       }
     }
+
+    const normalizedEmail = String(ownerEmail).trim().toLowerCase();
+    const existingOwner = await client.query(
+      'SELECT id, name, email, active FROM owner_users WHERE LOWER(email) = $1',
+      [normalizedEmail]
+    );
+    let owner = existingOwner.rows[0];
+    let temporaryPassword = null;
+    if (owner && !owner.active) {
+      throw new Error('An inactive owner account already uses this email. Reactivate it before creating the customer.');
+    }
+    if (!owner) {
+      temporaryPassword = `Km!${crypto.randomBytes(8).toString('hex')}`;
+      const passwordHash = await bcrypt.hash(temporaryPassword, 10);
+      const createdOwner = await client.query(
+        `INSERT INTO owner_users (name, email, password_hash, active, reset_required)
+         VALUES ($1, $2, $3, true, true)
+         RETURNING id, name, email`,
+        [String(ownerName).trim(), normalizedEmail, passwordHash]
+      );
+      owner = createdOwner.rows[0];
+    }
+    await client.query(
+      `INSERT INTO restaurant_owners (owner_user_id, tenant_id, active)
+       VALUES ($1, $2, true)
+       ON CONFLICT(owner_user_id, tenant_id) DO UPDATE SET active = true`,
+      [owner.id, tenantId]
+    );
+
     await client.query('COMMIT');
+
+    welcomeDetails = {
+      restaurantName: name,
+      restaurantCode,
+      licenseKey,
+      expiresAt: subscription?.expires_at || license.rows[0].expires_at,
+      planName,
+      ownerEmail: owner.email,
+      ownerPhone: normalizedPhone,
+      temporaryPassword
+    };
+    let notification;
+    try {
+      notification = await sendRestaurantWelcomeEmail(welcomeDetails);
+    } catch (emailError) {
+      console.error('WELCOME EMAIL ERROR:', emailError.message);
+      notification = { sent: false, reason: 'Customer created, but the welcome email could not be sent' };
+    }
 
     res.json({
       success: true,
@@ -73,7 +137,10 @@ router.post('/create', authenticate, async (req, res) => {
       restaurantId: restaurantCode,
       licenseKey,
       syncToken,
-      subscription
+      subscription,
+      owner: { id: owner.id, name: owner.name, email: owner.email, created: Boolean(temporaryPassword) },
+      temporaryPassword,
+      notification
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -91,6 +158,9 @@ router.get('/list', authenticate, async (req, res) => {
         t.name,
         t.restaurant_code,
         t.mobile_pos_url,
+        t.contact_name,
+        t.contact_email,
+        t.contact_phone,
         l.license_key,
         l.expires_at,
         l.status,
@@ -166,6 +236,42 @@ router.post('/update-mobile-url', authenticate, async (req, res) => {
     res.json({ success: true, message: 'Mobile POS URL updated' });
   } catch (err) {
     console.error('TENANT MOBILE URL UPDATE ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.post('/update-customer-details', authenticate, async (req, res) => {
+  const { restaurantCode, contactName, notificationEmail, contactPhone } = req.body || {};
+
+  if (!restaurantCode) {
+    return res.status(400).json({ success: false, message: 'restaurantCode required' });
+  }
+  const normalizedEmail = String(notificationEmail || '').trim().toLowerCase();
+  if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    return res.status(400).json({ success: false, message: 'Enter a valid notification email address' });
+  }
+  const normalizedPhone = String(contactPhone || '').replace(/[^\d+]/g, '');
+  if (normalizedPhone && !/^\+?\d{8,15}$/.test(normalizedPhone)) {
+    return res.status(400).json({ success: false, message: 'Enter a valid phone number with country code' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE tenants
+       SET contact_name = NULLIF($1, ''),
+           contact_email = NULLIF($2, ''),
+           contact_phone = NULLIF($3, '')
+       WHERE restaurant_code = $4`,
+      [String(contactName || '').trim(), normalizedEmail, normalizedPhone, restaurantCode]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ success: false, message: 'Restaurant not found' });
+    }
+
+    res.json({ success: true, message: 'Customer details updated' });
+  } catch (err) {
+    console.error('TENANT CUSTOMER DETAILS UPDATE ERROR:', err.message);
     res.status(500).json({ success: false, message: publicError(err) });
   }
 });

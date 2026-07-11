@@ -1,11 +1,17 @@
 const express = require('express');
+const bcrypt = require('bcrypt');
 const pool = require('../db/db');
 const { publicError } = require('../config');
+
+const WHITELABEL_RESTAURANT_ID = 'RESTOWHITELABEL';
+const WHITELABEL_LICENSE_KEY = 'WLTEST-2026-KMASTER';
 
 const router = express.Router();
 
 router.post('/validate', async (req, res) => {
   const { restaurantId, licenseKey } = req.body;
+  const normalizedRestaurantId = String(restaurantId || '').trim().toUpperCase();
+  const normalizedLicenseKey = String(licenseKey || '').trim().toUpperCase();
 
   if (!restaurantId || !licenseKey) {
     return res.status(400).json({
@@ -15,6 +21,31 @@ router.post('/validate', async (req, res) => {
   }
 
   try {
+    if (normalizedRestaurantId === WHITELABEL_RESTAURANT_ID && normalizedLicenseKey === WHITELABEL_LICENSE_KEY) {
+      const release = await pool.query(`
+        SELECT version, release_notes, mandatory_update
+        FROM releases
+        WHERE status = 'ACTIVE'
+        ORDER BY created_at DESC
+        LIMIT 1
+      `);
+      return res.json({
+        valid: true,
+        restaurantName: 'KMaster White Label Demo Restaurant',
+        expiresAt: new Date(Date.now() + (3650 * 24 * 60 * 60 * 1000)).toISOString(),
+        syncToken: null,
+        packageCode: 'WHITE_LABEL_DEMO',
+        packageName: 'White Label Demo',
+        enabledModules: ['INVENTORY', 'KDS', 'LOYALTY', 'QR_ORDERING', 'RESERVATIONS', 'CLOUD_REPORTING', 'MULTI_BRANCH', 'WHITE_LABEL', 'ONLINE_ORDERING', 'MOBILE_APP'],
+        updatePolicy: release.rowCount === 0 ? null : {
+          latestVersion: release.rows[0].version,
+          minimumVersion: release.rows[0].mandatory_update ? release.rows[0].version : null,
+          mandatory: release.rows[0].mandatory_update,
+          releaseNotes: release.rows[0].release_notes || ''
+        }
+      });
+    }
+
     const result = await pool.query(
       `
       SELECT l.status, l.expires_at, l.sync_token,
@@ -42,8 +73,12 @@ router.post('/validate', async (req, res) => {
 
     const license = result.rows[0];
 
-    if (license.status !== 'ACTIVE') {
-      return res.json({ valid: false });
+    if (license.status !== 'ACTIVE' || new Date(license.expires_at).getTime() <= Date.now()) {
+      return res.json({
+        valid: false,
+        message: license.status !== 'ACTIVE' ? 'License is inactive' : 'License has expired',
+        expiresAt: license.expires_at
+      });
     }
 
     const modules = await pool.query(`
@@ -86,6 +121,72 @@ router.post('/validate', async (req, res) => {
       valid: false,
       message: publicError(err)
     });
+  }
+});
+
+router.post('/owner-pos-login', async (req, res) => {
+  const { restaurantId, email, password } = req.body || {};
+
+  if (!restaurantId || !email || !password) {
+    return res.status(400).json({
+      success: false,
+      message: 'Restaurant, owner email and password are required'
+    });
+  }
+
+  try {
+    const result = await pool.query(`
+      SELECT ou.id, ou.name, ou.email, ou.password_hash, ou.reset_required,
+             t.restaurant_code, t.name AS restaurant_name,
+             l.status AS license_status, l.expires_at
+      FROM owner_users ou
+      JOIN restaurant_owners ro ON ro.owner_user_id = ou.id AND ro.active = true
+      JOIN tenants t ON t.id = ro.tenant_id
+      JOIN licenses l ON l.tenant_id = t.id
+      WHERE LOWER(ou.email) = LOWER($1)
+        AND ou.active = true
+        AND t.restaurant_code = $2
+      LIMIT 1
+    `, [String(email).trim(), String(restaurantId).trim().toUpperCase()]);
+
+    if (result.rowCount === 0) {
+      return res.status(401).json({ success: false, message: 'Invalid owner credentials' });
+    }
+
+    const owner = result.rows[0];
+    if (!await bcrypt.compare(password, owner.password_hash)) {
+      return res.status(401).json({ success: false, message: 'Invalid owner credentials' });
+    }
+    if (owner.reset_required) {
+      return res.status(403).json({
+        success: false,
+        message: 'Owner password change is required before POS cloud login'
+      });
+    }
+    if (owner.license_status !== 'ACTIVE' || new Date(owner.expires_at).getTime() <= Date.now()) {
+      return res.status(403).json({
+        success: false,
+        message: owner.license_status !== 'ACTIVE' ? 'License is inactive' : 'License has expired'
+      });
+    }
+
+    res.json({
+      success: true,
+      user: {
+        id: `cloud-owner:${owner.id}`,
+        name: owner.name,
+        username: owner.email,
+        role: 'OWNER',
+        cloudOwner: true
+      },
+      restaurant: {
+        id: owner.restaurant_code,
+        name: owner.restaurant_name
+      }
+    });
+  } catch (err) {
+    console.error('OWNER POS LOGIN ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
   }
 });
 

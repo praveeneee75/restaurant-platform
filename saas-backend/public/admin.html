@@ -31,6 +31,7 @@
       <button class="saas-nav-btn" data-saas-view="support" type="button">Support</button>
 
       <p class="nav-group-title">Growth</p>
+      <button class="saas-nav-btn" data-saas-view="inquiries" type="button">Sales Enquiries</button>
       <button class="saas-nav-btn" data-saas-view="partners" type="button">Partners</button>
       <button class="saas-nav-btn" data-saas-view="partner-users" type="button">Partner Users</button>
       <button class="saas-nav-btn" data-saas-view="partner-branding" type="button">Partner Branding</button>
@@ -52,7 +53,6 @@
       </div>
       <div class="saas-quick-actions">
         <a class="secondary-link" href="/downloads.html" target="_blank" rel="noopener">Download POS App</a>
-        <a class="secondary-link" href="/order.html" target="_blank" rel="noopener">Open Online Ordering</a>
       </div>
     </header>
 
@@ -62,13 +62,13 @@
         <button class="card action-card" data-saas-view-link="restaurants" type="button">Restaurants<strong>Manage licenses</strong><small>Review keys, expiry, sync and revenue.</small></button>
         <button class="card action-card" data-saas-view-link="monitoring" type="button">Monitoring<strong>POS health</strong><small>Heartbeat, backup, printer and license state.</small></button>
         <button class="card action-card" data-saas-view-link="reports" type="button">Reports<strong>Cloud sales</strong><small>Sales, payment mode and top items.</small></button>
+        <button class="card action-card" data-saas-view-link="inquiries" type="button">Enquiries<strong>Sales pipeline</strong><small>Review website leads and contact prospects.</small></button>
       </div>
       <div class="split-grid">
         <article class="info-panel">
           <h3>Quick Access</h3>
           <div class="quick-link-grid">
             <a href="/downloads.html" target="_blank" rel="noopener">Download POS App</a>
-            <a href="/order.html" target="_blank" rel="noopener">Open SaaS Online Ordering</a>
             <button data-saas-view-link="subscriptions" type="button">Renew Subscription</button>
             <button data-saas-view-link="support" type="button">Open Diagnostics</button>
           </div>
@@ -85,7 +85,7 @@
       </div>
     </section>
 
-    <section class="saas-view" id="view-customers" data-title="Create Customer" data-hint="Guided restaurant onboarding with location, mobile POS URL and license package.">
+    <section class="saas-view" id="view-customers" data-title="Create Customer" data-hint="Guided restaurant onboarding with owner contact details, location and license package.">
       <div class="section-heading"><h2>Create Customer</h2><p>Set up a restaurant in three short steps.</p></div>
       <div class="wizard-steps" aria-label="Create customer steps">
         <button id="createStep1Tab" class="active" type="button" onclick="showCreateStep(1)">1. Restaurant</button>
@@ -94,13 +94,14 @@
       </div>
       <div class="wizard-panel active" id="createStep1">
         <label>Restaurant name<input id="restaurantName" placeholder="Restaurant or branch name"></label>
-        <label>Owner/business contact<input id="restaurantContact" placeholder="Owner or manager name"></label>
+        <label>Contact name<input id="restaurantContact" autocomplete="name" placeholder="Owner or manager name"></label>
+        <label>Notification email<input id="restaurantOwnerEmail" type="email" autocomplete="email" placeholder="owner@restaurant.com"></label>
+        <label>Mobile number<input id="restaurantOwnerPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+91 98765 43210"></label>
         <div class="wizard-actions"><button type="button" onclick="showCreateStep(2)">Next</button></div>
       </div>
       <div class="wizard-panel" id="createStep2">
         <label>Country<input id="restaurantCountry" placeholder="India" value="India"></label>
         <label>Currency<select id="restaurantCurrency"><option value="INR">INR</option><option value="USD">USD</option><option value="AUD">AUD</option></select></label>
-        <label>POS URL for mobile app<input id="restaurantMobilePosUrl" placeholder="http://localhost:3000"></label>
         <div class="wizard-actions"><button type="button" onclick="showCreateStep(1)">Back</button><button type="button" onclick="showCreateStep(3)">Next</button></div>
       </div>
       <div class="wizard-panel" id="createStep3">
@@ -120,7 +121,7 @@
       <div class="section-heading"><h2>Restaurants</h2><p>License and sync status for every customer.</p></div>
       <div class="table-wrap">
         <table id="tenantTable">
-          <thead><tr><th>Restaurant Name</th><th>Restaurant ID</th><th>License Key</th><th>Expiry Date</th><th>Status</th><th>Last Sync</th><th>Today Revenue</th><th>Update</th></tr></thead>
+          <thead><tr><th>Restaurant Name</th><th>Restaurant ID</th><th>Contact Name</th><th>Notification Email</th><th>Phone</th><th>License Key</th><th>Expiry Date</th><th>Status</th><th>Mobile POS URL</th><th>Last Sync</th><th>Today Revenue</th><th>Update</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -198,6 +199,17 @@
       </div>
       <div class="table-wrap"><table id="moduleTable"><thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Status</th><th>Pricing</th></tr></thead><tbody></tbody></table></div>
       <div class="table-wrap"><table id="tenantModuleTable"><thead><tr><th>Module</th><th>Status</th><th>Trial Ends</th><th>Monthly</th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section class="saas-view" id="view-inquiries" data-title="Sales Enquiries" data-hint="Review website enquiries and move prospects through the contact pipeline.">
+      <div class="section-heading"><h2>Sales Enquiries</h2><button type="button" onclick="loadInquiries()">Refresh</button></div>
+      <div class="table-wrap">
+        <table id="inquiryTable">
+          <thead><tr><th>Received</th><th>Contact</th><th>Restaurant</th><th>Location</th><th>Requirements</th><th>Status</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="inquiryAdminStatus"></p>
     </section>
 
     <section class="saas-view" id="view-messaging" data-title="Messaging" data-hint="Configure restaurant-specific SMS, WhatsApp and email gateway accounts and campaign drafts.">

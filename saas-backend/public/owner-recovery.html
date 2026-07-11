@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>K'Master POS Owner Recovery</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/css/app.css?v=20260710-owner-ui">
+</head>
+<body class="auth-page">
+  <main class="auth-shell">
+    <section class="auth-panel">
+      <div class="auth-brand">
+        <span class="brand-mark">K</span>
+        <div>
+          <p class="eyebrow">K'Master POS</p>
+          <h1 id="recoveryTitle">Account Recovery</h1>
+        </div>
+      </div>
+
+      <div id="recoveryChoice" class="recovery-choice">
+        <button type="button" onclick="setRecoveryMode('password')">
+          <strong>Forgot password</strong>
+          <span>Send a temporary password to the restaurant notification email.</span>
+        </button>
+        <button type="button" onclick="setRecoveryMode('username')">
+          <strong>Forgot username</strong>
+          <span>Send the login username to the restaurant notification email.</span>
+        </button>
+      </div>
+
+      <div id="passwordPanel" class="auth-fields" hidden>
+        <p class="auth-support">Enter your login username. We will show the linked restaurants, then send a temporary password to the notification email.</p>
+        <label for="recoveryUsername">Login username</label>
+        <input id="recoveryUsername" type="email" autocomplete="username" placeholder="owner@example.com">
+        <button class="primary-action" type="button" onclick="lookupPasswordRestaurants()">Find restaurants</button>
+        <div id="passwordRestaurants" class="recovery-results"></div>
+        <button id="sendPasswordButton" class="secondary-action" type="button" onclick="sendTemporaryPassword()" hidden>Send temporary password</button>
+        <p class="auth-footer-link"><a href="/owner-recovery.html#username">I forgot my username</a></p>
+      </div>
+
+      <div id="usernamePanel" class="auth-fields" hidden>
+        <p class="auth-support">Enter the restaurant notification email. We will show matching restaurants, then send the username to that email.</p>
+        <label for="notificationEmail">Notification email</label>
+        <input id="notificationEmail" type="email" autocomplete="email" placeholder="notification@example.com">
+        <button class="primary-action" type="button" onclick="lookupUsernameRestaurants()">Find restaurants</button>
+        <div id="usernameRestaurants" class="recovery-results"></div>
+        <button id="sendUsernameButton" class="secondary-action" type="button" onclick="sendOwnerUsername()" hidden>Send username</button>
+        <p class="auth-footer-link"><a href="/owner-recovery.html#password">I forgot my password</a></p>
+      </div>
+
+      <p id="msg" class="form-message"></p>
+      <p class="auth-footer-link"><a href="/owner-login.html">Back to owner login</a></p>
+    </section>
+  </main>
+  <script src="/js/owner-recovery.js?v=20260710-simple"></script>
+</body>
+</html>

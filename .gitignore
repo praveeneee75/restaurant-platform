@@ -13,3 +13,10 @@ mobile-app/ios/
 tmp-ui-shots/
 pos-app/dist-installers/
 saas-backend/downloads/pos-installers/
+kmaster
+kmaster.pub
+deploy/.env
+deploy/installers/
+mobile-app/android-signing.properties
+*.keystore
+*.jks

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Owner Profile | K'Master POS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/css/app.css?v=20260710-owner-ui">
+</head>
+<body class="owner-page">
+  <header class="owner-header">
+    <div>
+      <p class="eyebrow">Owner Portal</p>
+      <h1>Profile</h1>
+      <p>Manage your contact details and password.</p>
+    </div>
+    <nav class="owner-actions">
+      <a href="/owner-dashboard.html">Home</a>
+      <button class="owner-signout" type="button" data-session-logout>Sign out</button>
+    </nav>
+  </header>
+
+  <main class="owner-layout owner-profile-layout">
+    <section class="owner-section">
+      <div class="section-heading">
+        <h2>Contact Details</h2>
+        <p>These details are used for restaurant notifications and account recovery.</p>
+      </div>
+      <div class="profile-form">
+        <label>Login username
+          <input id="profileUsername" readonly>
+        </label>
+        <label>Name
+          <input id="profileName" autocomplete="name">
+        </label>
+        <label>Mobile number
+          <input id="profileMobile" autocomplete="tel" placeholder="+919999999999">
+        </label>
+        <label>Notification email
+          <input id="profileNotificationEmail" type="email" autocomplete="email">
+        </label>
+      </div>
+      <button type="button" onclick="saveProfile()">Save profile</button>
+      <p id="profileMsg" class="form-message"></p>
+    </section>
+
+    <section class="owner-section">
+      <div class="section-heading">
+        <h2>Change Password</h2>
+        <p>Use at least 10 characters with uppercase, lowercase and a number.</p>
+      </div>
+      <div class="profile-form">
+        <label>Current password
+          <input id="currentPassword" type="password" autocomplete="current-password">
+        </label>
+        <label>New password
+          <input id="newPassword" type="password" autocomplete="new-password">
+        </label>
+        <label>Confirm new password
+          <input id="confirmPassword" type="password" autocomplete="new-password">
+        </label>
+      </div>
+      <button type="button" onclick="changePassword()">Change password</button>
+      <p id="passwordMsg" class="form-message"></p>
+    </section>
+  </main>
+
+  <script src="/js/saas-session.js" data-session-scope="owner"></script>
+  <script src="/js/owner-profile.js?v=20260710"></script>
+</body>
+</html>

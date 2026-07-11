@@ -1,0 +1,55 @@
+{
+	email {$TLS_EMAIL}
+}
+
+(saas_proxy) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+	reverse_proxy saas:4000
+}
+
+kmasterpos.com, www.kmasterpos.com {
+	@root path /
+	redir @root /website.html 302
+	import saas_proxy
+}
+
+admin.kmasterpos.com {
+	@root path /
+	redir @root /login.html 302
+	import saas_proxy
+}
+
+owner.kmasterpos.com {
+	@root path /
+	redir @root /owner-login.html 302
+	import saas_proxy
+}
+
+api.kmasterpos.com {
+	import saas_proxy
+}
+
+order.kmasterpos.com {
+	@root path /
+	redir @root /order.html 302
+	import saas_proxy
+}
+
+downloads.kmasterpos.com {
+	@root path /
+	redir @root /downloads.html 302
+	import saas_proxy
+}
+
+staging.kmasterpos.com {
+	@root path /
+	redir @root /login.html 302
+	import saas_proxy
+}

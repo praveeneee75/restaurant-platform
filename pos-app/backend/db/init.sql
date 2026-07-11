@@ -609,7 +609,7 @@ CREATE TABLE inventory_recipes (
   FOREIGN KEY (ingredient_id) REFERENCES inventory_ingredients(id)
 );
 
-CREATE TRIGGER inventory_sales_stock_out_on_paid
+CREATE TRIGGER IF NOT EXISTS inventory_sales_stock_out_on_paid
 AFTER UPDATE OF payment_status ON orders
 WHEN NEW.payment_status = 'PAID' AND OLD.payment_status != 'PAID'
 BEGIN
@@ -635,7 +635,7 @@ BEGIN
   );
 END;
 
-CREATE TRIGGER inventory_sales_stock_out_on_paid_insert
+CREATE TRIGGER IF NOT EXISTS inventory_sales_stock_out_on_paid_insert
 AFTER INSERT ON order_items
 WHEN (SELECT payment_status FROM orders WHERE id = NEW.order_id) = 'PAID'
 BEGIN

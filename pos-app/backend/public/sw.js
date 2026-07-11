@@ -4,7 +4,8 @@ const SHELL_ASSETS = [
   "/css/waiter.css",
   "/js/waiter.js",
   "/manifest.webmanifest",
-  "/icons/captain-pos.svg"
+  "/icons/kmaster-logo.svg",
+  "/icons/kmaster-logo-192.png"
 ];
 
 self.addEventListener("install", (event) => {

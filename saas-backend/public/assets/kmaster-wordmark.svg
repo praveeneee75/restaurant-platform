@@ -1,0 +1,16 @@
+<svg width="640" height="168" viewBox="0 0 640 168" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="168" height="168" rx="38" fill="#102532"/>
+  <circle cx="84" cy="84" r="51.5" fill="#173748"/>
+  <circle cx="84" cy="84" r="51.5" stroke="#D6E4EC" stroke-width="4" stroke-opacity="0.26"/>
+  <path d="M48 110C53 89 66 73 84 73C102 73 115 89 120 110" stroke="#F59E0B" stroke-width="7" stroke-linecap="round"/>
+  <path d="M61 56C63 50 67 45 73 41" stroke="#2EC4B6" stroke-width="5" stroke-linecap="round"/>
+  <path d="M84 51C86 45 90 40 95 36" stroke="#2EC4B6" stroke-width="5" stroke-linecap="round"/>
+  <path d="M107 56C109 50 113 45 119 41" stroke="#2EC4B6" stroke-width="5" stroke-linecap="round"/>
+  <path d="M50 122L66 81H76L63 122H50ZM69 103L80 90L96 122H84L69 103Z" fill="#F59E0B"/>
+  <path d="M80 122V81H91L104 99L117 81H128V122H115V101L104 117H104L93 101V122H80Z" fill="#F8FAFC"/>
+  <path d="M206 68H225V98L251 68H276L248 101L278 142H253L234 116L225 126V142H206V68ZM290 142V68H307L330 105L353 68H370V142H351V101L330 136H329L309 102V142H290Z" fill="#102532"/>
+  <path d="M393 142V68H454V84H412V97H449V112H412V126H455V142H393ZM469 142V68H487L512 105L537 68H555V142H536V100L513 135H512L488 101V142H469ZM576 142V85H554V68H616V85H595V142H576Z" fill="#102532"/>
+  <path d="M201 38H328" stroke="#F59E0B" stroke-width="8" stroke-linecap="round"/>
+  <path d="M206 38H230" stroke="#2EC4B6" stroke-width="8" stroke-linecap="round"/>
+  <text x="201" y="52" fill="#4B5563" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="3.2">KITCHEN MASTER POS</text>
+</svg>

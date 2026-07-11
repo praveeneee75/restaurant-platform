@@ -30,7 +30,7 @@ async function tenantForHeartbeat(restaurantId, licenseKey, syncToken) {
 }
 
 router.post('/heartbeat', async (req, res) => {
-  const { restaurantId, licenseKey, syncToken, posVersion, backupStatus, printerStatus, licenseStatus, appStatus } = req.body || {};
+  const { restaurantId, licenseKey, syncToken, posVersion, backupStatus, printerStatus, licenseStatus, appStatus, mobilePosUrl } = req.body || {};
   if (!restaurantId || (!licenseKey && !syncToken)) return res.status(400).json({ success: false, message: 'restaurantId and sync credentials required' });
   try {
     const tenant = await tenantForHeartbeat(restaurantId, licenseKey, syncToken);
@@ -46,8 +46,12 @@ router.post('/heartbeat', async (req, res) => {
         license_status = EXCLUDED.license_status,
         app_status = EXCLUDED.app_status,
         payload = EXCLUDED.payload,
-        last_heartbeat_at = NOW()
+         last_heartbeat_at = NOW()
     `, [tenant.id, restaurantId, posVersion || null, backupStatus || null, printerStatus || null, licenseStatus || null, appStatus || 'OK', req.body || {}]);
+    const cleanMobilePosUrl = String(mobilePosUrl || '').trim().replace(/\/$/, '');
+    if (/^https?:\/\//i.test(cleanMobilePosUrl)) {
+      await pool.query('UPDATE tenants SET mobile_pos_url = $1 WHERE id = $2', [cleanMobilePosUrl, tenant.id]);
+    }
     res.json({ success: true, message: 'Heartbeat recorded' });
   } catch (err) {
     console.error('POS HEARTBEAT ERROR:', err.message);

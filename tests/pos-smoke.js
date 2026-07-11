@@ -68,6 +68,33 @@ async function main() {
   const liveOrders = await json('GET', `/orders/live?restaurantId=${restaurantId}`);
   const orderTypes = await json('GET', `/reports/order-types?restaurantId=${restaurantId}`);
   await json('GET', `/delivery/partners?restaurantId=${restaurantId}`);
+  const shortPin = await request('POST', '/admin/users/save', {
+    restaurantId,
+    actor,
+    name: 'PIN Validation',
+    username: 'pin_validation_short',
+    pin: '1234',
+    role: 'CASHIER',
+    active: true
+  });
+  if (shortPin.status !== 400 || !shortPin.body.includes('exactly 6 digits')) {
+    throw new Error('Four digit PIN was not rejected for a new user');
+  }
+  const pinUserName = `pin_validation_${Date.now()}`;
+  await json('POST', '/admin/users/save', {
+    restaurantId,
+    actor,
+    name: 'PIN Validation',
+    username: pinUserName,
+    pin: '654321',
+    role: 'CASHIER',
+    active: true
+  });
+  const pinDb = openDatabase(restaurantId);
+  const pinUser = pinDb.prepare('SELECT pin, pin_hash FROM users WHERE username = ?').get(pinUserName);
+  pinDb.prepare('DELETE FROM users WHERE username = ?').run(pinUserName);
+  pinDb.close();
+  if (pinUser.pin !== '' || !pinUser.pin_hash) throw new Error('Six digit PIN was not stored as a hash');
   const tableOne = await request('GET', `/orders/open?restaurantId=${restaurantId}&tableId=1`);
   const tableTwo = await request('GET', `/orders/open?restaurantId=${restaurantId}&tableId=2`);
   if (tableOne.ms > Number(process.env.POS_TABLE_SELECT_BUDGET_MS || 300)) throw new Error(`Table 1 selection too slow: ${tableOne.ms}ms`);

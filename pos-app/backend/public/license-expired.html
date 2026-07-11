@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>POS license required</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <main class="login-box activation-box">
+    <span class="activation-kicker activation-kicker-danger">Access paused</span>
+    <span id="appVersion" class="app-version"></span>
+    <h1>POS license expired</h1>
+    <p id="licenseMessage" class="activation-copy">This POS license is no longer active. Renew it in the owner's portal, connect to the internet, then check again.</p>
+    <button id="checkLicenseButton" type="button">Check license again</button>
+    <p id="msg" role="status"></p>
+  </main>
+  <script>
+    const suppliedMessage = new URLSearchParams(location.search).get('message');
+    if (suppliedMessage) document.getElementById('licenseMessage').textContent = suppliedMessage;
+    document.getElementById('checkLicenseButton').addEventListener('click', () => {
+      location.href = '/activation-complete.html?retry=1';
+    });
+    localStorage.removeItem('user');
+  </script>
+  <script src="/js/version-badge.js"></script>
+</body>
+</html>

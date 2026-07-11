@@ -19,6 +19,9 @@ async function migrate() {
     )
   `);
   await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS mobile_pos_url TEXT');
+  await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_name TEXT');
+  await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_email TEXT');
+  await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_phone TEXT');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS licenses (
@@ -140,6 +143,22 @@ async function migrate() {
       active BOOLEAN NOT NULL DEFAULT true,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(owner_user_id, tenant_id)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sales_inquiries (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name TEXT NOT NULL,
+      business_name TEXT,
+      email TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      city TEXT,
+      outlet_count INTEGER NOT NULL DEFAULT 1,
+      message TEXT,
+      source TEXT NOT NULL DEFAULT 'WEBSITE',
+      status TEXT NOT NULL DEFAULT 'NEW',
+      created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
 
@@ -602,6 +621,15 @@ async function migrate() {
       ('MOBILE_APP', 'White-label Mobile App', 'Cross-platform owner, captain and waiter mobile app packaging', 'PREMIUM', 'ACTIVE'),
       ('MESSAGING', 'SMS / WhatsApp / Email Marketing', 'Bulk customer communication with per-restaurant sender and gateway configuration', 'CUSTOMER', 'ACTIVE')
     ON CONFLICT(code) DO NOTHING
+  `);
+  await pool.query(`
+    UPDATE subscription_plans SET price = CASE code
+      WHEN 'BASIC' THEN 2399
+      WHEN 'STANDARD' THEN 5999
+      WHEN 'PREMIUM' THEN 11999
+      ELSE price
+    END
+    WHERE code IN ('BASIC', 'STANDARD', 'PREMIUM')
   `);
 
   await pool.query(`

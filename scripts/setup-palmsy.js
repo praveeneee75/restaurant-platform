@@ -261,7 +261,7 @@ function seedPos() {
     `).run(RESTAURANT_ID, LICENSE_KEY);
 
     const staff = [
-      ['Administrator', 'admin', '1234', 'OWNER'],
+      ['Administrator', 'admin', '123456', 'OWNER'],
       ['Palmsy Manager', 'manager', '1111', 'MANAGER'],
       ['Front Cashier', 'cashier', '2222', 'CASHIER'],
       ['Floor Captain', 'captain', '3333', 'CAPTAIN'],
@@ -404,7 +404,7 @@ function seedPos() {
     syncToken: SYNC_TOKEN,
     ownerLogin: { email: OWNER_EMAIL, password: OWNER_PASSWORD },
     posPins: {
-      admin: '1234',
+      admin: '123456',
       manager: '1111',
       cashier: '2222',
       captain: '3333',

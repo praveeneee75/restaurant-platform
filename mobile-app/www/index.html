@@ -3,16 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Restaurant Mobile</title>
+  <meta name="theme-color" content="#2563eb">
+  <meta name="color-scheme" content="light">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="icon" href="assets/kmaster-logo.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <title>K'Master POS</title>
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
   <main class="app-shell">
     <section class="brand-panel">
-      <div class="logo" id="brandLogo">POS</div>
+      <div class="logo" id="brandLogo" aria-label="K'Master POS"></div>
       <div>
-        <p class="eyebrow">White-label restaurant app</p>
-        <h1 id="brandName">Restaurant Mobile</h1>
+        <p class="eyebrow">K'Master restaurant app</p>
+        <h1 id="brandName">K'Master POS</h1>
         <strong id="activeRestaurantName" class="active-restaurant">No restaurant selected</strong>
         <p id="brandStatus">Select your restaurant and sign in.</p>
       </div>
@@ -22,13 +29,14 @@
       <label>Restaurant
         <select id="restaurantSelect"></select>
       </label>
-      <label>Username
-        <input id="username" autocomplete="username" placeholder="admin">
+      <label>Username or owner email
+        <input id="username" autocomplete="username" placeholder="admin or owner@example.com">
       </label>
-      <label>PIN
-        <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="4 digit PIN">
+      <label>PIN or owner password
+        <input id="pin" type="password" autocomplete="current-password" placeholder="PIN or owner password">
       </label>
       <button id="loginButton" type="button">Login</button>
+      <button id="biometricLoginButton" type="button" class="secondary-button" hidden>Use biometric login</button>
       <p id="loginStatus" class="status-line">Loading restaurants...</p>
     </section>
 
@@ -40,6 +48,7 @@
           <p id="dashboardStatus" class="status-line">Choose your workspace.</p>
         </div>
         <button id="logoutButton" type="button" class="secondary-button">Logout</button>
+        <button id="settingsButton" type="button" class="secondary-button">Settings</button>
       </header>
       <div class="role-grid">
         <button data-role="owner" type="button">Owner Dashboard</button>
@@ -49,6 +58,28 @@
       </div>
     </section>
 
+    <dialog id="biometricPrompt" class="app-dialog">
+      <form method="dialog">
+        <h2>Faster secure login</h2>
+        <p>Use Face ID or fingerprint on this device. Your login is protected by the device keychain.</p>
+        <div class="dialog-actions">
+          <button id="skipBiometricButton" value="cancel" class="secondary-button">Not now</button>
+          <button id="enableBiometricButton" value="default">Enable</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="settingsDialog" class="app-dialog">
+      <form method="dialog">
+        <header class="dialog-header"><h2>Settings</h2><button value="cancel" class="secondary-button">Close</button></header>
+        <label class="setting-row">
+          <span><strong>Biometric login</strong><small>Use Face ID or fingerprint on this device.</small></span>
+          <input id="biometricToggle" type="checkbox">
+        </label>
+        <p id="biometricStatus" class="status-line"></p>
+      </form>
+    </dialog>
+
     <section class="webview-panel" id="webviewPanel" hidden>
       <header>
         <strong id="activeRole">Mobile View</strong>
@@ -57,6 +88,7 @@
       <iframe id="appFrame" title="Restaurant app view"></iframe>
     </section>
   </main>
+  <script src="js/native-plugins.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

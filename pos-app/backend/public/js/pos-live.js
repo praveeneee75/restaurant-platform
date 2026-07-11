@@ -19,13 +19,16 @@ const state = {
   selectedCategoryId: null,
   selectedCartKey: null,
   orderId: null,
+  openOrders: [],
   pendingItem: null,
+  pendingSplitItems: [],
   customer: null,
   attendance: null,
   cashSession: null,
   expectedCash: 0,
   dirty: false,
-  kotSubmitted: false
+  kotSubmitted: false,
+  pendingEditKey: null
 };
 
 const amount = (value) => Number(value || 0).toFixed(2);
@@ -127,10 +130,19 @@ async function refreshLiveState({ updateCart = false } = {}) {
   const data = await fetch(`/pos/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`).then((res) => res.json());
   applyBootstrap(data);
   await refreshShiftCashStatus();
+  if (state.selectedTable?.id) await loadOpenOrdersForTable(state.selectedTable.id);
   renderTables();
   renderCategories();
   if (state.selectedCategoryId) renderItems(state.selectedCategoryId);
   if (updateCart) renderCart();
+}
+
+async function loadOpenOrdersForTable(tableId, selectedOrderId = null) {
+  if (!isPositiveId(tableId)) return;
+  const data = await fetch(`/orders/open-list?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${encodeURIComponent(tableId)}`).then((res) => res.json());
+  state.openOrders = data.orders || [];
+  if (selectedOrderId) state.orderId = selectedOrderId;
+  renderOrderSelector();
 }
 
 async function refreshShiftCashStatus() {
@@ -180,6 +192,19 @@ function renderTables() {
   `).join("");
 }
 
+function renderOrderSelector() {
+  const current = state.openOrders.find((order) => Number(order.id) === Number(state.orderId)) || state.openOrders[0] || null;
+  if (!current && state.orderId) {
+    orderSelector.innerHTML = `<option value="${state.orderId}" selected>Current check #${state.orderId}</option>`;
+    return;
+  }
+  orderSelector.innerHTML = [
+    `<option value="${current?.id || ""}">${current ? `Check #${current.id}` : "Current check"}</option>`,
+    ...state.openOrders.filter((order) => Number(order.id) !== Number(current?.id)).map((order) => `<option value="${order.id}">Check #${order.id} - ${money(order.total_amount)}</option>`)
+  ].join("");
+  if (current) orderSelector.value = String(current.id);
+}
+
 function renderCategories() {
   categories.innerHTML = state.categories.map((category) => `
     <button class="${state.selectedCategoryId === category.id ? "active" : ""}" data-category="${category.id}">
@@ -220,13 +245,15 @@ function renderCart() {
       <div>
         <strong>${esc(item.name)}</strong>
         <span>${money(item.price)}</span>
+        ${item.sentToKitchen ? "<small>Sent to kitchen</small>" : ""}
         ${(item.modifiers || []).map((modifier) => `<small>+ ${esc(modifier.name)}</small>`).join("")}
       </div>
       <div class="qty-controls">
-        <button data-minus="${item.key}">-</button>
+        <button data-minus="${item.key}" ${item.sentToKitchen ? "disabled" : ""}>-</button>
         <span>${item.quantity}</span>
-        <button data-plus="${item.key}">+</button>
-        <button data-remove="${item.key}">Remove</button>
+        <button data-plus="${item.key}" ${item.sentToKitchen ? "disabled" : ""}>+</button>
+        <button data-edit="${item.key}" type="button" ${item.sentToKitchen ? "disabled" : ""}>Edit</button>
+        <button data-remove="${item.key}" ${item.sentToKitchen ? "disabled" : ""}>Remove</button>
       </div>
     </div>
   `).join("");
@@ -234,11 +261,30 @@ function renderCart() {
   customerSummary.textContent = state.customer ? `${state.customer.name} - ${state.customer.phone} - ${state.customer.loyaltyBalance || 0} pts` : "No customer attached";
   redeemPoints.max = state.customer?.loyaltyBalance || 0;
   payableTotal.textContent = `Payable: ${money(payableAmount())}`;
+  editItemBtn.disabled = !state.selectedCartKey || !state.cart.some((item) => item.key === state.selectedCartKey);
+  moveTableBtn.disabled = !isDineIn() || !state.selectedTable || !state.orderId;
+  // A new order has no ID until it is saved, so it must still be possible to send its first KOT.
+  submitKot.disabled = !(state.cart.length > 0 && (!state.orderId || state.dirty));
+  submitKot.title = submitKot.disabled ? "Submit KOT only after the order changes" : "";
   if (paymentMode.value !== "SPLIT") {
     cashAmount.value = paymentMode.value === "CASH" ? amount(payableAmount()) : "";
     cardAmount.value = paymentMode.value === "CARD" ? amount(payableAmount()) : "";
     upiAmount.value = paymentMode.value === "UPI" ? amount(payableAmount()) : "";
   }
+}
+
+function cartItemFromOrderItem(item) {
+  return {
+    id: item.id,
+    orderItemId: item.order_item_id,
+    key: `open-${item.order_item_id}`,
+    comboId: item.comboId || item.combo_id || null,
+    name: item.comboId || item.combo_id ? item.name : item.combo_name ? `${item.combo_name}: ${item.name}` : item.name,
+    price: item.price,
+    quantity: item.quantity,
+    modifiers: item.modifiers || [],
+    sentToKitchen: Boolean(item.kot_id)
+  };
 }
 
 function updateOrderTypeView() {
@@ -248,8 +294,19 @@ function updateOrderTypeView() {
   refreshCartAndMenu();
 }
 
-async function selectTable(tableId) {
+async function selectTable(tableId, options = {}) {
   if (!isDineIn()) orderType.value = "DINE_IN";
+  state.customer = null;
+  customerPhone.value = "";
+  customerName.value = "";
+  if (!options.skipMovePrompt && state.selectedTable && state.selectedTable.id !== tableId && state.orderId) {
+    const target = state.tables.find((table) => table.id === tableId);
+    if (target && !confirm(`Move this order to ${target.table_name}?`)) return;
+    if (target) {
+      await moveOrderToTable(target.id);
+      return;
+    }
+  }
   state.selectedTable = state.tables.find((table) => table.id === tableId);
   state.cart = [];
   state.selectedCartKey = null;
@@ -257,6 +314,7 @@ async function selectTable(tableId) {
   state.dirty = false;
   state.kotSubmitted = false;
   renderTables();
+  await loadOpenOrdersForTable(tableId);
   const data = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${tableId}`).then((res) => res.json());
   if (data.order) {
     state.orderId = data.order.id;
@@ -265,18 +323,12 @@ async function selectTable(tableId) {
     state.customer = data.customer || null;
     customerPhone.value = state.customer?.phone || "";
     customerName.value = state.customer?.name || "";
-    state.cart = (data.items || []).map((item) => ({
-      id: item.id,
-      key: `open-${item.order_item_id}`,
-      comboId: item.comboId || item.combo_id || null,
-      name: item.comboId || item.combo_id ? item.name : item.combo_name ? `${item.combo_name}: ${item.name}` : item.name,
-      price: item.price,
-      quantity: item.quantity,
-      modifiers: item.modifiers || []
-    }));
+    state.cart = (data.items || []).map(cartItemFromOrderItem);
     state.selectedCartKey = state.cart[0]?.key || null;
   }
   updateOrderTypeView();
+  renderOrderSelector();
+  renderCart();
 }
 
 function itemGroups(itemId) {
@@ -311,6 +363,7 @@ function openModifierModal(itemId) {
   if (isDineIn() && !state.selectedTable) return alert("Select a table first");
   const menuItem = state.items.find((item) => item.id === itemId);
   if (!menuItem) return;
+  state.pendingEditKey = null;
   const groups = itemGroups(itemId);
   if (groups.length === 0) return addItemToCart(menuItem, []);
   state.pendingItem = menuItem;
@@ -328,6 +381,46 @@ function openModifierModal(itemId) {
   modifierModal.hidden = false;
 }
 
+function prefillModifierModal(modifiers = []) {
+  const modifierIds = new Set((modifiers || []).map((modifier) => Number(modifier.id)));
+  modifierGroups.querySelectorAll("input[type='checkbox']").forEach((input) => {
+    input.checked = modifierIds.has(Number(input.value));
+  });
+  modifierModalPrice.textContent = money(modalUnitPrice());
+}
+
+function openEditSelectedItem() {
+  const line = state.cart.find((item) => item.key === state.selectedCartKey);
+  if (!line) return alert("Select an item in the bill first");
+  if (line.sentToKitchen) return alert("This item has already been sent to the kitchen. Add a new item for an additional KOT, or cancel it from KDS.");
+  if (line.comboId) return alert("Combo items cannot be edited. Remove and add again.");
+  const menuItem = state.items.find((item) => item.id === line.id);
+  if (!menuItem) return alert("Selected item is no longer available");
+  const groups = itemGroups(menuItem.id);
+  if (groups.length === 0) {
+    const quantity = Number(prompt(`Quantity for ${menuItem.name}`, String(line.quantity)));
+    if (!Number.isInteger(quantity) || quantity < 1) return alert("Enter a whole quantity of 1 or more");
+    line.quantity = quantity;
+    state.dirty = true;
+    refreshCartAndMenu();
+    return;
+  }
+  state.pendingItem = menuItem;
+  state.pendingEditKey = line.key;
+  modifierModalTitle.textContent = `Edit ${menuItem.name}`;
+  modifierGroups.innerHTML = groups.map((group) => `
+    <section class="modifier-group" data-group-section="${group.id}">
+      <h3>${esc(group.name)} ${group.required ? "*" : ""}</h3>
+      <p>${group.min_select || 0} min, ${group.max_select || 0} max</p>
+      ${group.modifiers.map((modifier) => `
+        <label class="check-row"><input type="checkbox" value="${modifier.id}" data-group="${group.id}"> ${esc(modifier.name)} <span>${money(modifier.price_delta)}</span></label>
+      `).join("")}
+    </section>
+  `).join("");
+  prefillModifierModal(line.modifiers || []);
+  modifierModal.hidden = false;
+}
+
 function addItemToCart(menuItem, modifiers) {
   const modifierIds = modifiers.map((modifier) => modifier.id).sort((a, b) => a - b);
   const key = `item-${menuItem.id}-${modifierIds.join(".") || "none"}`;
@@ -338,6 +431,29 @@ function addItemToCart(menuItem, modifiers) {
   state.selectedCartKey = key;
   state.dirty = true;
   refreshCartAndMenu();
+}
+
+async function moveOrderToTable(targetTableId) {
+  if (!state.orderId || !state.selectedTable) return alert("Select a table order first");
+  const data = await postJson("/orders/transfer-table", {
+    orderId: state.orderId,
+    fromTableId: state.selectedTable.id,
+    toTableId: targetTableId
+  });
+  await selectTable(data.table?.id || targetTableId, { skipMovePrompt: true });
+}
+
+function openSplitBillModal() {
+  if (!state.orderId) return alert("Save the table order first");
+  if (state.cart.length === 0) return alert("There are no items to split");
+  splitBillItems.innerHTML = state.cart.map((item) => `
+    <label class="check-row">
+      <input type="checkbox" value="${item.key}" checked>
+      ${esc(item.name)} x${item.quantity}
+      <span>${money(item.price * item.quantity)}</span>
+    </label>
+  `).join("");
+  splitBillModal.hidden = false;
 }
 
 function addCombo(comboId) {
@@ -371,12 +487,11 @@ async function saveCurrentOrder(force = false) {
     deliveryPartnerId: deliveryPartner.value || null,
     expectedDeliveryTime: expectedDeliveryTime.value || null,
     items: state.cart.map((item) => item.comboId
-      ? ({ comboId: item.comboId, quantity: item.quantity })
-      : ({ itemId: item.id, quantity: item.quantity, modifiers: (item.modifiers || []).filter((modifier) => modifier.id).map((modifier) => modifier.id) }))
+      ? ({ orderItemId: item.orderItemId || null, comboId: item.comboId, quantity: item.quantity })
+      : ({ orderItemId: item.orderItemId || null, itemId: item.id, quantity: item.quantity, modifiers: (item.modifiers || []).filter((modifier) => modifier.id).map((modifier) => modifier.id) }))
   });
   state.orderId = data.orderId;
   state.dirty = false;
-  state.kotSubmitted = false;
   orderMeta.textContent = `Open order #${state.orderId}`;
   await refreshLiveState();
   return true;
@@ -458,7 +573,7 @@ document.addEventListener("click", async (event) => {
   if (target.dataset.combo) addCombo(Number(target.dataset.combo));
   if (target.dataset.plus) {
     const line = state.cart.find((item) => item.key === target.dataset.plus);
-    if (line) {
+    if (line && !line.sentToKitchen) {
       line.quantity += 1;
       state.selectedCartKey = line.key;
       state.dirty = true;
@@ -466,16 +581,24 @@ document.addEventListener("click", async (event) => {
   }
   if (target.dataset.minus) {
     const line = state.cart.find((item) => item.key === target.dataset.minus);
-    if (line) {
+    if (line && !line.sentToKitchen) {
       line.quantity -= 1;
       state.selectedCartKey = line.key;
       state.dirty = true;
     }
   }
   if (target.dataset.remove) {
+    const line = state.cart.find((item) => item.key === target.dataset.remove);
+    if (line?.sentToKitchen) return alert("This item has already been sent to the kitchen. Cancel it from KDS instead.");
     state.cart = state.cart.filter((item) => item.key !== target.dataset.remove);
     if (state.selectedCartKey === target.dataset.remove) state.selectedCartKey = state.cart[0]?.key || null;
     state.dirty = true;
+  }
+  if (target.dataset.edit) {
+    state.selectedCartKey = target.dataset.edit;
+    renderCart();
+    openEditSelectedItem();
+    return;
   }
   state.cart = state.cart.filter((item) => item.quantity > 0);
   if (!state.cart.some((item) => item.key === state.selectedCartKey)) state.selectedCartKey = state.cart[0]?.key || null;
@@ -513,20 +636,81 @@ addModifiedItem.addEventListener("click", () => {
   if (error) return alert(error);
   const modifierIds = selectedModifiersFromModal();
   const modifiers = modifierIds.map((id) => state.modifiers.find((modifier) => modifier.id === id)).filter(Boolean);
-  addItemToCart(state.pendingItem, modifiers);
+  if (state.pendingEditKey) {
+    const existing = state.cart.find((item) => item.key === state.pendingEditKey);
+    if (existing) {
+      state.cart = state.cart.filter((item) => item.key !== state.pendingEditKey);
+      const replacement = { ...existing, ...state.pendingItem, modifiers: modifiers.slice() };
+      replacement.price = Number(state.pendingItem.price || 0) + modifiers.reduce((sum, modifier) => sum + Number(modifier.price_delta || 0), 0);
+      replacement.quantity = existing.quantity;
+      const modifierIdsSorted = modifiers.map((modifier) => modifier.id).sort((a, b) => a - b);
+      replacement.key = `item-${state.pendingItem.id}-${modifierIdsSorted.join(".") || "none"}`;
+      state.cart.push(replacement);
+      state.selectedCartKey = replacement.key;
+      state.dirty = true;
+      refreshCartAndMenu();
+    }
+  } else {
+    addItemToCart(state.pendingItem, modifiers);
+  }
   modifierModal.hidden = true;
   state.pendingItem = null;
+  state.pendingEditKey = null;
 });
 
 paymentMode.addEventListener("change", renderCart);
 redeemPoints.addEventListener("input", renderCart);
 orderType.addEventListener("change", updateOrderTypeView);
 deliveryFee.addEventListener("input", renderCart);
+orderSelector.addEventListener("change", async () => {
+  if (!state.selectedTable || !orderSelector.value) return;
+  const orderId = Number(orderSelector.value);
+  const data = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(orderId)}`).then((res) => res.json());
+  if (!data.order) return;
+  state.orderId = data.order.id;
+  state.customer = data.customer || null;
+  customerPhone.value = state.customer?.phone || "";
+  customerName.value = state.customer?.name || "";
+  state.cart = (data.items || []).map(cartItemFromOrderItem);
+  state.selectedCartKey = state.cart[0]?.key || null;
+  renderCart();
+});
 searchCustomer.addEventListener("click", searchCustomerByPhone);
 createCustomer.addEventListener("click", createCustomerFromBilling);
 saveOrder.addEventListener("click", () => saveCurrentOrder());
 submitKot.addEventListener("click", submitCurrentKot);
 settleOrder.addEventListener("click", settleCurrentOrder);
+editItemBtn.addEventListener("click", openEditSelectedItem);
+moveTableBtn.addEventListener("click", async () => {
+  if (!isDineIn() || !state.selectedTable) return alert("Select a dine-in table first");
+  const targetTableName = prompt("Enter the table number/name to move to");
+  if (!targetTableName) return;
+  const targetTable = state.tables.find((table) => table.table_name.toLowerCase() === targetTableName.trim().toLowerCase());
+  if (!targetTable) return alert("Target table not found");
+  await moveOrderToTable(targetTable.id);
+});
+splitBillBtn.addEventListener("click", openSplitBillModal);
+closeSplitBillModal.addEventListener("click", () => {
+  splitBillModal.hidden = true;
+});
+createSplitCheckBtn.addEventListener("click", async () => {
+  const selectedKeys = [...splitBillItems.querySelectorAll("input[type='checkbox']:checked")].map((input) => input.value);
+  if (selectedKeys.length === 0) return alert("Select at least one item");
+  const data = await postJson("/orders/split-check", {
+    orderId: state.orderId,
+    itemKeys: selectedKeys,
+    checkName: prompt("Split check name") || ""
+  });
+  splitBillModal.hidden = true;
+  await loadOpenOrdersForTable(state.selectedTable.id, data.orderId);
+  const latest = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(data.orderId)}`).then((res) => res.json());
+  if (latest.order) {
+    state.orderId = latest.order.id;
+    state.cart = (latest.items || []).map(cartItemFromOrderItem);
+    state.selectedCartKey = state.cart[0]?.key || null;
+    renderCart();
+  }
+});
 clockInBtn.addEventListener("click", async () => {
   await postJson("/attendance/clock-in", { userId: actor.id, openingNote: prompt("Opening note") || "" });
   await refreshShiftCashStatus();

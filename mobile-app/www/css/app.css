@@ -7,20 +7,38 @@
   --text: #172033;
   --muted: #64748b;
 }
+html,
+body {
+  width: 100%;
+  min-width: 320px;
+  min-height: 100%;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
   color: var(--text);
   background:
     radial-gradient(circle at 90% 0, rgba(37, 99, 235, 0.16), transparent 30%),
     #f5f7fb;
   font-family: Inter, Segoe UI, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  touch-action: manipulation;
 }
 .app-shell {
   display: grid;
   gap: 14px;
+  width: 100%;
   min-height: 100vh;
-  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  min-height: 100dvh;
+  padding:
+    max(16px, env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
 }
 .brand-panel,
 .config-panel,
@@ -36,17 +54,23 @@ body {
   display: flex;
   align-items: center;
   gap: 14px;
+  min-width: 0;
   padding: 18px;
 }
 .logo {
   display: grid;
   place-items: center;
+  flex: 0 0 auto;
   width: 58px;
   height: 58px;
   border-radius: 14px;
-  background: var(--primary);
-  color: white;
-  font-weight: 900;
+  background:
+    #102532
+    center / cover
+    no-repeat
+    url("../assets/kmaster-logo.svg");
+  color: transparent;
+  box-shadow: 0 12px 24px rgba(16, 37, 50, 0.18);
 }
 .eyebrow {
   margin: 0 0 4px;
@@ -58,6 +82,7 @@ body {
 h1,
 p {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 .active-restaurant {
   display: inline-flex;
@@ -94,8 +119,12 @@ select {
   border-radius: 10px;
   background: white;
   font: inherit;
+  font-size: 16px;
 }
 button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 48px;
   max-width: 100%;
   min-width: 0;
@@ -110,11 +139,24 @@ button {
   overflow-wrap: anywhere;
   text-align: center;
   white-space: normal;
+  -webkit-tap-highlight-color: transparent;
+}
+button:active {
+  transform: translateY(1px);
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.22);
+  outline-offset: 2px;
 }
 .login-panel {
   display: grid;
   gap: 12px;
   padding: 16px;
+}
+.login-panel[hidden] {
+  display: none !important;
 }
 .dashboard-panel {
   display: grid;
@@ -129,10 +171,12 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
 }
 .dashboard-header h2 {
   margin: 0 0 4px;
   font-size: 22px;
+  overflow-wrap: anywhere;
 }
 .secondary-button {
   width: auto;
@@ -154,6 +198,7 @@ button {
 .role-grid button {
   min-height: 76px;
   background: #0f172a;
+  font-size: 15px;
 }
 .webview-panel {
   position: fixed;
@@ -162,6 +207,8 @@ button {
   display: grid;
   grid-template-rows: auto 1fr;
   border-radius: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 .webview-panel[hidden] {
   display: none !important;
@@ -171,8 +218,16 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px;
+  padding:
+    max(12px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right))
+    12px
+    max(12px, env(safe-area-inset-left));
   border-bottom: 1px solid var(--border);
+}
+.webview-panel header strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .webview-panel header button {
   width: auto;
@@ -180,6 +235,37 @@ button {
   background: #eaf1ff;
   color: #1e3a8a;
 }
+
+.app-dialog {
+  width: min(92vw, 520px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+}
+.app-dialog::backdrop { background: rgba(15, 23, 42, 0.58); }
+.app-dialog form { padding: 22px; }
+.app-dialog h2 { margin: 0 0 10px; font-size: 22px; }
+.dialog-header,
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dialog-actions { justify-content: flex-end; margin-top: 20px; }
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 0;
+}
+.setting-row span,
+.setting-row small { display: block; }
+.setting-row small { margin-top: 4px; color: var(--muted); }
+.setting-row input { width: 22px; min-height: 22px; flex: 0 0 auto; }
 iframe {
   width: 100%;
   height: 100%;
@@ -188,20 +274,55 @@ iframe {
 }
 @media (min-width: 760px) {
   .app-shell {
-    width: min(860px, 100%);
+    width: min(980px, 100%);
     margin: 0 auto;
     align-content: start;
+    padding-block: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-bottom));
   }
   .role-grid {
     grid-template-columns: repeat(4, 1fr);
   }
 }
+@media (min-width: 980px) and (orientation: landscape) {
+  .app-shell {
+    grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.2fr);
+    align-items: start;
+  }
+  .brand-panel {
+    position: sticky;
+    top: max(24px, env(safe-area-inset-top));
+  }
+  .login-panel,
+  .dashboard-panel {
+    min-height: 320px;
+  }
+}
 @media (max-width: 520px) {
+  .app-shell {
+    gap: 12px;
+    padding:
+      max(12px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right))
+      max(12px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
+  }
+  .brand-panel {
+    align-items: flex-start;
+    padding: 16px;
+  }
+  .logo {
+    width: 52px;
+    height: 52px;
+  }
   .dashboard-header {
     align-items: stretch;
     flex-direction: column;
   }
   .secondary-button {
     width: 100%;
+  }
+  .role-grid {
+    grid-template-columns: 1fr;
+    padding: 0;
   }
 }

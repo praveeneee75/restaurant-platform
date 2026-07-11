@@ -3,7 +3,7 @@ if (restaurantId) localStorage.setItem("restaurantId", restaurantId);
 
 const user = JSON.parse(localStorage.getItem("user") || '{"role":"OWNER"}');
 const actor = { id: user.id, role: user.role || "OWNER" };
-const state = { admin: {}, inventory: {}, modifiers: {}, backups: {}, settings: {}, permissions: {}, devices: {}, reservations: [], expenseCategories: [], latestUpdate: null, commercial: {} };
+const state = { admin: {}, inventory: {}, modifiers: {}, backups: {}, settings: {}, permissions: {}, devices: {}, reservations: [], expenseCategories: [], latestUpdate: null, commercial: {}, invoices: [] };
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 const money = (value) => Number(value || 0).toFixed(2);
@@ -90,6 +90,12 @@ async function loadAdmin() {
   }
   renderAdmin();
   applyModuleGuards();
+}
+
+async function loadInvoiceList() {
+  const data = await fetchJson(`/orders/invoices?restaurantId=${encodeURIComponent(restaurantId)}&fromDate=${invoiceFrom.value || ""}&toDate=${invoiceTo.value || ""}&limit=100`);
+  state.invoices = data.invoices || [];
+  renderInvoices();
 }
 
 async function loadInventory() {
@@ -219,7 +225,7 @@ async function loadAll() {
   adminStatus.textContent = "Loading workspace...";
   await loadPermissions();
   await loadAdmin();
-  const loaders = [loadModifiers(), loadBackup(), loadSettings(), loadUpdates(), loadAudit(), loadDeviceSessions(), loadExpenseCategories()];
+  const loaders = [loadModifiers(), loadBackup(), loadSettings(), loadUpdates(), loadAudit(), loadDeviceSessions(), loadExpenseCategories(), loadInvoiceList().catch(() => undefined)];
   if (moduleEnabled("INVENTORY")) loaders.push(loadInventory());
   if (moduleEnabled("RESERVATIONS")) loaders.push(loadReservations());
   await Promise.all(loaders);
@@ -398,6 +404,20 @@ function renderCommercial() {
     <p>Payment providers: ${(data.payments?.providers || []).map((row) => esc(row.provider_code)).join(", ") || "None"}</p>
   `;
   commercialStatus.textContent = "Commercial tools loaded";
+}
+
+function renderInvoices() {
+  invoicesTable.innerHTML = (state.invoices || []).map((invoice) => `
+    <tr>
+      <td>${esc(invoice.invoice_no || `#${invoice.id}`)}</td>
+      <td>${esc(invoice.customer_name || "")}<br><small>${esc(invoice.customer_phone || "")}</small></td>
+      <td>${esc(invoice.table_no || "")}</td>
+      <td>${esc(invoice.order_type || "")}</td>
+      <td>${money(invoice.total_amount)}</td>
+      <td>${esc(invoice.settled_at || "")}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="6">No invoices found.</td></tr>`;
+  invoiceStatus.textContent = "Invoices loaded";
 }
 
 function findById(rows, id) {
@@ -744,6 +764,10 @@ refreshBtn.addEventListener("click", loadAll);
 itemSearch.addEventListener("input", renderAdmin);
 loadCommercialTools.addEventListener("click", () => loadCommercial().catch((err) => {
   commercialStatus.textContent = err.message;
+  alert(err.message);
+}));
+loadInvoices.addEventListener("click", () => loadInvoiceList().catch((err) => {
+  invoiceStatus.textContent = err.message;
   alert(err.message);
 }));
 runDisasterCheck.addEventListener("click", async () => {

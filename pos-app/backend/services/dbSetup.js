@@ -38,11 +38,11 @@ function setupDatabase(restaurantId) {
     'Administrator',
     'admin',
     '',
-    bcrypt.hashSync('1234', 10),
+    bcrypt.hashSync('123456', 10),
     'OWNER'
   );
 
-  console.log('👤 Default OWNER user created (admin / 1234)');
+  console.log('Default OWNER user created with a six digit temporary PIN');
   db.close();
 }
 

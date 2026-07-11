@@ -56,6 +56,15 @@ async function main() {
     const content = fs.readFileSync(file, 'utf8');
     assert(!content.includes('\u0000'), `Corrupted null bytes found in ${path.relative(root, file)}`);
   });
+  const adminHtml = fs.readFileSync(path.join(saasRoot, 'public', 'admin.html'), 'utf8');
+  const sessionJs = fs.readFileSync(path.join(saasRoot, 'public', 'js', 'saas-session.js'), 'utf8');
+  const downloadsHtml = fs.readFileSync(path.join(saasRoot, 'public', 'downloads.html'), 'utf8');
+  assert(!adminHtml.includes('Open Online Ordering'), 'Online ordering link must not appear in SaaS admin');
+  assert(!adminHtml.includes('restaurantMobilePosUrl'), 'Legacy mobile POS URL must not appear in customer onboarding');
+  assert(adminHtml.includes('restaurantOwnerPhone'), 'Customer mobile number field missing');
+  assert(!sessionJs.includes('data-session-forward'), 'Forward navigation must not appear in SaaS');
+  assert(downloadsHtml.includes('id="desktop-app"'), 'Desktop download portal anchor missing');
+  assert(downloadsHtml.includes('id="mobile-app"'), 'Mobile download portal anchor missing');
 
   const child = spawn(process.execPath, ['src/app.js'], {
     cwd: saasRoot,
@@ -68,7 +77,7 @@ async function main() {
 
   try {
     const health = await waitForServer(child);
-    const pages = ['/login.html', '/admin.html', '/owner-login.html', '/owner-dashboard.html', '/partner-login.html', '/partner-dashboard.html', '/owner-mobile.html'];
+    const pages = ['/website.html', '/mobile-download.html', '/login.html', '/admin.html', '/downloads.html', '/owner-login.html', '/owner-change-password.html', '/owner-dashboard.html', '/partner-login.html', '/partner-dashboard.html', '/owner-mobile.html'];
     const pageResults = {};
     for (const page of pages) {
       const res = await request(page);

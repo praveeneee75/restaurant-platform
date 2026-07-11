@@ -6,10 +6,10 @@ const restaurantId = localStorage.getItem("restaurantId")
 
 const user = JSON.parse(localStorage.getItem("user"))
 
-if(!newPin || newPin.length !== 4){
+if(!/^\d{6}$/.test(newPin)){
 
 document.getElementById("msg").innerText =
-"PIN must be 4 digits"
+"PIN must be 6 digits"
 
 return
 

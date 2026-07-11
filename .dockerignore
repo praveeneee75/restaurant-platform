@@ -1,0 +1,14 @@
+.git
+.github
+**/.env
+**/.env.*
+**/node_modules
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+mobile-app
+pos-app
+print-agent
+tests
+tmp-ui-shots
+saas-backend/downloads

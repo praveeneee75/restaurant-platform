@@ -10,7 +10,6 @@
   const cfg = configs[scope] || null;
   const protectedPage = Boolean(cfg);
   const stateKey = cfg ? `${cfg.tokenKey}:session` : "";
-  const navStateKey = "saasNavigationState";
 
   function token() {
     return cfg ? localStorage.getItem(cfg.tokenKey) : "";
@@ -98,18 +97,6 @@
     el.classList.toggle("session-warning", remaining <= warningMs);
   }
 
-  function navState() {
-    try {
-      return JSON.parse(sessionStorage.getItem(navStateKey) || "{}");
-    } catch (_) {
-      return {};
-    }
-  }
-
-  function saveNavState(next) {
-    sessionStorage.setItem(navStateKey, JSON.stringify({ ...navState(), ...next }));
-  }
-
   function isHomeLocation() {
     if (!cfg?.homeUrl) return false;
     const home = new URL(cfg.homeUrl, location.origin);
@@ -120,13 +107,10 @@
     const nav = document.querySelector(".session-nav");
     if (!nav) return;
     const canShowBack = protectedPage && !isHomeLocation();
-    const canShowForward = protectedPage && navState().canForward === true;
     const canShowHome = protectedPage && !isHomeLocation();
     const back = nav.querySelector("[data-session-back]");
-    const forward = nav.querySelector("[data-session-forward]");
     const home = nav.querySelector("[data-session-home]");
     if (back) back.hidden = !canShowBack;
-    if (forward) forward.hidden = !canShowForward;
     if (home) home.hidden = !canShowHome;
   }
 
@@ -136,7 +120,6 @@
     nav.className = "session-nav";
     nav.innerHTML = `
       <button type="button" data-session-back aria-label="Go back">Back</button>
-      <button type="button" data-session-forward aria-label="Go forward">Forward</button>
       <a href="${cfg?.homeUrl || "/login.html"}" data-session-home>Home</a>
       ${protectedPage ? `<button type="button" data-session-logout>Logout</button><span id="sessionStatus" class="session-status"></span>` : ""}
     `;
@@ -149,20 +132,9 @@
 
   document.addEventListener("click", (event) => {
     if (event.target.closest("[data-session-back]")) {
-      saveNavState({ canForward: true });
       if (history.length > 1) history.back();
       setTimeout(updateNavigationControls, 100);
       return;
-    }
-    if (event.target.closest("[data-session-forward]")) {
-      saveNavState({ canForward: false });
-      history.forward();
-      setTimeout(updateNavigationControls, 100);
-      return;
-    }
-    if (event.target.closest("a, button")) {
-      const target = event.target.closest("a, button");
-      if (!target?.matches("[data-session-back], [data-session-forward]")) saveNavState({ canForward: false });
     }
     if (event.target.closest("[data-session-logout]")) {
       logout();

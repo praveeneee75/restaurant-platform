@@ -34,11 +34,33 @@ app.use((req, res, next) => {
 });
 app.use(express.static(path.join(__dirname, '../public'), {
   maxAge: config.nodeEnv === 'production' ? '1h' : 0,
-  etag: true
+  etag: true,
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  }
 }));
+
+const nativeMobileOrigins = new Set([
+  'capacitor://localhost',
+  'ionic://localhost',
+  'https://localhost',
+  'http://localhost'
+]);
+const configuredCorsOrigins = config.corsOrigin === '*'
+  ? '*'
+  : new Set(config.corsOrigin.split(',').map((origin) => origin.trim()).filter(Boolean));
+
 app.use(cors({
-  origin: config.corsOrigin === '*' ? '*' : config.corsOrigin.split(',').map((origin) => origin.trim()),
-  credentials: config.corsOrigin !== '*'
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (configuredCorsOrigins === '*' || configuredCorsOrigins.has(origin) || nativeMobileOrigins.has(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  },
+  credentials: configuredCorsOrigins !== '*'
 }));
 app.use(express.json());
 
@@ -104,6 +126,7 @@ app.use('/messaging', require('./routes/messaging'));
 app.use('/mobile', require('./routes/mobile'));
 app.use('/tenants', require('./routes/tenantModules'));
 app.use('/organizations', require('./routes/organizations'));
+app.use('/inquiries', require('./routes/inquiries'));
 
 app.listen(config.port, () => {
   console.log(`K'Master POS backend running on port ${config.port}`);

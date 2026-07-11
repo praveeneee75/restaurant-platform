@@ -29,6 +29,81 @@ body {
   font-family: Inter, Segoe UI, Arial, sans-serif;
 }
 
+.login-box.activation-box {
+  width: min(92vw, 520px);
+  margin: clamp(32px, 10vh, 96px) auto;
+  padding: clamp(24px, 5vw, 40px);
+}
+
+.activation-box h1 {
+  margin: 8px 0 10px;
+  font-size: clamp(28px, 4vw, 38px);
+  letter-spacing: 0;
+}
+
+.activation-kicker {
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.app-version {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+  padding: 4px 8px;
+  border: 1px solid #dbe4f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.activation-kicker-danger {
+  color: var(--danger);
+}
+
+.activation-copy {
+  margin: 0 0 24px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.activation-box label {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 16px;
+  color: #334155;
+  font-weight: 700;
+}
+
+.activation-box button {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.activation-box button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.license-loader {
+  width: 36px;
+  height: 36px;
+  margin: 24px auto 0;
+  border: 4px solid #dbeafe;
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: license-spin 0.8s linear infinite;
+}
+
+@keyframes license-spin {
+  to { transform: rotate(360deg); }
+}
+
 .active-restaurant {
   display: inline-flex;
   align-items: center;
@@ -125,6 +200,53 @@ button:hover,
   font-size: 13px;
   font-weight: 700;
   text-align: left;
+}
+
+.activation-status-panel {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  text-align: left;
+}
+
+.activation-status-panel strong,
+.activation-status-panel span {
+  overflow-wrap: anywhere;
+}
+
+.activation-status-panel .secondary-btn {
+  justify-self: start;
+}
+
+.pos-help-panel {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #f8fbff;
+  color: #334155;
+  text-align: left;
+}
+
+.pos-help-panel h3 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.pos-help-panel ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.pos-help-panel li {
+  margin: 6px 0;
+  line-height: 1.35;
 }
 
 .login-box button {
@@ -513,6 +635,14 @@ button:hover,
 
 .customer-search-row {
   grid-template-columns: 1fr auto;
+}
+
+.order-switcher {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0 12px;
 }
 
 .cart-actions {

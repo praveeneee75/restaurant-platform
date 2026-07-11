@@ -28,7 +28,9 @@ async function ownerLogin() {
   localStorage.removeItem("partnerToken");
   localStorage.removeItem("partnerUser");
   localStorage.setItem("ownerToken:session", JSON.stringify({ loginAt: Date.now(), lastActiveAt: Date.now() }));
-  window.location.href = "/owner-dashboard.html";
+  window.location.href = data.owner.resetRequired
+    ? "/owner-change-password.html"
+    : "/owner-dashboard.html";
 }
 
 loadBranding();

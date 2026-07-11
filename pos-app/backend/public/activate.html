@@ -1,25 +1,36 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
-<title>Activate POS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Activate K'Master POS</title>
+  <link rel="stylesheet" href="/css/style.css">
 </head>
-
 <body>
-
-<h2>Activate Restaurant POS</h2>
-
-<input id="restaurantId" placeholder="Restaurant ID">
-<br><br>
-
-<input id="licenseKey" placeholder="License Key">
-<br><br>
-
-<button onclick="activate()">Activate</button>
-
-<p id="msg"></p>
-
-<script src="/js/activate.js"></script>
-
+  <main class="login-box activation-box">
+    <span class="activation-kicker">K'Master POS</span>
+    <span id="appVersion" class="app-version"></span>
+    <h1>Activate POS</h1>
+    <p class="activation-copy">Connect to the internet and enter the restaurant code and license key shown in the owner's portal.</p>
+    <label>
+      Restaurant code
+      <input id="restaurantId" autocomplete="organization" placeholder="Example: RESTOPALMSY">
+    </label>
+    <label>
+      License key
+      <input id="licenseKey" autocomplete="off" spellcheck="false" placeholder="Enter license key">
+    </label>
+    <button id="activateButton" type="button">Activate POS</button>
+    <section class="pos-help-panel">
+      <h3>Where do I find these details?</h3>
+      <ul>
+        <li>Open the owner portal on the website.</li>
+        <li>Go to the owner dashboard and check the Apps section or branch table.</li>
+        <li>Copy the restaurant code and license key exactly as shown.</li>
+      </ul>
+    </section>
+    <p id="msg" role="status"></p>
+  </main>
+  <script src="/js/version-badge.js"></script>
+  <script src="/js/activate.js"></script>
 </body>
 </html>

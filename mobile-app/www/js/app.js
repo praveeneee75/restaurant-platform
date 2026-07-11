@@ -12,13 +12,80 @@ function esc(value) {
   }[char]));
 }
 
-const MOBILE_DIRECTORY_URL = cleanBase(window.MOBILE_DIRECTORY_URL || localStorage.getItem("mobileDirectoryUrl") || "http://localhost:4000");
-const DEV_POS_URL = cleanBase(window.DEV_POS_URL || localStorage.getItem("devPosUrl") || "http://localhost:3000");
+const isLocalDevServer = ["localhost", "127.0.0.1"].includes(window.location.hostname)
+  && window.location.port === "4300";
+const DEFAULT_DIRECTORY_URL = isLocalDevServer
+  ? "http://localhost:4000"
+  : "https://api.kmasterpos.com";
+const MOBILE_DIRECTORY_URL = cleanBase(
+  window.MOBILE_DIRECTORY_URL
+  || localStorage.getItem("mobileDirectoryUrl")
+  || DEFAULT_DIRECTORY_URL
+);
+const DEV_POS_URL = cleanBase(window.DEV_POS_URL || localStorage.getItem("devPosUrl") || (isLocalDevServer ? "http://localhost:3000" : ""));
 const state = {
   restaurants: [],
   restaurant: null,
   user: JSON.parse(localStorage.getItem("user") || "null")
 };
+const native = window.KMasterNative || { isNative: false };
+const BIOMETRIC_KEY = "kmaster-biometric-login";
+let pendingCredentials = null;
+
+async function biometricAvailability() {
+  if (!native.isNative || !native.biometric || !native.secureStorage) {
+    return { isAvailable: false, reason: "Biometric login is available in the Android and iOS app." };
+  }
+  try {
+    return await native.biometric.checkBiometry();
+  } catch (_) {
+    return { isAvailable: false, reason: "Biometric login is unavailable on this device." };
+  }
+}
+
+async function biometricEnabled() {
+  if (!native.isNative || !native.secureStorage) return false;
+  return Boolean(await native.secureStorage.get(BIOMETRIC_KEY).catch(() => null));
+}
+
+async function refreshBiometricControls() {
+  const availability = await biometricAvailability();
+  const enabled = availability.isAvailable && await biometricEnabled();
+  biometricLoginButton.hidden = !enabled;
+  biometricToggle.checked = enabled;
+  biometricToggle.disabled = !availability.isAvailable;
+  biometricStatus.textContent = enabled
+    ? "Biometric login is enabled on this device."
+    : (availability.isAvailable ? "Biometric login is off." : availability.reason || "Biometric login is unavailable.");
+}
+
+async function saveBiometricCredentials(credentials) {
+  const availability = await biometricAvailability();
+  if (!availability.isAvailable) throw new Error(availability.reason || "Biometric login is unavailable.");
+  await native.biometric.authenticate({
+    reason: "Enable secure login for K'Master POS",
+    cancelTitle: "Cancel",
+    allowDeviceCredential: true,
+    iosFallbackTitle: "Use device passcode",
+    androidTitle: "Enable biometric login",
+    androidSubtitle: "Confirm your identity",
+    androidConfirmationRequired: false
+  });
+  await native.secureStorage.set(BIOMETRIC_KEY, credentials);
+  await refreshBiometricControls();
+}
+
+async function removeBiometricCredentials() {
+  if (native.secureStorage) await native.secureStorage.remove(BIOMETRIC_KEY).catch(() => {});
+  await refreshBiometricControls();
+}
+
+async function offerBiometric(credentials) {
+  pendingCredentials = credentials;
+  if (localStorage.getItem("biometricPromptHandled") || await biometricEnabled()) return;
+  const availability = await biometricAvailability();
+  if (availability.isAvailable) biometricPrompt.showModal();
+}
 
 function showLoginView(message) {
   loginView.hidden = false;
@@ -46,10 +113,12 @@ function rememberRestaurant(restaurant) {
 function savedRestaurant() {
   const restaurantId = localStorage.getItem("restaurantId");
   if (!restaurantId) return null;
+  const posUrl = localStorage.getItem("posUrl") || DEV_POS_URL;
+  if (!posUrl) return null;
   return {
     restaurantId,
     name: localStorage.getItem("restaurantName") || restaurantId,
-    posUrl: localStorage.getItem("posUrl") || DEV_POS_URL,
+    posUrl,
     currency: localStorage.getItem("currency") || "INR",
     savedOnly: true
   };
@@ -58,7 +127,7 @@ function savedRestaurant() {
 function setBrand(app) {
   if (!app) return;
   const selectedName = state.restaurant?.name || app.name || localStorage.getItem("restaurantName") || "Restaurant";
-  brandName.textContent = app.name || selectedName || "Restaurant Mobile";
+  brandName.textContent = app.name || selectedName || "K'Master POS";
   activeRestaurantName.textContent = selectedName ? `${selectedName} active` : "No restaurant selected";
   brandStatus.textContent = app.enabled ? "Premium mobile app enabled" : "Mobile app access disabled";
   document.documentElement.style.setProperty("--primary", app.primaryColor || "#2563eb");
@@ -76,18 +145,51 @@ function selectedRestaurant() {
 }
 
 function restaurantPosUrl(restaurant) {
-  return cleanBase(restaurant?.posUrl || DEV_POS_URL);
+  return cleanBase(restaurant?.posUrl || (isLocalDevServer ? DEV_POS_URL : ""));
+}
+
+async function refreshSelectedRestaurant() {
+  if (!state.restaurant?.restaurantId) return state.restaurant;
+  const data = await fetchRestaurantDirectory();
+  const match = (data.restaurants || []).map((restaurant) => ({
+    restaurantId: restaurant.restaurantId || restaurant.restaurant_id || restaurant.restaurant_code,
+    name: restaurant.name || restaurant.restaurantName || restaurant.restaurant_name || restaurant.displayName || restaurant.display_name || "Restaurant",
+    posUrl: restaurant.posUrl || restaurant.pos_url || "",
+    currency: restaurant.currency || "INR"
+  })).find((restaurant) => restaurant.restaurantId === state.restaurant.restaurantId);
+  if (match) {
+    state.restaurant = { ...state.restaurant, ...match };
+    const index = state.restaurants.findIndex((restaurant) => restaurant.restaurantId === match.restaurantId);
+    if (index >= 0) state.restaurants[index] = state.restaurant;
+    rememberRestaurant(state.restaurant);
+  }
+  return state.restaurant;
 }
 
 async function fetchJson(url, options) {
-  const res = await fetch(url, options);
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.success === false) throw new Error(data.message || "Request failed");
-  return data;
+  try {
+    const res = await fetch(url, options);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) throw new Error(data.message || "Request failed");
+    return data;
+  } catch (err) {
+    if (err.name === "TypeError" || /Failed to fetch|NetworkError|Load failed/i.test(err.message || "")) {
+      throw new Error(friendlyConnectionMessage(url));
+    }
+    throw err;
+  }
+}
+
+function friendlyConnectionMessage(url) {
+  const target = String(url || "");
+  if (/\/mobile-app\//.test(target) || /\/admin\.html|\/waiter\.html|\/pos-live\.html/.test(target) || /https?:\/\/(10\.|172\.(1[6-9]|2\d|3[0-1])\.|192\.168\.)/.test(target)) {
+    return "Cannot reach the restaurant POS. Connect this phone to the same Wi-Fi as the desktop POS, keep the desktop POS app open, then try again.";
+  }
+  return "Cannot reach K'Master cloud. Check internet connection and try again.";
 }
 
 async function fetchRestaurantDirectory() {
-  const bases = [MOBILE_DIRECTORY_URL, "http://localhost:4000"]
+  const bases = [MOBILE_DIRECTORY_URL, ...(isLocalDevServer ? ["http://localhost:4000"] : [])]
     .map(cleanBase)
     .filter((base, index, all) => base && all.indexOf(base) === index);
   let lastError = null;
@@ -117,12 +219,21 @@ async function useRestaurant(restaurant) {
   restaurantSelect.value = restaurant.restaurantId;
   rememberRestaurant(restaurant);
   activeRestaurantName.textContent = `${restaurant.name} active`;
-  await checkPremiumAccess(restaurant);
+  setBrand({
+    enabled: true,
+    name: restaurant.name,
+    currency: restaurant.currency
+  });
 }
 
 async function checkPremiumAccess(restaurant) {
   if (!restaurant?.restaurantId) throw new Error("Select a restaurant.");
-  const base = restaurantPosUrl(restaurant);
+  let base = restaurantPosUrl(restaurant);
+  if (!base) {
+    const refreshed = await refreshSelectedRestaurant();
+    base = restaurantPosUrl(refreshed);
+  }
+  if (!base) throw new Error("Restaurant POS is not online yet. Open the desktop POS app and try again.");
   const data = await fetchJson(`${base}/mobile-app/config?restaurantId=${encodeURIComponent(restaurant.restaurantId)}`);
   if (data.app?.restaurantId && data.app.restaurantId !== restaurant.restaurantId) {
     restaurant.restaurantId = data.app.restaurantId;
@@ -146,12 +257,10 @@ async function loadRestaurants() {
       currency: restaurant.currency || "INR"
     })).filter((restaurant) => restaurant.restaurantId);
     renderRestaurantOptions();
-    const previous = localStorage.getItem("restaurantId");
-    if (previous && state.restaurants.some((restaurant) => restaurant.restaurantId === previous)) {
-      await useRestaurant(state.restaurants.find((restaurant) => restaurant.restaurantId === previous));
-    } else if (state.restaurants.length === 1) {
-      await useRestaurant(state.restaurants[0]);
-    }
+    state.restaurant = null;
+    restaurantSelect.value = "";
+    activeRestaurantName.textContent = "No restaurant selected";
+    brandStatus.textContent = "Select your restaurant and sign in.";
     loginStatus.textContent = state.restaurants.length ? "Login with your POS username and PIN." : "No restaurant has active mobile access.";
   } catch (err) {
     const fallback = savedRestaurant();
@@ -162,12 +271,11 @@ async function loadRestaurants() {
     }
     state.restaurants = [fallback];
     renderRestaurantOptions();
-    try {
-      await useRestaurant(fallback);
-      loginStatus.textContent = "Login with your POS username and PIN.";
-    } catch (configErr) {
-      loginStatus.textContent = configErr.message || "Directory unavailable. Using saved restaurant.";
-    }
+    state.restaurant = null;
+    restaurantSelect.value = "";
+    activeRestaurantName.textContent = "No restaurant selected";
+    brandStatus.textContent = "Select your restaurant and sign in.";
+    loginStatus.textContent = "Directory unavailable. Select the saved restaurant to continue.";
   }
 }
 
@@ -193,6 +301,11 @@ async function login() {
     loginStatus.textContent = "Enter username and PIN.";
     return;
   }
+  const ownerStyleLogin = username.value.trim().includes("@");
+  if (!ownerStyleLogin && !/^\d{6}$/.test(pin.value.trim()) && pin.value.trim().length !== 4) {
+    loginStatus.textContent = "Enter your 6 digit PIN.";
+    return;
+  }
   try {
     await checkPremiumAccess(state.restaurant);
     const base = restaurantPosUrl(state.restaurant);
@@ -214,6 +327,13 @@ async function login() {
     activeRestaurantName.textContent = `${state.restaurant.name} active`;
     showRoleGrid(data.user.role);
     showDashboardView(`Signed in as ${data.user.role}.`);
+    await offerBiometric({
+      restaurantId: state.restaurant.restaurantId,
+      restaurantName: state.restaurant.name,
+      posUrl: base,
+      username: username.value.trim(),
+      pin: pin.value.trim()
+    });
   } catch (err) {
     loginStatus.textContent = err.message;
   }
@@ -221,18 +341,77 @@ async function login() {
 
 restaurantSelect.addEventListener("change", async () => {
   state.restaurant = selectedRestaurant();
-  if (!state.restaurant) return;
-  rememberRestaurant(state.restaurant);
-  activeRestaurantName.textContent = `${state.restaurant.name} active`;
-  try {
-    await checkPremiumAccess(state.restaurant);
-    loginStatus.textContent = "Login with your POS username and PIN.";
-  } catch (err) {
-    loginStatus.textContent = err.message;
+  if (!state.restaurant) {
+    activeRestaurantName.textContent = "No restaurant selected";
+    brandStatus.textContent = "Select your restaurant and sign in.";
+    return;
   }
+  await useRestaurant(state.restaurant);
+  loginStatus.textContent = "Login with your POS username and PIN.";
 });
 
 loginButton.addEventListener("click", login);
+biometricLoginButton.addEventListener("click", async () => {
+  try {
+    await native.biometric.authenticate({
+      reason: "Sign in to K'Master POS",
+      cancelTitle: "Cancel",
+      allowDeviceCredential: true,
+      iosFallbackTitle: "Use device passcode",
+      androidTitle: "K'Master POS login",
+      androidSubtitle: "Confirm your identity",
+      androidConfirmationRequired: false
+    });
+    const credentials = await native.secureStorage.get(BIOMETRIC_KEY);
+    if (!credentials) throw new Error("Saved login was not found. Sign in with your PIN.");
+    const match = state.restaurants.find((item) => item.restaurantId === credentials.restaurantId);
+    if (!match) throw new Error("This restaurant is no longer available.");
+    await useRestaurant(match);
+    username.value = credentials.username;
+    pin.value = credentials.pin;
+    await login();
+    pin.value = "";
+  } catch (err) {
+    loginStatus.textContent = err.message || "Biometric login was cancelled.";
+  }
+});
+enableBiometricButton.addEventListener("click", async (event) => {
+  event.preventDefault();
+  try {
+    await saveBiometricCredentials(pendingCredentials);
+    localStorage.setItem("biometricPromptHandled", "true");
+    biometricPrompt.close();
+  } catch (err) {
+    dashboardStatus.textContent = err.message || "Biometric login could not be enabled.";
+  }
+});
+skipBiometricButton.addEventListener("click", () => localStorage.setItem("biometricPromptHandled", "true"));
+settingsButton.addEventListener("click", async () => {
+  await refreshBiometricControls();
+  settingsDialog.showModal();
+});
+biometricToggle.addEventListener("change", async () => {
+  try {
+    if (biometricToggle.checked) {
+      if (!pendingCredentials) {
+        pendingCredentials = {
+          restaurantId: state.restaurant?.restaurantId,
+          restaurantName: state.restaurant?.name,
+          posUrl: restaurantPosUrl(state.restaurant),
+          username: state.user?.username || username.value.trim(),
+          pin: pin.value.trim()
+        };
+      }
+      if (!pendingCredentials.pin) throw new Error("Log out and sign in with your PIN once to enable biometric login.");
+      await saveBiometricCredentials(pendingCredentials);
+    } else {
+      await removeBiometricCredentials();
+    }
+  } catch (err) {
+    biometricToggle.checked = false;
+    biometricStatus.textContent = err.message || "Could not update biometric login.";
+  }
+});
 logoutButton.addEventListener("click", () => {
   state.user = null;
   localStorage.removeItem("user");
@@ -275,6 +454,7 @@ closeFrame.addEventListener("click", () => {
 
 showRoleGrid(state.user?.role || "");
 loadRestaurants();
+refreshBiometricControls();
 if (state.user) {
   showDashboardView(`Signed in as ${state.user.role}.`);
 } else {

@@ -167,9 +167,9 @@ function rowsToRelease(rows) {
   };
 }
 
-function installerFilesFromDisk() {
+function installerFilesFromDisk(activeVersion = null) {
   if (!fs.existsSync(installerDir)) return [];
-  return fs.readdirSync(installerDir, { withFileTypes: true })
+  const files = fs.readdirSync(installerDir, { withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => {
       const fullPath = path.join(installerDir, entry.name);
@@ -181,6 +181,9 @@ function installerFilesFromDisk() {
         updated_at: stats.mtime
       };
     });
+  if (!activeVersion) return files;
+  const activeFiles = files.filter((file) => file.file_name.includes(activeVersion));
+  return activeFiles.length > 0 ? activeFiles : files;
 }
 
 function installerFilesFromRelease(files) {
@@ -244,10 +247,12 @@ router.get('/installers', async (_req, res) => {
     const releaseFiles = releaseResult.rowCount === 0
       ? []
       : (await pool.query('SELECT * FROM release_files WHERE release_id = $1 ORDER BY created_at', [releaseResult.rows[0].id])).rows;
-    const installers = [
-      ...installerFilesFromDisk(),
-      ...installerFilesFromRelease(releaseFiles)
-    ];
+    const diskFiles = installerFilesFromDisk(releaseResult.rows[0]?.version || null);
+    const activeReleaseFiles = installerFilesFromRelease(releaseFiles).map((file) => {
+      const diskFile = diskFiles.find((entry) => entry.file_name === file.file_name);
+      return { ...file, size: diskFile?.size || file.size || null };
+    });
+    const installers = [...activeReleaseFiles, ...diskFiles];
     res.json({
       success: true,
       version: releaseResult.rows[0]?.version || null,
@@ -282,6 +287,10 @@ router.get('/download/installer/:fileName', async (req, res) => {
 
 router.get('/download/pos-app.zip', async (_req, res) => {
   try {
+    const staticSourcePackage = path.join(installerDir, 'kmaster-pos-app.zip');
+    if (fs.existsSync(staticSourcePackage)) {
+      return res.download(staticSourcePackage, 'kmaster-pos-app.zip');
+    }
     const files = listPosFiles();
     if (files.length === 0) return res.status(404).json({ success: false, message: 'POS app package is not available' });
     const zip = buildStoredZip(files);

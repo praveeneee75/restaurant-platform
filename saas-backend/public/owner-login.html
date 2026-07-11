@@ -22,12 +22,16 @@
         <label for="password">Password</label>
         <input id="password" type="password" autocomplete="current-password" placeholder="Password">
         <button class="primary-action" onclick="ownerLogin()">Login</button>
+        <div class="auth-links">
+          <a href="/owner-recovery.html#password">Forgot password?</a>
+          <a href="/owner-recovery.html#username">Forgot username?</a>
+        </div>
       </div>
       <p id="msg" class="form-message"></p>
     </section>
   </main>
   <script src="/js/saas-session.js"></script>
-  <script src="/js/owner-login.js"></script>
+  <script src="/js/owner-login.js?v=20260628-password-reset"></script>
 </body>
 </html>
 

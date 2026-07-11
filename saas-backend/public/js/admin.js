@@ -6,6 +6,14 @@ if (!token) {
   window.location.href = "/login.html";
 }
 
+function escapeAttr(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 function showSaasView(viewName = "overview", updateHistory = true) {
   const viewId = `view-${viewName}`;
   const target = document.getElementById(viewId) || document.getElementById("view-overview");
@@ -82,6 +90,9 @@ async function loadTenants() {
       row.innerHTML = `
         <td>${tenant.name}</td>
         <td>${tenant.restaurant_code}</td>
+        <td><input id="contact-name-${tenant.restaurant_code}" value="${escapeAttr(tenant.contact_name || "")}" placeholder="Contact name"></td>
+        <td><input id="contact-email-${tenant.restaurant_code}" type="email" value="${escapeAttr(tenant.contact_email || "")}" placeholder="notification@example.com"></td>
+        <td><input id="contact-phone-${tenant.restaurant_code}" value="${escapeAttr(tenant.contact_phone || "")}" placeholder="+919999999999"></td>
         <td>${tenant.license_key}</td>
         <td><input type="date" value="${tenant.expires_at ? tenant.expires_at.split("T")[0] : ""}" id="exp-${tenant.restaurant_code}"></td>
         <td>
@@ -90,6 +101,7 @@ async function loadTenants() {
             <option value="INACTIVE" ${tenant.status === "INACTIVE" ? "selected" : ""}>INACTIVE</option>
           </select>
         </td>
+        <td><input id="mobile-pos-${tenant.restaurant_code}" placeholder="http://POS-PC-IP:3000" value="${tenant.mobile_pos_url || ""}"></td>
         <td>${tenant.last_sync_at ? new Date(tenant.last_sync_at).toLocaleString() : "Not synced"}<br>${tenant.sync_status || ""}</td>
         <td>${money(tenant.today_revenue || 0)}</td>
         <td><button onclick="updateLicense('${tenant.restaurant_code}')">Save</button></td>
@@ -114,6 +126,59 @@ async function loadTenants() {
     if (messagingRestaurantSelect && messagingRestaurantSelect.value) loadMessagingAccount();
   } catch (err) {
     document.getElementById("createMsg").innerText = err.message;
+  }
+}
+
+function inquiryCell(text) {
+  const td = document.createElement("td");
+  td.textContent = text || "-";
+  return td;
+}
+
+async function loadInquiries() {
+  try {
+    const data = await api("/inquiries");
+    const tbody = document.querySelector("#inquiryTable tbody");
+    tbody.replaceChildren();
+    data.inquiries.forEach((inquiry) => {
+      const row = document.createElement("tr");
+      row.append(
+        inquiryCell(new Date(inquiry.created_at).toLocaleString()),
+        inquiryCell(`${inquiry.name}\n${inquiry.email}\n${inquiry.phone}`),
+        inquiryCell(`${inquiry.business_name || "Not provided"}\n${inquiry.outlet_count} outlet(s)`),
+        inquiryCell(inquiry.city),
+        inquiryCell(inquiry.message)
+      );
+      const statusCell = document.createElement("td");
+      const select = document.createElement("select");
+      ["NEW", "CONTACTED", "QUALIFIED", "CLOSED"].forEach((status) => {
+        const option = document.createElement("option");
+        option.value = status;
+        option.textContent = status.charAt(0) + status.slice(1).toLowerCase();
+        option.selected = status === inquiry.status;
+        select.appendChild(option);
+      });
+      select.addEventListener("change", () => updateInquiryStatus(inquiry.id, select.value));
+      statusCell.appendChild(select);
+      row.appendChild(statusCell);
+      tbody.appendChild(row);
+    });
+    inquiryAdminStatus.textContent = data.inquiries.length ? `${data.inquiries.length} enquiries loaded.` : "No enquiries yet.";
+  } catch (err) {
+    inquiryAdminStatus.textContent = err.message;
+  }
+}
+
+async function updateInquiryStatus(id, status) {
+  try {
+    await api(`/inquiries/${encodeURIComponent(id)}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status })
+    });
+    inquiryAdminStatus.textContent = "Enquiry status updated.";
+  } catch (err) {
+    inquiryAdminStatus.textContent = err.message;
+    loadInquiries();
   }
 }
 
@@ -957,7 +1022,24 @@ async function updateLicense(code) {
         status: document.getElementById(`status-${code}`).value
       })
     });
+    await api("/tenants/update-mobile-url", {
+      method: "POST",
+      body: JSON.stringify({
+        restaurantCode: code,
+        mobilePosUrl: document.getElementById(`mobile-pos-${code}`).value.trim()
+      })
+    });
+    await api("/tenants/update-customer-details", {
+      method: "POST",
+      body: JSON.stringify({
+        restaurantCode: code,
+        contactName: document.getElementById(`contact-name-${code}`).value.trim(),
+        notificationEmail: document.getElementById(`contact-email-${code}`).value.trim(),
+        contactPhone: document.getElementById(`contact-phone-${code}`).value.trim()
+      })
+    });
     alert(data.message);
+    loadTenants();
   } catch (err) {
     alert(err.message);
   }
@@ -976,6 +1058,7 @@ function updateCreateReview() {
   const plan = createPlan?.selectedOptions?.[0];
   createReview.innerHTML = `
     <strong>${restaurantName.value.trim() || "New restaurant"}</strong>
+    <span>Contact: ${restaurantContact.value.trim() || "Not entered"} / ${restaurantOwnerEmail.value.trim() || "No email"} / ${restaurantOwnerPhone.value.trim() || "No mobile"}</span>
     <span>${restaurantCountry.value.trim() || "India"} / ${restaurantCurrency.value || "INR"}</span>
     <span>Package: ${createPlan.value || "Select package"}${plan?.dataset.modules ? ` with ${plan.dataset.modules}` : ""}</span>
     <span>Expiry: ${expiryDate.value || "Calculated from package duration"}</span>
@@ -984,18 +1067,20 @@ function updateCreateReview() {
 
 async function createRestaurant() {
   try {
-    if (!restaurantName.value.trim()) {
+    if (!restaurantName.value.trim() || !restaurantContact.value.trim() || !restaurantOwnerEmail.value.trim() || !restaurantOwnerPhone.value.trim()) {
       showCreateStep(1);
-      createMsg.innerText = "Restaurant name is required.";
+      createMsg.innerText = "Restaurant name, contact name, email and mobile number are required.";
       return;
     }
     const data = await api("/tenants/create", {
       method: "POST",
       body: JSON.stringify({
         name: restaurantName.value.trim(),
+        ownerName: restaurantContact.value.trim(),
+        ownerEmail: restaurantOwnerEmail.value.trim(),
+        ownerPhone: restaurantOwnerPhone.value.trim(),
         country: restaurantCountry.value.trim(),
         currency: restaurantCurrency.value,
-        mobilePosUrl: restaurantMobilePosUrl.value.trim(),
         expiryDate: expiryDate.value,
         planCode: createPlan.value,
         startsAt: createStartDate.value,
@@ -1004,13 +1089,23 @@ async function createRestaurant() {
         referenceNo: createPaymentRef.value.trim()
       })
     });
+    const emailStatus = data.notification?.sent
+      ? `Welcome email sent to ${data.owner.email}.`
+      : `${data.notification?.reason || "Welcome email was not sent."}`;
+    const passwordStatus = data.temporaryPassword
+      ? `\nTemporary password: ${data.temporaryPassword}\nThe owner must change it after first login.`
+      : "\nThe restaurant was added to the existing owner account.";
     document.getElementById("createMsg").innerText = `Customer Created
 
 Restaurant ID: ${data.restaurantCode}
-License Key: ${data.licenseKey}`;
+License Key: ${data.licenseKey}
+Owner login: ${data.owner.email}${passwordStatus}
+
+${emailStatus}`;
     restaurantName.value = "";
     restaurantContact.value = "";
-    restaurantMobilePosUrl.value = "";
+    restaurantOwnerEmail.value = "";
+    restaurantOwnerPhone.value = "";
     createPaymentAmount.value = "";
     createPaymentRef.value = "";
     showCreateStep(1);
@@ -1119,4 +1214,5 @@ loadPlanBuilder();
 loadMessagingProviders();
 loadMessagingAccount();
 loadOrganizations();
+loadInquiries();
 showSaasView((location.hash || "#overview").slice(1), false);
