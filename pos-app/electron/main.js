@@ -42,8 +42,25 @@ function findAvailablePort() {
   });
 }
 
+function validateDesktopRuntime() {
+  const appPath = app.getAppPath();
+  if (app.isPackaged && /tmp-pos-install|win-unpacked/i.test(appPath)) {
+    throw new Error('This POS is running from a temporary test folder. Install the official K\'Master POS setup package before using it.');
+  }
+  try {
+    require('better-sqlite3');
+  } catch (error) {
+    const details = String(error?.message || error);
+    if (/NODE_MODULE_VERSION|better_sqlite3|bindings/i.test(details)) {
+      throw new Error('This POS installation is incomplete or incompatible. Close this app and reinstall the latest official K\'Master POS installer. Your restaurant data is stored separately and will be preserved.');
+    }
+    throw error;
+  }
+}
+
 async function startDesktopBackend() {
   if (backendStarted) return;
+  validateDesktopRuntime();
   process.env.PORT = String(await findAvailablePort());
   require(path.join(__dirname, '..', 'backend', 'server'));
   backendStarted = true;
@@ -239,7 +256,8 @@ app.whenReady().then(async () => {
   } catch (error) {
     const win = new BrowserWindow({ width: 760, height: 420, autoHideMenuBar: true, icon: desktopIconPath });
     mainWindow = win;
-    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`<h2>K'Master POS could not start</h2><p>${error.message}</p>`)}`);
+    const message = String(error?.message || error).replace(/[&<>"']/g, (value) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[value]));
+    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`<main style="font:16px Segoe UI;padding:32px;max-width:680px"><h2>K'Master POS needs repair</h2><p>${message}</p><p>Close this window and install the latest official POS installer from the owner portal. Do not launch a copy from a temporary or extracted folder.</p></main>`)}`);
   }
 });
 
