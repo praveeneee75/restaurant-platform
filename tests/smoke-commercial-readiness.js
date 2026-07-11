@@ -43,10 +43,19 @@ function walkFiles(relativePath, predicate) {
   'saas-backend/src/routes/monitoring.js',
   'saas-backend/src/app.js',
   'saas-backend/public/js/admin.js',
-  'saas-backend/public/js/owner-mobile.js'
+  'saas-backend/public/js/owner-mobile.js',
+  'mobile-app/www/js/app.js'
 ].forEach(checkJs);
 
+const mobileApp = read('mobile-app/www/js/app.js');
+assert(mobileApp.includes('`${MOBILE_DIRECTORY_URL}/license/owner-pos-login`'), 'Mobile owner email login must use the cloud endpoint');
+assert(mobileApp.includes('`${base}/mobile-app/login`'), 'Mobile staff PIN login must use the restaurant POS endpoint');
+assert(mobileApp.includes('if (ownerStyleLogin)'), 'Mobile login must distinguish owner email from staff username');
+
 const posServer = read('pos-app/backend/server.js');
+const electronMain = read('pos-app/electron/main.js');
+assert(electronMain.includes("process.env.KMASTER_SAAS_URL || 'https://api.kmasterpos.com'"), 'Desktop production must use the K\'Master cloud API');
+assert(posServer.includes("`${saasUrl}/license/owner-pos-login`"), 'Desktop owner email login must use the cloud endpoint');
 [
   "app.get('/analytics/dashboard'",
   "app.get('/reports/advanced'",

@@ -318,17 +318,31 @@ async function login() {
   loginButton.textContent = "Signing in...";
   loginStatus.textContent = "Connecting to the restaurant POS...";
   try {
-    await checkPremiumAccess(state.restaurant);
     const base = restaurantPosUrl(state.restaurant);
-    const data = await fetchJson(`${base}/mobile-app/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        restaurantId: state.restaurant.restaurantId,
-        username: username.value.trim(),
-        pin: pin.value.trim()
-      })
-    });
+    let data;
+    if (ownerStyleLogin) {
+      loginStatus.textContent = "Signing in securely through K'Master cloud...";
+      data = await fetchJson(`${MOBILE_DIRECTORY_URL}/license/owner-pos-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          restaurantId: state.restaurant.restaurantId,
+          email: username.value.trim(),
+          password: pin.value
+        })
+      });
+    } else {
+      await checkPremiumAccess(state.restaurant);
+      data = await fetchJson(`${base}/mobile-app/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          restaurantId: state.restaurant.restaurantId,
+          username: username.value.trim(),
+          pin: pin.value.trim()
+        })
+      });
+    }
     state.user = data.user;
     if (data.restaurant?.name) state.restaurant.name = data.restaurant.name;
     localStorage.setItem("restaurantId", state.restaurant.restaurantId);
