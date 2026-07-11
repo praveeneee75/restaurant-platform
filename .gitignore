@@ -25,3 +25,6 @@ deploy/installers/
 mobile-app/android-signing.properties
 *.keystore
 *.jks
+dist/
+saas-backend/downloads/
+production-mobile-fix-*.zip
