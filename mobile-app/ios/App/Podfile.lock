@@ -1,0 +1,41 @@
+PODS:
+  - AparajitaCapacitorBiometricAuth (9.1.2):
+    - Capacitor
+  - AparajitaCapacitorSecureStorage (7.1.6):
+    - Capacitor
+    - KeychainSwift (~> 21.0)
+  - Capacitor (7.6.7):
+    - CapacitorCordova
+  - CapacitorCordova (7.6.7)
+  - KeychainSwift (21.0.0)
+
+DEPENDENCIES:
+  - "AparajitaCapacitorBiometricAuth (from `../../node_modules/@aparajita/capacitor-biometric-auth`)"
+  - "AparajitaCapacitorSecureStorage (from `../../node_modules/@aparajita/capacitor-secure-storage`)"
+  - "Capacitor (from `../../node_modules/@capacitor/ios`)"
+  - "CapacitorCordova (from `../../node_modules/@capacitor/ios`)"
+
+SPEC REPOS:
+  trunk:
+    - KeychainSwift
+
+EXTERNAL SOURCES:
+  AparajitaCapacitorBiometricAuth:
+    :path: "../../node_modules/@aparajita/capacitor-biometric-auth"
+  AparajitaCapacitorSecureStorage:
+    :path: "../../node_modules/@aparajita/capacitor-secure-storage"
+  Capacitor:
+    :path: "../../node_modules/@capacitor/ios"
+  CapacitorCordova:
+    :path: "../../node_modules/@capacitor/ios"
+
+SPEC CHECKSUMS:
+  AparajitaCapacitorBiometricAuth: c7edb43d80486150b81224d3ff7e950b37a3c2f1
+  AparajitaCapacitorSecureStorage: 502bff73187cf9d0164459458ccf47ec65d5895a
+  Capacitor: 8ef25ba872436d2c5ac2a4791f7255529bdcd93b
+  CapacitorCordova: 139e2ed3d91c54b5aeae7941135c9f9aefc6da1d
+  KeychainSwift: 4a71a45c802fd9e73906457c2dcbdbdc06c9419d
+
+PODFILE CHECKSUM: bc75cf6a0571159030fa251bbf69222c31e2b163
+
+COCOAPODS: 1.17.0

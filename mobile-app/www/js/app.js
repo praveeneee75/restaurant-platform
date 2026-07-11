@@ -30,6 +30,7 @@ const state = {
 };
 const native = window.KMasterNative || { isNative: false };
 const BIOMETRIC_KEY = "kmaster-biometric-login";
+const REQUEST_TIMEOUT_MS = 12000;
 let pendingCredentials = null;
 
 async function biometricAvailability() {
@@ -167,16 +168,23 @@ async function refreshSelectedRestaurant() {
 }
 
 async function fetchJson(url, options) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const res = await fetch(url, options);
+    const res = await fetch(url, { ...(options || {}), signal: controller.signal });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.success === false) throw new Error(data.message || "Request failed");
     return data;
   } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error(`Connection timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds. Check that the restaurant POS is online and reachable.`);
+    }
     if (err.name === "TypeError" || /Failed to fetch|NetworkError|Load failed/i.test(err.message || "")) {
       throw new Error(friendlyConnectionMessage(url));
     }
     throw err;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -306,6 +314,9 @@ async function login() {
     loginStatus.textContent = "Enter your 6 digit PIN.";
     return;
   }
+  loginButton.disabled = true;
+  loginButton.textContent = "Signing in...";
+  loginStatus.textContent = "Connecting to the restaurant POS...";
   try {
     await checkPremiumAccess(state.restaurant);
     const base = restaurantPosUrl(state.restaurant);
@@ -335,7 +346,10 @@ async function login() {
       pin: pin.value.trim()
     });
   } catch (err) {
-    loginStatus.textContent = err.message;
+    loginStatus.textContent = err.message || "Login failed. Please try again.";
+  } finally {
+    loginButton.disabled = false;
+    loginButton.textContent = "Login";
   }
 }
 
