@@ -20,6 +20,7 @@
     "build:pos:mac:publish": "npm run build:pos:mac && npm run publish:pos:installers",
     "build:pos:linux:publish": "npm run build:pos:linux && npm run publish:pos:installers",
     "publish:pos:installers": "node scripts/publish-pos-installers.js",
+    "check:production-env": "node scripts/validate-deployment-env.js production",
     "setup:palmsy": "npm --prefix saas-backend run migrate && node scripts/setup-palmsy.js",
     "test": "node tests/smoke-commercial-readiness.js",
     "test:pos": "node tests/pos-smoke.js",

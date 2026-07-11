@@ -26,6 +26,15 @@ function requireProductionConfig() {
   if (missing.length > 0) {
     throw new Error(`Missing required production environment variables: ${missing.join(', ')}`);
   }
+  if (config.jwtSecret.length < 32 || /change_me|replace_with|example\.com/i.test(config.jwtSecret)) {
+    throw new Error('JWT_SECRET must be a real production secret of at least 32 characters');
+  }
+  if (/change_me|replace_with|example\.com/i.test(config.db.password)) {
+    throw new Error('DB_PASSWORD still contains a template value');
+  }
+  if (/localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(`${config.db.host}\n${config.corsOrigin}`)) {
+    throw new Error('Production configuration contains a localhost or loopback value');
+  }
 }
 
 function publicError(err) {
