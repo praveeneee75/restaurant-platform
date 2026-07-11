@@ -11,6 +11,7 @@ print-agent/logs/
 mobile-app/android/
 mobile-app/ios/
 tmp-ui-shots/
+tmp-pos-install*/
 pos-app/dist-installers/
 saas-backend/downloads/pos-installers/
 kmaster
