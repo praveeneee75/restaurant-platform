@@ -10,8 +10,10 @@ pos-app/data/
 pos-app/backups/
 print-agent/logs/
 .npm-cache/
-mobile-app/android/
-mobile-app/ios/
+mobile-app/android/.gradle/
+mobile-app/android/app/build/
+mobile-app/ios/Pods/
+mobile-app/ios/build/
 tmp-ui-shots/
 tmp-pos-install*/
 pos-app/dist-installers/

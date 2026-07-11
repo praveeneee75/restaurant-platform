@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">K\'Master POS</string>
+    <string name="title_activity_main">K\'Master POS</string>
+    <string name="package_name">com.kmaster.mobile</string>
+    <string name="custom_url_scheme">com.kmaster.mobile</string>
+</resources>
