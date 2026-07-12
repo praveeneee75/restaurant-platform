@@ -516,7 +516,32 @@ button:hover,
   background: white;
   color: #172033;
   text-align: left;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.item-tile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  min-height: 112px;
+  overflow: hidden;
+}
+
+.item-tile > strong {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.item-tile > span:not(.tile-quantity-controls) {
+  grid-column: 2;
+  grid-row: 1;
+  margin-top: 0;
+  white-space: nowrap;
 }
 
 .table-tile.active,
@@ -549,10 +574,13 @@ button:hover,
 }
 
 .tile-quantity-controls {
+  grid-column: 2;
+  grid-row: 2;
   display: inline-flex !important;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
+  margin: 0;
+  white-space: nowrap;
 }
 
 .tile-quantity-controls span[role="button"] {

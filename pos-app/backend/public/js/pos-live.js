@@ -16,6 +16,7 @@ const state = {
   settings: { currency: "INR", defaultOrderType: "DINE_IN" },
   cart: [],
   selectedTable: null,
+  activeTableId: null,
   selectedCategoryId: null,
   selectedCartKey: null,
   orderId: null,
@@ -216,7 +217,7 @@ function renderCategories() {
 
 function renderItems(categoryId) {
   const itemTiles = state.items.filter((item) => item.category_id === categoryId).map((item) => {
-    const quantity = cartQuantityForItem(item.id);
+    const quantity = state.activeTableId ? cartQuantityForItem(item.id) : 0;
     return `
       <button class="item-tile ${quantity > 0 ? "selected" : ""}" data-item="${item.id}">
         <strong>${esc(item.name)}</strong>
@@ -226,7 +227,7 @@ function renderItems(categoryId) {
     `;
   }).join("");
   const comboTiles = state.combos.map((combo) => {
-    const quantity = cartQuantityForCombo(combo.id);
+    const quantity = state.activeTableId ? cartQuantityForCombo(combo.id) : 0;
     return `
       <button class="item-tile combo-tile ${quantity > 0 ? "selected" : ""}" data-combo="${combo.id}">
         <strong>${esc(combo.name)}</strong>
@@ -295,6 +296,7 @@ function updateOrderTypeView() {
 
 async function selectTable(tableId, options = {}) {
   const requestId = ++tableSelectionRequest;
+  state.activeTableId = Number(tableId);
   if (!isDineIn()) orderType.value = "DINE_IN";
   state.customer = null;
   customerPhone.value = "";
@@ -305,6 +307,7 @@ async function selectTable(tableId, options = {}) {
   state.orderId = null;
   state.dirty = false;
   state.kotSubmitted = false;
+  refreshCartAndMenu();
   renderTables();
   await loadOpenOrdersForTable(tableId);
   const data = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${tableId}`).then((res) => res.json());
@@ -319,6 +322,7 @@ async function selectTable(tableId, options = {}) {
     state.cart = (data.items || []).map(cartItemFromOrderItem);
     state.selectedCartKey = state.cart[0]?.key || null;
   }
+  if (requestId !== tableSelectionRequest || state.activeTableId !== Number(tableId)) return;
   updateOrderTypeView();
   renderOrderSelector();
   renderCart();

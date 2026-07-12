@@ -24,6 +24,7 @@
     "setup:palmsy": "npm --prefix saas-backend run migrate && node scripts/setup-palmsy.js",
     "test": "node tests/smoke-commercial-readiness.js",
     "test:pos": "node tests/pos-smoke.js",
+    "test:pos:regression": "node tests/pos-regression.js",
     "test:saas": "node tests/saas-smoke.js"
   }
 }
