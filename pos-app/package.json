@@ -1,12 +1,13 @@
 {
   "name": "pos-app",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "description": "Restaurant POS local backend",
   "main": "electron/main.js",
   "scripts": {
     "start": "node backend/server.js",
     "dev": "node backend/server.js",
     "desktop": "electron electron/main.js",
+    "pre-dist:win": "electron-rebuild --force --which-module better-sqlite3 --version 42.5.0 && electron-rebuild --force --which-module bcrypt --version 42.5.0",
     "dist:win": "electron-builder --win nsis",
     "dist:mac": "electron-builder --mac dmg",
     "dist:linux": "electron-builder --linux AppImage deb",
@@ -56,6 +57,7 @@
     "win": {
       "icon": "build/icon.ico",
       "target": "nsis",
+      "signAndEditExecutable": false,
       "artifactName": "KMaster-POS-Setup-${version}.${ext}"
     },
     "mac": {
