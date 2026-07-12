@@ -23,8 +23,10 @@ assert.match(server, /suborderNo/);
 assert.match(server, /customerName, customerPhone/);
 assert.match(live, /item\.sentToKitchen = true/);
 assert.match(live, /kotStatus\.textContent/);
+assert.match(live, /const settledTableId = state\.selectedTable\?\.id/);
+assert.match(live, /selectTable\(settledTableId/);
 
 console.log(JSON.stringify({
   passed: true,
-  cases: ['POS-003', 'POS-004', 'POS-005', 'POS-006', 'POS-009', 'POS-010', 'POS-011', 'POS-013', 'POS-014', 'POS-015']
+  cases: ['POS-003', 'POS-004', 'POS-005', 'POS-006', 'POS-009', 'POS-010', 'POS-011', 'POS-013', 'POS-014', 'POS-015', 'POS-016']
 }, null, 2));

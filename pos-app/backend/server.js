@@ -1005,6 +1005,16 @@ function currentLockForTable(db, tableId) {
   `).get(tableId);
 }
 
+function syncTableStatus(db, tableId) {
+  if (!isPositiveId(tableId)) return;
+  const openOrder = db.prepare(`
+    SELECT id FROM orders
+    WHERE table_id = ? AND status = 'OPEN' AND payment_status != 'PAID'
+    LIMIT 1
+  `).get(tableId);
+  db.prepare('UPDATE tables SET status = ? WHERE id = ?').run(openOrder ? 'OCCUPIED' : 'AVAILABLE', tableId);
+}
+
 function touchDeviceSession(db, actor, req, deviceName) {
   if (!isPositiveId(actor?.id)) return null;
   const ip = requestIp(req);
@@ -5343,7 +5353,7 @@ app.post('/orders/save', (req, res) => {
           hasText(expectedDeliveryTime) ? normaliseText(expectedDeliveryTime) : null
         );
       }
-      if (safeTableId) db.prepare("UPDATE tables SET status = 'OCCUPIED' WHERE id = ?").run(safeTableId);
+      if (safeTableId) syncTableStatus(db, safeTableId);
       const newValue = db.prepare('SELECT * FROM orders WHERE id = ?').get(id);
       if (lockId) db.prepare('UPDATE order_locks SET order_id = ? WHERE id = ? AND locked_by_user_id = ?').run(id, lockId, actor?.id || null);
       writeAudit(db, actor, orderId ? 'UPDATE' : 'CREATE', 'ORDER', id, oldValue, newValue);
@@ -5935,7 +5945,7 @@ app.post('/orders/settle', (req, res) => {
         }
       }
       deductInventoryForOrder(db, actor, orderId, 'BILL_SETTLE');
-      if (order.table_id) db.prepare("UPDATE tables SET status = 'AVAILABLE' WHERE id = ?").run(order.table_id);
+      if (order.table_id) syncTableStatus(db, order.table_id);
       if (DELIVERY_ORDER_TYPES.includes(order.order_type)) {
         writeOrderStatusHistory(db, actor, orderId, 'PAID', 'ORDER', 'Bill settled');
       }

@@ -194,6 +194,13 @@ function renderTables() {
   `).join("");
 }
 
+function setSelectedTableStatus(status) {
+  if (!state.selectedTable?.id) return;
+  state.tables = state.tables.map((table) => table.id === state.selectedTable.id ? { ...table, status } : table);
+  state.selectedTable = state.tables.find((table) => table.id === state.selectedTable.id) || state.selectedTable;
+  renderTables();
+}
+
 function renderOrderSelector() {
   const current = state.openOrders.find((order) => Number(order.id) === Number(state.orderId)) || state.openOrders[0] || null;
   if (!current && state.orderId) {
@@ -491,6 +498,7 @@ async function saveCurrentOrder(force = false) {
   });
   state.orderId = data.orderId;
   state.dirty = false;
+  setSelectedTableStatus("OCCUPIED");
   orderMeta.textContent = `Open order #${state.orderId}`;
   await refreshLiveState();
   return true;
@@ -513,6 +521,7 @@ async function submitCurrentKot() {
 }
 
 async function settleCurrentOrder() {
+  const settledTableId = state.selectedTable?.id || null;
   const wasSubmittedAndEdited = state.kotSubmitted && state.dirty;
   const saved = await saveCurrentOrder();
   if (!saved) return;
@@ -532,14 +541,19 @@ async function settleCurrentOrder() {
   state.customer = null;
   state.dirty = false;
   state.kotSubmitted = false;
+  setSelectedTableStatus("AVAILABLE");
   customerPhone.value = "";
   customerName.value = "";
   deliveryAddress.value = "";
   deliveryPhone.value = "";
   deliveryFee.value = "";
   redeemPoints.value = 0;
-  await refreshLiveState({ updateCart: true });
-  refreshCartAndMenu();
+  if (settledTableId) {
+    await selectTable(settledTableId, { skipMovePrompt: true });
+  } else {
+    await refreshLiveState({ updateCart: true });
+    refreshCartAndMenu();
+  }
 }
 
 async function searchCustomerByPhone() {

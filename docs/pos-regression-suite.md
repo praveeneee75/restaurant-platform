@@ -21,5 +21,6 @@ The release gate for desktop, Android, and iOS POS screens. Android and iOS load
 | POS-013 | Submit KOT | Existing lines remain visible and are marked sent; only settlement clears the bill | Items disappeared after KOT | UI/KOT API check |
 | POS-014 | Submit KOT twice after adding items | KOT references are `order-suborder` and increment one per update | KOT sequence/reference was missing | KOT API check |
 | POS-015 | Split a table between customers | Each split check can capture its own customer and settle separately | Split check copied one customer only | Split-check API/UI check |
+| POS-016 | Settle one of several open checks on one table | The next open check and its selected items load immediately; table stays occupied until all checks are settled | Items disappeared until another table was clicked | Settlement/retrieval check |
 
 A release is blocked if any case fails. The installer must be built only after the source checks and `npm run test:pos` pass; production promotion happens only after the remote checksum matches the local artifact.
