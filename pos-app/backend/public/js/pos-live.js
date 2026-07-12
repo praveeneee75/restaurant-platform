@@ -443,6 +443,8 @@ async function moveOrderToTable(targetTableId) {
 function openSplitBillModal() {
   if (!state.orderId) return alert("Save the table order first");
   if (state.cart.length === 0) return alert("There are no items to split");
+  splitCustomerName.value = "";
+  splitCustomerPhone.value = "";
   splitBillItems.innerHTML = state.cart.map((item) => `
     <label class="check-row">
       <input type="checkbox" value="${item.key}" checked>
@@ -500,9 +502,14 @@ async function submitCurrentKot() {
   const data = await postJson("/orders/submit-kot", { orderId: state.orderId });
   if (data.success) {
     state.kotSubmitted = true;
-    await refreshLiveState();
+    state.dirty = false;
+    state.cart.forEach((item) => { item.sentToKitchen = true; });
+    kotStatus.textContent = data.message || "KOT submitted";
+    kotStatus.className = "success-message";
+    submitKot.title = data.kotReference ? `Last KOT: ${data.kotReference}` : "KOT submitted";
+    refreshCartAndMenu();
   }
-  alert("KOT sent");
+  alert(data.message || "KOT submitted");
 }
 
 async function settleCurrentOrder() {
@@ -717,7 +724,9 @@ createSplitCheckBtn.addEventListener("click", async () => {
   const data = await postJson("/orders/split-check", {
     orderId: state.orderId,
     itemKeys: selectedKeys,
-    checkName: prompt("Split check name") || ""
+    checkName: prompt("Split check name") || "",
+    customerName: splitCustomerName.value.trim(),
+    customerPhone: splitCustomerPhone.value.trim()
   });
   splitBillModal.hidden = true;
   await loadOpenOrdersForTable(state.selectedTable.id, data.orderId);

@@ -124,6 +124,7 @@ async function printKOT(payload) {
 
   printer.alignLeft();
   printer.println("Order: " + payload.orderId);
+  printer.println("KOT: " + (payload.kotReference || `${payload.orderId}-${payload.suborderNo || 1}`));
   printer.println("Table: " + (payload.tableNumber || "PARCEL"));
   printer.drawLine();
 

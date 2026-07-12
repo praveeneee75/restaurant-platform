@@ -655,6 +655,17 @@ button:hover,
   background: #eef5ff;
 }
 
+.status-message {
+  min-height: 20px;
+  margin: 8px 0 0;
+  color: #52657d;
+  font-weight: 600;
+}
+
+.success-message {
+  color: #147a4b;
+}
+
 .cart-line span {
   display: block;
   color: #657286;

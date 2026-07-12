@@ -7,6 +7,7 @@ const live = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/pos-live
 const liveHtml = fs.readFileSync(path.join(root, 'pos-app/backend/public/pos-live.html'), 'utf8');
 const waiter = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/waiter.js'), 'utf8');
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'pos-app/package.json'), 'utf8'));
+const server = fs.readFileSync(path.join(root, 'pos-app/backend/server.js'), 'utf8');
 
 assert.match(live, /activeTableId/);
 assert.match(live, /tableSelectionRequest/);
@@ -17,8 +18,13 @@ assert.doesNotMatch(liveHtml, /id="editItemBtn"/);
 assert.doesNotMatch(live, /moveOrderToTable\(target\.id\)/);
 assert.match(waiter, /data-cart-line/);
 assert.match(packageJson.scripts['post-dist:win'], /npm rebuild better-sqlite3 bcrypt/);
+assert.match(server, /kotReference/);
+assert.match(server, /suborderNo/);
+assert.match(server, /customerName, customerPhone/);
+assert.match(live, /item\.sentToKitchen = true/);
+assert.match(live, /kotStatus\.textContent/);
 
 console.log(JSON.stringify({
   passed: true,
-  cases: ['POS-003', 'POS-004', 'POS-005', 'POS-006', 'POS-009', 'POS-010', 'POS-011']
+  cases: ['POS-003', 'POS-004', 'POS-005', 'POS-006', 'POS-009', 'POS-010', 'POS-011', 'POS-013', 'POS-014', 'POS-015']
 }, null, 2));

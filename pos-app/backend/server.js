@@ -4779,6 +4779,7 @@ function createKotJobs(db, orderId) {
     map[row.kitchen_id].items.push({ ...row, modifiers: modifiersByOrderItem[row.order_item_id] || [] });
     return map;
   }, {});
+  if (Object.keys(grouped).length === 0) throw new Error('There are no new items to submit as KOT');
 
   // One KOT submission may create tickets for several kitchens; they share one suborder number.
   const suborderNo = Number(db.prepare('SELECT COUNT(*) AS total FROM kots WHERE order_id = ?').get(orderId)?.total || 0) + 1;
@@ -4791,6 +4792,7 @@ function createKotJobs(db, orderId) {
     `).run(orderId, group.kitchenId, group.printerId, JSON.stringify({
       kotId: kot.lastInsertRowid,
       suborderNo,
+      kotReference: `${orderId}-${suborderNo}`,
       orderId,
       kitchen: group.kitchenName,
       headerText: kotSettings.headerText,
@@ -4806,6 +4808,7 @@ function createKotJobs(db, orderId) {
     insertElectronicJournal(db, 'KOT', orderId, {
       kotId: kot.lastInsertRowid,
       suborderNo,
+      kotReference: `${orderId}-${suborderNo}`,
       orderId,
       kitchen: group.kitchenName,
       orderType: orderMeta?.order_type || 'DINE_IN',
@@ -4814,6 +4817,7 @@ function createKotJobs(db, orderId) {
       items: group.items
     });
   });
+  return { suborderNo, kotReference: `${orderId}-${suborderNo}`, kitchenCount: Object.keys(grouped).length };
 }
 
 app.get('/qr/menu', (req, res) => {
@@ -5477,7 +5481,7 @@ app.get('/orders/open-list', (req, res) => {
 });
 
 app.post('/orders/split-check', (req, res) => {
-  const { restaurantId, actor, orderId, itemKeys, checkName } = req.body;
+  const { restaurantId, actor, orderId, itemKeys, checkName, customerName, customerPhone } = req.body;
   if (!restaurantId || !isPositiveId(orderId) || !Array.isArray(itemKeys) || itemKeys.length === 0) {
     return res.status(400).json({ success: false, message: 'Order and selected items are required' });
   }
@@ -5495,7 +5499,13 @@ app.post('/orders/split-check', (req, res) => {
     const selectedIds = new Set(itemKeys.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0));
     const movingItems = sourceItems.filter((item) => selectedIds.has(Number(item.order_item_id)));
     if (movingItems.length === 0) throw new Error('Select at least one item to split');
+    let splitCustomerId = sourceOrder.customer_id || null;
     db.transaction(() => {
+      if (hasText(customerName) || hasText(customerPhone)) {
+        const cleanPhone = hasText(customerPhone) ? normaliseText(customerPhone) : null;
+        const existing = cleanPhone ? db.prepare('SELECT id FROM customers WHERE phone = ? AND active = 1').get(cleanPhone) : null;
+        splitCustomerId = existing?.id || db.prepare('INSERT INTO customers (name, phone) VALUES (?, ?)').run(normaliseText(customerName) || 'Table guest', cleanPhone).lastInsertRowid;
+      }
       const newOrderResult = db.prepare(`
         INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, created_by, customer_id, delivery_fee, order_source)
         VALUES (?, ?, ?, 'OPEN', 0, 'UNPAID', ?, ?, ?, ?)
@@ -5504,7 +5514,7 @@ app.post('/orders/split-check', (req, res) => {
         sourceOrder.table_id,
         sourceOrder.table_no,
         actor?.id || null,
-        sourceOrder.customer_id || null,
+        splitCustomerId,
         Number(sourceOrder.delivery_fee || 0),
         'SPLIT'
       );
@@ -5800,8 +5810,9 @@ app.post('/orders/submit-kot', (req, res) => {
 
   const db = openRestaurantDatabase(restaurantId);
   try {
+    let kotResult = null;
     db.transaction(() => {
-      createKotJobs(db, orderId);
+      kotResult = createKotJobs(db, orderId);
       deductInventoryForOrder(db, actor, orderId, 'KOT_SUBMIT');
       const order = db.prepare('SELECT order_type FROM orders WHERE id = ?').get(orderId);
       if (order && DELIVERY_ORDER_TYPES.includes(order.order_type)) {
@@ -5810,7 +5821,7 @@ app.post('/orders/submit-kot', (req, res) => {
       }
       writeAudit(db, actor, 'SUBMIT_KOT', 'ORDER', orderId);
     })();
-    res.json({ success: true });
+    res.json({ success: true, suborderNo: kotResult?.suborderNo || null, kotReference: kotResult?.kotReference || null, message: kotResult?.kotReference ? `KOT ${kotResult.kotReference} submitted` : 'KOT submitted' });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -6354,6 +6365,7 @@ app.get('/kds/orders', (req, res) => {
         readyAt: row.ready_at,
         servedAt: row.served_at,
         kotId: row.kot_id || null,
+        kotReference: row.kot_id ? `${row.order_id}-${row.kot_id}` : null,
         modifiers: modifiersByItem[row.order_item_id] || []
       });
       return map;
@@ -6364,6 +6376,7 @@ app.get('/kds/orders', (req, res) => {
         if (!item.kotId) return;
         if (!kotOrder.includes(item.kotId)) kotOrder.push(item.kotId);
         item.kotSequence = kotOrder.indexOf(item.kotId) + 1;
+        item.kotReference = `${order.orderId}-${item.kotSequence}`;
       });
     });
 

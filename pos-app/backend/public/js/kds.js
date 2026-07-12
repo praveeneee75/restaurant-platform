@@ -77,7 +77,7 @@ function renderCard(order, item) {
   }[item.status] || "";
   return `
     <article class="kds-card">
-      <header><strong>#${order.orderId}${item.kotSequence ? ` · S${item.kotSequence}` : ""}</strong><span>${esc(order.tableName || "Parcel")}</span></header>
+      <header><strong>#${esc(item.kotReference || `${order.orderId}-${item.kotSequence || 1}`)}</strong><span>${esc(order.tableName || "Parcel")}</span></header>
       <h3>${esc(item.name)}</h3>
       <p>Qty ${item.quantity} · ${minutesSince(order.createdAt)}</p>
       ${(item.modifiers || []).map((modifier) => `<small>- ${esc(modifier.name)}</small>`).join("")}

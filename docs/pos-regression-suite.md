@@ -18,5 +18,8 @@ The release gate for desktop, Android, and iOS POS screens. Android and iOS load
 | POS-010 | Android and iOS cashier/waiter screens | Same table isolation and editing behavior as desktop | Platform behavior drift | Shared-page check |
 | POS-011 | Build final package | Installer contains Electron-compatible native modules and post-build restores Node modules | Repeated ABI mismatch releases | Build hook and artifact check |
 | POS-012 | Production release | Manifest, file size, and checksum match the built artifact | Partial or wrong installer was published | Deployment verification |
+| POS-013 | Submit KOT | Existing lines remain visible and are marked sent; only settlement clears the bill | Items disappeared after KOT | UI/KOT API check |
+| POS-014 | Submit KOT twice after adding items | KOT references are `order-suborder` and increment one per update | KOT sequence/reference was missing | KOT API check |
+| POS-015 | Split a table between customers | Each split check can capture its own customer and settle separately | Split check copied one customer only | Split-check API/UI check |
 
 A release is blocked if any case fails. The installer must be built only after the source checks and `npm run test:pos` pass; production promotion happens only after the remote checksum matches the local artifact.

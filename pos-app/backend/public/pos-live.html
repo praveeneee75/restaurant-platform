@@ -101,6 +101,7 @@
         <button id="submitKot">Submit KOT</button>
         <button id="settleOrder">Settle</button>
       </div>
+      <p id="kotStatus" class="status-message" aria-live="polite"></p>
     </div>
   </aside>
 
@@ -129,6 +130,10 @@
         </div>
         <button class="secondary-btn" id="closeSplitBillModal">Close</button>
       </header>
+      <div class="customer-search-row">
+        <input id="splitCustomerName" placeholder="Customer name for this bill">
+        <input id="splitCustomerPhone" placeholder="Phone (optional)">
+      </div>
       <div id="splitBillItems" class="modifier-groups"></div>
       <div class="cart-actions">
         <button id="createSplitCheckBtn">Create Split Check</button>
