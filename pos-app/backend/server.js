@@ -1015,6 +1015,12 @@ function syncTableStatus(db, tableId) {
   db.prepare('UPDATE tables SET status = ? WHERE id = ?').run(openOrder ? 'OCCUPIED' : 'AVAILABLE', tableId);
 }
 
+function nextOrderIdentity(db, tableId) {
+  const next = Number(db.prepare('SELECT COALESCE(MAX(order_sequence), 0) + 1 AS next FROM orders WHERE table_id = ?').get(tableId)?.next || 1);
+  const customerRef = `A${next}`;
+  return { orderSequence: next, customerRef, orderReference: `${next}-${customerRef}` };
+}
+
 function touchDeviceSession(db, actor, req, deviceName) {
   if (!isPositiveId(actor?.id)) return null;
   const ip = requestIp(req);
@@ -4756,6 +4762,9 @@ function createKotJobs(db, orderId) {
       o.id,
       o.order_type,
       o.table_no,
+      o.order_sequence,
+      o.customer_ref,
+      o.order_reference,
       c.name AS customer_name,
       d.delivery_address,
       d.delivery_phone
@@ -4802,7 +4811,7 @@ function createKotJobs(db, orderId) {
     `).run(orderId, group.kitchenId, group.printerId, JSON.stringify({
       kotId: kot.lastInsertRowid,
       suborderNo,
-      kotReference: `${orderId}-${suborderNo}`,
+      kotReference: `${orderMeta?.order_reference || orderId}-${suborderNo}`,
       orderId,
       kitchen: group.kitchenName,
       headerText: kotSettings.headerText,
@@ -4818,7 +4827,7 @@ function createKotJobs(db, orderId) {
     insertElectronicJournal(db, 'KOT', orderId, {
       kotId: kot.lastInsertRowid,
       suborderNo,
-      kotReference: `${orderId}-${suborderNo}`,
+      kotReference: `${orderMeta?.order_reference || orderId}-${suborderNo}`,
       orderId,
       kitchen: group.kitchenName,
       orderType: orderMeta?.order_type || 'DINE_IN',
@@ -4827,7 +4836,7 @@ function createKotJobs(db, orderId) {
       items: group.items
     });
   });
-  return { suborderNo, kotReference: `${orderId}-${suborderNo}`, kitchenCount: Object.keys(grouped).length };
+  return { suborderNo, kotReference: `${orderMeta?.order_reference || orderId}-${suborderNo}`, kitchenCount: Object.keys(grouped).length };
 }
 
 app.get('/qr/menu', (req, res) => {
@@ -5255,15 +5264,30 @@ app.post('/orders/save', (req, res) => {
 
       let id = orderId;
       let itemsToSave = items;
+      if (!id && safeTableId) {
+        const existing = db.prepare(`
+          SELECT id FROM orders
+          WHERE table_id = ? AND status NOT IN ('PAID', 'CANCELLED') AND payment_status != 'PAID'
+            AND (? IS NULL OR customer_id = ? OR customer_id IS NULL)
+          ORDER BY id DESC LIMIT 1
+        `).get(safeTableId, isPositiveId(customerId) ? customerId : null, isPositiveId(customerId) ? customerId : null);
+        if (existing) id = existing.id;
+      }
       const oldValue = id ? db.prepare('SELECT * FROM orders WHERE id = ?').get(id) : null;
       if (!id) {
+        const identity = safeTableId ? nextOrderIdentity(db, safeTableId) : { orderSequence: null, customerRef: null, orderReference: null };
         const result = db.prepare(`
-          INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, created_by, customer_id, delivery_fee, order_source)
-          VALUES (?, ?, ?, 'OPEN', ?, 'UNPAID', ?, ?, ?, ?)
-        `).run(selectedOrderType, safeTableId || null, safeTableName || null, total, actor?.id || null, isPositiveId(customerId) ? customerId : null, safeDeliveryFee, normaliseText(orderSource || 'POS').toUpperCase());
+          INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, created_by, customer_id, delivery_fee, order_source, order_sequence, customer_ref, order_reference)
+          VALUES (?, ?, ?, 'OPEN', ?, 'UNPAID', ?, ?, ?, ?, ?, ?, ?)
+        `).run(selectedOrderType, safeTableId || null, safeTableName || null, total, actor?.id || null, isPositiveId(customerId) ? customerId : null, safeDeliveryFee, normaliseText(orderSource || 'POS').toUpperCase(), identity.orderSequence, identity.customerRef, identity.orderReference);
         id = result.lastInsertRowid;
         writeOrderStatusHistory(db, actor, id, 'OPEN', 'ORDER', `${selectedOrderType} order created`);
       } else {
+        if (!oldValue?.order_reference && safeTableId) {
+          const identity = nextOrderIdentity(db, safeTableId);
+          db.prepare('UPDATE orders SET order_sequence = ?, customer_ref = ?, order_reference = ? WHERE id = ?')
+            .run(oldValue?.order_sequence || identity.orderSequence, oldValue?.customer_ref || identity.customerRef, oldValue?.order_reference || identity.orderReference, id);
+        }
         db.prepare("UPDATE orders SET order_type = ?, table_id = ?, table_no = ?, total_amount = ?, status = 'OPEN', customer_id = COALESCE(?, customer_id), delivery_fee = ?, order_source = COALESCE(order_source, 'POS'), updated_at = CURRENT_TIMESTAMP WHERE id = ?")
           .run(selectedOrderType, safeTableId || null, safeTableName || null, 0, isPositiveId(customerId) ? customerId : null, safeDeliveryFee, id);
         // KOT-submitted lines are historical kitchen records. Preserve them so the next
@@ -5357,10 +5381,11 @@ app.post('/orders/save', (req, res) => {
       const newValue = db.prepare('SELECT * FROM orders WHERE id = ?').get(id);
       if (lockId) db.prepare('UPDATE order_locks SET order_id = ? WHERE id = ? AND locked_by_user_id = ?').run(id, lockId, actor?.id || null);
       writeAudit(db, actor, orderId ? 'UPDATE' : 'CREATE', 'ORDER', id, oldValue, newValue);
-      return { id, total };
+      const identity = db.prepare('SELECT order_sequence, customer_ref, order_reference FROM orders WHERE id = ?').get(id);
+      return { id, total, ...identity };
     })();
 
-    res.json({ success: true, orderId: saved.id, total: saved.total });
+    res.json({ success: true, orderId: saved.id, total: saved.total, orderSequence: saved.order_sequence, customerRef: saved.customer_ref, orderReference: saved.order_reference });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -5381,6 +5406,14 @@ app.get('/orders/open', (req, res) => {
         WHERE status = 'OPEN' AND payment_status != 'PAID' AND (? IS NULL OR table_id = ?)
         ORDER BY created_at DESC LIMIT 1
       `).get(tableId || null, tableId || null);
+    if (order && !order.order_reference) {
+      const identity = order.table_id ? nextOrderIdentity(db, order.table_id) : { orderSequence: order.id, customerRef: `A${order.id}`, orderReference: `${order.id}-A${order.id}` };
+      order.order_sequence = order.order_sequence || identity.orderSequence;
+      order.customer_ref = order.customer_ref || identity.customerRef;
+      order.order_reference = order.order_reference || identity.orderReference;
+      db.prepare('UPDATE orders SET order_sequence = COALESCE(order_sequence, ?), customer_ref = COALESCE(customer_ref, ?), order_reference = COALESCE(order_reference, ?) WHERE id = ?')
+        .run(order.order_sequence, order.customer_ref, order.order_reference, order.id);
+    }
     const items = order ? db.prepare(`
       SELECT oi.id AS order_item_id, oi.item_id AS id, i.name, oi.quantity, oi.price, oi.kot_id, oi.combo_id, oi.combo_name, oi.combo_quantity
       FROM order_items oi JOIN items i ON i.id = oi.item_id
@@ -5477,9 +5510,9 @@ app.get('/orders/open-list', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     const orders = db.prepare(`
-      SELECT id, table_id, table_no, order_type, total_amount, payment_status, status, created_at, updated_at
+      SELECT id, table_id, table_no, order_type, total_amount, payment_status, status, created_at, updated_at, order_sequence, customer_ref, order_reference
       FROM orders
-      WHERE table_id = ? AND status = 'OPEN' AND payment_status != 'PAID'
+      WHERE table_id = ? AND status NOT IN ('PAID', 'CANCELLED') AND payment_status != 'PAID'
       ORDER BY created_at ASC, id ASC
     `).all(tableId);
     res.json({ success: true, orders });
@@ -5516,9 +5549,10 @@ app.post('/orders/split-check', (req, res) => {
         const existing = cleanPhone ? db.prepare('SELECT id FROM customers WHERE phone = ? AND active = 1').get(cleanPhone) : null;
         splitCustomerId = existing?.id || db.prepare('INSERT INTO customers (name, phone) VALUES (?, ?)').run(normaliseText(customerName) || 'Table guest', cleanPhone).lastInsertRowid;
       }
+      const identity = nextOrderIdentity(db, sourceOrder.table_id);
       const newOrderResult = db.prepare(`
-        INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, created_by, customer_id, delivery_fee, order_source)
-        VALUES (?, ?, ?, 'OPEN', 0, 'UNPAID', ?, ?, ?, ?)
+        INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, created_by, customer_id, delivery_fee, order_source, order_sequence, customer_ref, order_reference)
+        VALUES (?, ?, ?, 'OPEN', 0, 'UNPAID', ?, ?, ?, ?, ?, ?, ?)
       `).run(
         sourceOrder.order_type,
         sourceOrder.table_id,
@@ -5526,7 +5560,10 @@ app.post('/orders/split-check', (req, res) => {
         actor?.id || null,
         splitCustomerId,
         Number(sourceOrder.delivery_fee || 0),
-        'SPLIT'
+        'SPLIT',
+        identity.orderSequence,
+        identity.customerRef,
+        identity.orderReference
       );
       const newOrderId = newOrderResult.lastInsertRowid;
       let sourceTotal = Number(sourceOrder.total_amount || 0);

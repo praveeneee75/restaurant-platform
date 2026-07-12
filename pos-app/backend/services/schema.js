@@ -146,6 +146,9 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'orders', 'delivery_fee REAL DEFAULT 0');
   addColumn(db, 'orders', 'updated_at DATETIME');
   addColumn(db, 'orders', "order_source TEXT DEFAULT 'POS'");
+  addColumn(db, 'orders', 'order_sequence INTEGER');
+  addColumn(db, 'orders', 'customer_ref TEXT');
+  addColumn(db, 'orders', 'order_reference TEXT');
 
   addColumn(db, 'order_items', 'price REAL DEFAULT 0');
   addColumn(db, 'order_items', "status TEXT DEFAULT 'PLACED'");

@@ -20,6 +20,7 @@ const state = {
   selectedCategoryId: null,
   selectedCartKey: null,
   orderId: null,
+  orderReference: null,
   openOrders: [],
   pendingItem: null,
   pendingSplitItems: [],
@@ -208,8 +209,8 @@ function renderOrderSelector() {
     return;
   }
   orderSelector.innerHTML = [
-    `<option value="${current?.id || ""}">${current ? `Check #${current.id}` : "Current check"}</option>`,
-    ...state.openOrders.filter((order) => Number(order.id) !== Number(current?.id)).map((order) => `<option value="${order.id}">Check #${order.id} - ${money(order.total_amount)}</option>`)
+    `<option value="${current?.id || ""}">${current ? `Order ${current.order_reference || current.id}` : "Current check"}</option>`,
+    ...state.openOrders.filter((order) => Number(order.id) !== Number(current?.id)).map((order) => `<option value="${order.id}">Order ${order.order_reference || order.id} - ${money(order.total_amount)}</option>`)
   ].join("");
   if (current) orderSelector.value = String(current.id);
 }
@@ -248,7 +249,7 @@ function renderItems(categoryId) {
 
 function renderCart() {
   cartTitle.textContent = isDineIn() ? (state.selectedTable ? state.selectedTable.table_name : "Select a table") : orderType.options[orderType.selectedIndex].text;
-  orderMeta.textContent = state.orderId ? `Open order #${state.orderId}` : "New order";
+  orderMeta.textContent = state.orderId ? `Order ${state.orderReference || state.orderId}` : "New order";
   cartItems.innerHTML = state.cart.map((item) => `
     <div class="cart-line ${state.selectedCartKey === item.key ? "selected" : ""}" data-cart-line="${item.key}" role="button" tabindex="0" aria-label="Edit ${esc(item.name)}">
       <div>
@@ -312,6 +313,7 @@ async function selectTable(tableId, options = {}) {
   state.cart = [];
   state.selectedCartKey = null;
   state.orderId = null;
+  state.orderReference = null;
   state.dirty = false;
   state.kotSubmitted = false;
   refreshCartAndMenu();
@@ -321,6 +323,7 @@ async function selectTable(tableId, options = {}) {
   if (requestId !== tableSelectionRequest) return;
   if (data.order) {
     state.orderId = data.order.id;
+    state.orderReference = data.order.order_reference || `${data.order.order_sequence || data.order.id}-${data.order.customer_ref || `A${data.order.id}`}`;
     state.kotSubmitted = (data.items || []).some((item) => item.kot_id);
     state.dirty = false;
     state.customer = data.customer || null;
@@ -497,14 +500,28 @@ async function saveCurrentOrder(force = false) {
       : ({ orderItemId: item.orderItemId || null, itemId: item.id, quantity: item.quantity, modifiers: (item.modifiers || []).filter((modifier) => modifier.id).map((modifier) => modifier.id) }))
   });
   state.orderId = data.orderId;
+  state.orderReference = data.orderReference || state.orderReference || data.orderId;
   state.dirty = false;
   setSelectedTableStatus("OCCUPIED");
-  orderMeta.textContent = `Open order #${state.orderId}`;
+  orderMeta.textContent = `Order ${state.orderReference}`;
   await refreshLiveState();
   return true;
 }
 
 async function submitCurrentKot() {
+  const submittedItems = state.cart.filter((item) => item.sentToKitchen);
+  const newItems = state.cart.filter((item) => !item.sentToKitchen);
+  const summary = [
+    `Order ${state.orderReference || state.orderId || "new"}`,
+    "",
+    "Already submitted:",
+    ...(submittedItems.length ? submittedItems.map((item) => `${item.quantity} x ${item.name}`) : ["None"]),
+    "",
+    "New in this KOT:",
+    ...(newItems.length ? newItems.map((item) => `${item.quantity} x ${item.name}`) : ["None"])
+  ].join("\n");
+  if (!newItems.length) return alert(`${summary}\n\nThere are no new items to submit.`);
+  if (!confirm(`${summary}\n\nSubmit this KOT?`)) return;
   const saved = await saveCurrentOrder();
   if (!saved) return;
   const data = await postJson("/orders/submit-kot", { orderId: state.orderId });
@@ -538,6 +555,7 @@ async function settleCurrentOrder() {
   state.cart = [];
   state.selectedCartKey = null;
   state.orderId = null;
+  state.orderReference = null;
   state.customer = null;
   state.dirty = false;
   state.kotSubmitted = false;
@@ -747,6 +765,7 @@ createSplitCheckBtn.addEventListener("click", async () => {
   const latest = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(data.orderId)}`).then((res) => res.json());
   if (latest.order) {
     state.orderId = latest.order.id;
+    state.orderReference = latest.order.order_reference || `${latest.order.order_sequence || latest.order.id}-${latest.order.customer_ref || `A${latest.order.id}`}`;
     state.cart = (latest.items || []).map(cartItemFromOrderItem);
     state.selectedCartKey = state.cart[0]?.key || null;
     renderCart();
@@ -791,6 +810,7 @@ cancelOrder.addEventListener("click", async () => {
   state.cart = [];
   state.selectedCartKey = null;
   state.orderId = null;
+  state.orderReference = null;
   state.dirty = false;
   state.kotSubmitted = false;
   await refreshLiveState({ updateCart: true });
