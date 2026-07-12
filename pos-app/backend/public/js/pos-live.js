@@ -30,6 +30,7 @@ const state = {
   kotSubmitted: false,
   pendingEditKey: null
 };
+let tableSelectionRequest = 0;
 
 const amount = (value) => Number(value || 0).toFixed(2);
 const money = (value) => `${state.settings?.currency || "INR"} ${amount(value)}`;
@@ -220,7 +221,7 @@ function renderItems(categoryId) {
       <button class="item-tile ${quantity > 0 ? "selected" : ""}" data-item="${item.id}">
         <strong>${esc(item.name)}</strong>
         <span>${money(item.price)}</span>
-        ${quantity > 0 ? `<em>${quantity}</em>` : ""}
+        ${quantity > 0 ? `<span class="tile-quantity-controls"><span data-item-minus="${item.id}" role="button">-</span><em>${quantity}</em><span data-item-plus="${item.id}" role="button">+</span></span>` : ""}
       </button>
     `;
   }).join("");
@@ -293,18 +294,11 @@ function updateOrderTypeView() {
 }
 
 async function selectTable(tableId, options = {}) {
+  const requestId = ++tableSelectionRequest;
   if (!isDineIn()) orderType.value = "DINE_IN";
   state.customer = null;
   customerPhone.value = "";
   customerName.value = "";
-  if (!options.skipMovePrompt && state.selectedTable && state.selectedTable.id !== tableId && state.orderId) {
-    const target = state.tables.find((table) => table.id === tableId);
-    if (target && !confirm(`Move this order to ${target.table_name}?`)) return;
-    if (target) {
-      await moveOrderToTable(target.id);
-      return;
-    }
-  }
   state.selectedTable = state.tables.find((table) => table.id === tableId);
   state.cart = [];
   state.selectedCartKey = null;
@@ -314,6 +308,7 @@ async function selectTable(tableId, options = {}) {
   renderTables();
   await loadOpenOrdersForTable(tableId);
   const data = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${tableId}`).then((res) => res.json());
+  if (requestId !== tableSelectionRequest) return;
   if (data.order) {
     state.orderId = data.order.id;
     state.kotSubmitted = (data.items || []).some((item) => item.kot_id);
@@ -604,6 +599,22 @@ cartItems.addEventListener("click", (event) => {
   state.selectedCartKey = line.dataset.cartLine;
   renderCart();
   openEditSelectedItem();
+});
+
+items.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-item-plus], [data-item-minus]");
+  if (!target) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const itemId = Number(target.dataset.itemPlus || target.dataset.itemMinus);
+  const line = state.cart.find((item) => Number(item.id) === itemId && !item.comboId);
+  if (!line || line.sentToKitchen) return;
+  if (target.dataset.itemPlus) line.quantity += 1;
+  else line.quantity -= 1;
+  state.selectedCartKey = line.key;
+  state.dirty = true;
+  state.cart = state.cart.filter((item) => Number(item.quantity) > 0);
+  refreshCartAndMenu();
 });
 
 cartItems.addEventListener("keydown", (event) => {

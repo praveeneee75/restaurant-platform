@@ -548,6 +548,24 @@ button:hover,
   text-align: center;
 }
 
+.tile-quantity-controls {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.tile-quantity-controls span[role="button"] {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: #1f6feb;
+  color: #fff;
+  font-weight: 700;
+}
+
 .table-tile span,
 .item-tile span {
   display: block;
