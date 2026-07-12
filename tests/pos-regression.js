@@ -25,6 +25,7 @@ assert.match(live, /item\.sentToKitchen = true/);
 assert.match(live, /kotStatus\.textContent/);
 assert.match(live, /const settledTableId = state\.selectedTable\?\.id/);
 assert.match(live, /selectTable\(settledTableId/);
+assert.match(live, /selectedOpenOrder/);
 
 console.log(JSON.stringify({
   passed: true,

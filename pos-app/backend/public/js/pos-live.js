@@ -319,7 +319,11 @@ async function selectTable(tableId, options = {}) {
   refreshCartAndMenu();
   renderTables();
   await loadOpenOrdersForTable(tableId);
-  const data = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${tableId}`).then((res) => res.json());
+  const selectedOpenOrder = state.openOrders.find((order) => Number(order.id) === Number(state.orderId)) || state.openOrders[state.openOrders.length - 1];
+  const orderQuery = selectedOpenOrder?.id
+    ? `orderId=${encodeURIComponent(selectedOpenOrder.id)}`
+    : `tableId=${encodeURIComponent(tableId)}`;
+  const data = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&${orderQuery}`).then((res) => res.json());
   if (requestId !== tableSelectionRequest) return;
   if (data.order) {
     state.orderId = data.order.id;
