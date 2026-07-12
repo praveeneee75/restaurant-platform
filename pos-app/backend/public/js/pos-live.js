@@ -241,7 +241,7 @@ function renderCart() {
   cartTitle.textContent = isDineIn() ? (state.selectedTable ? state.selectedTable.table_name : "Select a table") : orderType.options[orderType.selectedIndex].text;
   orderMeta.textContent = state.orderId ? `Open order #${state.orderId}` : "New order";
   cartItems.innerHTML = state.cart.map((item) => `
-    <div class="cart-line ${state.selectedCartKey === item.key ? "selected" : ""}" data-cart-line="${item.key}">
+    <div class="cart-line ${state.selectedCartKey === item.key ? "selected" : ""}" data-cart-line="${item.key}" role="button" tabindex="0" aria-label="Edit ${esc(item.name)}">
       <div>
         <strong>${esc(item.name)}</strong>
         <span>${money(item.price)}</span>
@@ -252,7 +252,6 @@ function renderCart() {
         <button data-minus="${item.key}" ${item.sentToKitchen ? "disabled" : ""}>-</button>
         <span>${item.quantity}</span>
         <button data-plus="${item.key}" ${item.sentToKitchen ? "disabled" : ""}>+</button>
-        <button data-edit="${item.key}" type="button" ${item.sentToKitchen ? "disabled" : ""}>Edit</button>
         <button data-remove="${item.key}" ${item.sentToKitchen ? "disabled" : ""}>Remove</button>
       </div>
     </div>
@@ -261,7 +260,6 @@ function renderCart() {
   customerSummary.textContent = state.customer ? `${state.customer.name} - ${state.customer.phone} - ${state.customer.loyaltyBalance || 0} pts` : "No customer attached";
   redeemPoints.max = state.customer?.loyaltyBalance || 0;
   payableTotal.textContent = `Payable: ${money(payableAmount())}`;
-  editItemBtn.disabled = !state.selectedCartKey || !state.cart.some((item) => item.key === state.selectedCartKey);
   moveTableBtn.disabled = !isDineIn() || !state.selectedTable || !state.orderId;
   // A new order has no ID until it is saved, so it must still be possible to send its first KOT.
   submitKot.disabled = !(state.cart.length > 0 && (!state.orderId || state.dirty));
@@ -594,12 +592,6 @@ document.addEventListener("click", async (event) => {
     if (state.selectedCartKey === target.dataset.remove) state.selectedCartKey = state.cart[0]?.key || null;
     state.dirty = true;
   }
-  if (target.dataset.edit) {
-    state.selectedCartKey = target.dataset.edit;
-    renderCart();
-    openEditSelectedItem();
-    return;
-  }
   state.cart = state.cart.filter((item) => item.quantity > 0);
   if (!state.cart.some((item) => item.key === state.selectedCartKey)) state.selectedCartKey = state.cart[0]?.key || null;
   refreshCartAndMenu();
@@ -608,8 +600,20 @@ document.addEventListener("click", async (event) => {
 cartItems.addEventListener("click", (event) => {
   const line = event.target.closest("[data-cart-line]");
   if (!line) return;
+  if (event.target.closest("button")) return;
   state.selectedCartKey = line.dataset.cartLine;
   renderCart();
+  openEditSelectedItem();
+});
+
+cartItems.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const line = event.target.closest("[data-cart-line]");
+  if (!line) return;
+  event.preventDefault();
+  state.selectedCartKey = line.dataset.cartLine;
+  renderCart();
+  openEditSelectedItem();
 });
 
 modifierGroups.addEventListener("change", (event) => {
@@ -680,7 +684,6 @@ createCustomer.addEventListener("click", createCustomerFromBilling);
 saveOrder.addEventListener("click", () => saveCurrentOrder());
 submitKot.addEventListener("click", submitCurrentKot);
 settleOrder.addEventListener("click", settleCurrentOrder);
-editItemBtn.addEventListener("click", openEditSelectedItem);
 moveTableBtn.addEventListener("click", async () => {
   if (!isDineIn() || !state.selectedTable) return alert("Select a dine-in table first");
   const targetTableName = prompt("Enter the table number/name to move to");

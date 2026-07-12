@@ -593,6 +593,22 @@ button:hover,
   border-left-color: #1f6feb;
 }
 
+.cart-line[role="button"],
+.cart-row[role="button"] {
+  cursor: pointer;
+}
+
+.cart-line[role="button"]:focus-visible,
+.cart-row[role="button"]:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 2px;
+}
+
+.cart-row.selected {
+  border: 2px solid #1f6feb;
+  background: #eef5ff;
+}
+
 .cart-line span {
   display: block;
   color: #657286;

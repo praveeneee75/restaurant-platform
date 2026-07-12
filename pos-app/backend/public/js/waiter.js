@@ -27,6 +27,7 @@ const state = {
   cart: [],
   selectedTable: null,
   selectedCategoryId: null,
+  selectedCartKey: null,
   orderId: null,
   latestUpdatedAt: null,
   lock: null,
@@ -127,7 +128,7 @@ function renderItems() {
 
 function renderCart() {
   waiterCart.innerHTML = state.cart.map((item) => `
-    <div class="cart-row">
+    <div class="cart-row ${state.selectedCartKey === item.id ? "selected" : ""}" data-cart-line="${item.id}" role="button" tabindex="0" aria-label="Edit ${esc(item.name)}">
       <div><strong>${esc(item.name)}</strong><br><small>${money(item.price)} x ${item.quantity}</small></div>
       <div class="qty-controls">
         <button data-dec="${item.id}">-</button>
@@ -169,6 +170,7 @@ function addItem(itemId) {
   const existing = state.cart.find((row) => Number(row.id) === Number(itemId));
   if (existing) existing.quantity += 1;
   else state.cart.push({ id: item.id, name: item.name, price: item.price, quantity: 1, modifiers: [] });
+  state.selectedCartKey = Number(item.id);
   renderCart();
 }
 
@@ -253,6 +255,23 @@ document.addEventListener("click", async (event) => {
     waiterStatus.textContent = err.message;
     alert(err.message);
   }
+});
+
+waiterCart.addEventListener("click", (event) => {
+  if (event.target.closest("button")) return;
+  const line = event.target.closest("[data-cart-line]");
+  if (!line) return;
+  state.selectedCartKey = Number(line.dataset.cartLine);
+  renderCart();
+});
+
+waiterCart.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const line = event.target.closest("[data-cart-line]");
+  if (!line) return;
+  event.preventDefault();
+  state.selectedCartKey = Number(line.dataset.cartLine);
+  renderCart();
 });
 
 saveWaiterOrder.addEventListener("click", () => saveOrder().catch((err) => alert(err.message)));
