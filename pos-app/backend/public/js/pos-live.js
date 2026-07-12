@@ -126,6 +126,10 @@ async function boot() {
   renderCategories();
   if (state.selectedCategoryId) renderItems(state.selectedCategoryId);
   updateOrderTypeView();
+  const rememberedTableId = Number(localStorage.getItem("posActiveTableId") || 0);
+  const remembered = state.tables.find((table) => Number(table.id) === rememberedTableId && table.status === "OCCUPIED");
+  const firstOccupied = state.tables.find((table) => table.status === "OCCUPIED");
+  if (remembered || firstOccupied) await selectTable((remembered || firstOccupied).id, { skipMovePrompt: true });
 }
 
 async function refreshLiveState({ updateCart = false } = {}) {
@@ -133,7 +137,7 @@ async function refreshLiveState({ updateCart = false } = {}) {
   const data = await fetch(`/pos/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`).then((res) => res.json());
   applyBootstrap(data);
   await refreshShiftCashStatus();
-  if (state.selectedTable?.id) await loadOpenOrdersForTable(state.selectedTable.id);
+  if (state.selectedTable?.id) await restoreSelectedTableOrder();
   renderTables();
   renderCategories();
   if (state.selectedCategoryId) renderItems(state.selectedCategoryId);
@@ -145,7 +149,35 @@ async function loadOpenOrdersForTable(tableId, selectedOrderId = null) {
   const data = await fetch(`/orders/open-list?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${encodeURIComponent(tableId)}`).then((res) => res.json());
   state.openOrders = data.orders || [];
   if (selectedOrderId) state.orderId = selectedOrderId;
+  else if (!state.orderId || !state.openOrders.some((order) => Number(order.id) === Number(state.orderId))) state.orderId = state.openOrders[0]?.id || null;
   renderOrderSelector();
+}
+
+async function restoreSelectedTableOrder() {
+  if (!state.selectedTable?.id) return;
+  await loadOpenOrdersForTable(state.selectedTable.id);
+  const orderId = state.openOrders[0]?.id;
+  if (!orderId) {
+    state.orderId = null;
+    state.orderReference = null;
+    state.cart = [];
+    state.selectedCartKey = null;
+    renderCart();
+    return;
+  }
+  const data = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(orderId)}`).then((res) => res.json());
+  if (!data.order || Number(state.activeTableId) !== Number(state.selectedTable.id)) return;
+  state.orderId = data.order.id;
+  state.orderReference = data.order.order_reference || `${data.order.order_sequence || data.order.id}-${data.order.customer_ref || `A${data.order.id}`}`;
+  state.kotSubmitted = (data.items || []).some((item) => item.kot_id);
+  state.dirty = false;
+  state.customer = data.customer || null;
+  customerPhone.value = state.customer?.phone || "";
+  customerName.value = state.customer?.name || "";
+  state.cart = (data.items || []).map(cartItemFromOrderItem);
+  state.selectedCartKey = state.cart[0]?.key || null;
+  renderOrderSelector();
+  renderCart();
 }
 
 async function refreshShiftCashStatus() {
@@ -305,6 +337,7 @@ function updateOrderTypeView() {
 async function selectTable(tableId, options = {}) {
   const requestId = ++tableSelectionRequest;
   state.activeTableId = Number(tableId);
+  localStorage.setItem("posActiveTableId", String(tableId));
   if (!isDineIn()) orderType.value = "DINE_IN";
   state.customer = null;
   customerPhone.value = "";
