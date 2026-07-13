@@ -49,5 +49,5 @@ assert.match(billing, /open bills/);
 
 console.log(JSON.stringify({
   passed: true,
-  cases: ['POS-003', 'POS-004', 'POS-005', 'POS-006', 'POS-009', 'POS-010', 'POS-011', 'POS-013', 'POS-014', 'POS-015', 'POS-016']
+  cases: ['POS-003', 'POS-004', 'POS-005', 'POS-006', 'POS-009', 'POS-010', 'POS-011', 'POS-013', 'POS-014', 'POS-015', 'POS-016', 'POS-MULTI-CUSTOMER']
 }, null, 2));

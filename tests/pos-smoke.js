@@ -100,6 +100,53 @@ async function main() {
   if (tableOne.ms > Number(process.env.POS_TABLE_SELECT_BUDGET_MS || 300)) throw new Error(`Table 1 selection too slow: ${tableOne.ms}ms`);
   if (tableTwo.ms > Number(process.env.POS_TABLE_SELECT_BUDGET_MS || 300)) throw new Error(`Table 2 selection too slow: ${tableTwo.ms}ms`);
 
+  // Shared-table regression: three independent customer checks, a repeat KOT,
+  // a linked parcel check, and a table transfer must remain separately visible.
+  const sharedTable = (pos.tables || []).find((table) => table.table_name === 'Table 3') || pos.tables.find((table) => table.status === 'AVAILABLE');
+  const moveTarget = (pos.tables || []).find((table) => table.id !== sharedTable?.id && table.table_name === 'Table 4') || pos.tables.find((table) => table.id !== sharedTable?.id);
+  const sharedItems = (pos.items || []).slice(0, 3);
+  if (!sharedTable || !moveTarget || sharedItems.length < 3) throw new Error('Shared-table smoke test needs Table 3, another table, and three items');
+  const customers = [];
+  for (const [index, suffix] of ['one', 'two', 'three'].entries()) {
+    const customer = await json('POST', '/customers/create', { restaurantId, actor, name: `Shared Table ${suffix}`, phone: `999${Date.now()}${index}` });
+    customers.push(customer.customer);
+  }
+  async function saveShared(customerId, itemId, orderId = null, items = null, orderType = 'DINE_IN') {
+    return json('POST', '/orders/save', {
+      restaurantId, actor, orderId, orderType, tableId: sharedTable.id, tableName: sharedTable.table_name, customerId,
+      items: items || [{ itemId, quantity: 1, modifiers: [] }]
+    });
+  }
+  const sharedOrders = [];
+  for (let i = 0; i < 3; i++) {
+    const saved = await saveShared(customers[i].id, sharedItems[i].id);
+    await json('POST', '/orders/submit-kot', { restaurantId, actor, orderId: saved.orderId });
+    sharedOrders.push(saved);
+  }
+  const firstOpen = await json('GET', `/orders/open?restaurantId=${restaurantId}&orderId=${sharedOrders[0].orderId}`);
+  const firstItem = firstOpen.items[0];
+  const firstAdditional = await saveShared(customers[0].id, sharedItems[1].id, sharedOrders[0].orderId, [
+    { orderItemId: firstItem.order_item_id, itemId: firstItem.id, quantity: firstItem.quantity, modifiers: [] },
+    { itemId: sharedItems[1].id, quantity: 1, modifiers: [] }
+  ]);
+  await json('POST', '/orders/submit-kot', { restaurantId, actor, orderId: firstAdditional.orderId });
+  const parcel = await saveShared(customers[1].id, sharedItems[2].id, null, [{ itemId: sharedItems[2].id, quantity: 1, modifiers: [] }], 'TAKEAWAY');
+  await json('POST', '/orders/submit-kot', { restaurantId, actor, orderId: parcel.orderId });
+  await json('POST', '/orders/transfer-table', { restaurantId, actor, orderId: sharedOrders[2].orderId, fromTableId: sharedTable.id, toTableId: moveTarget.id });
+  const sharedOpen = await json('GET', `/orders/open-list?restaurantId=${restaurantId}&tableId=${sharedTable.id}`);
+  const movedOpen = await json('GET', `/orders/open-list?restaurantId=${restaurantId}&tableId=${moveTarget.id}`);
+  const sharedLive = await json('GET', `/orders/live?restaurantId=${restaurantId}`);
+  const sharedLiveIds = new Set((sharedLive.orders || []).map((order) => Number(order.id)));
+  if (!sharedOrders.slice(0, 2).every((order) => sharedLiveIds.has(Number(order.orderId))) || !sharedLiveIds.has(Number(parcel.orderId))) throw new Error('Shared-table orders are missing from billing live orders');
+  if (sharedOpen.orders.length < 2 || !movedOpen.orders.some((order) => Number(order.id) === Number(sharedOrders[2].orderId))) throw new Error('Shared-table order selection or move failed');
+  const kdsOrders = [];
+  for (const kitchen of admin.kitchens || []) {
+    const kds = await json('GET', `/kds/orders?restaurantId=${restaurantId}&kitchenId=${kitchen.id}&role=OWNER`);
+    kdsOrders.push(...(kds.orders || []));
+  }
+  if (!kdsOrders.some((order) => [sharedOrders[0].orderId, sharedOrders[1].orderId, sharedOrders[2].orderId, parcel.orderId].includes(Number(order.orderId || order.id)))) throw new Error('Shared-table KOTs are missing from KDS');
+  const multiCustomerResult = { table: sharedTable.table_name, openBills: sharedOpen.orders.length, movedOrderId: sharedOrders[2].orderId, parcelOrderId: parcel.orderId };
+
   let kdsResult = { skipped: true };
   for (const kitchen of admin.kitchens || []) {
     const kds = await json('GET', `/kds/orders?restaurantId=${restaurantId}&kitchenId=${kitchen.id}&role=OWNER`);
@@ -142,6 +189,7 @@ async function main() {
     liveOrders: liveOrders.orders.length,
     orderTypeSummary: orderTypes.orderTypeSummary.length,
     tableSelectMs: { tableOne: tableOne.ms, tableTwo: tableTwo.ms },
+    multiCustomerResult,
     kdsResult
   }, null, 2));
 }
