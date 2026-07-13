@@ -8,6 +8,8 @@ const liveHtml = fs.readFileSync(path.join(root, 'pos-app/backend/public/pos-liv
 const waiter = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/waiter.js'), 'utf8');
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'pos-app/package.json'), 'utf8'));
 const server = fs.readFileSync(path.join(root, 'pos-app/backend/server.js'), 'utf8');
+const login = fs.readFileSync(path.join(root, 'pos-app/backend/public/login.html'), 'utf8');
+const billing = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/billing.js'), 'utf8');
 
 assert.match(live, /activeTableId/);
 assert.match(live, /const isPositiveId/);
@@ -32,6 +34,12 @@ assert.match(live, /selectedOpenOrder/);
 assert.match(live, /restoreSelectedTableOrder/);
 assert.match(live, /state\.openOrders\[0\]\?\.id/);
 assert.match(live, /rememberedTableId/);
+assert.match(live, /reviewBaselineQuantities/);
+assert.match(live, /const delta = Number\(item\.quantity/);
+assert.doesNotMatch(login, /Open billing view/);
+assert.match(billing, /Authentication required/);
+assert.match(billing, /normalizeTableName/);
+assert.match(billing, /o\.table_id/);
 
 console.log(JSON.stringify({
   passed: true,

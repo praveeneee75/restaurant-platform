@@ -31,7 +31,7 @@ const state = {
   dirty: false,
   kotSubmitted: false,
   pendingEditKey: null
-  ,reviewBaselineKeys: []
+  ,reviewBaselineQuantities: {}
 };
 let tableSelectionRequest = 0;
 
@@ -179,7 +179,7 @@ async function restoreSelectedTableOrder() {
   customerName.value = state.customer?.name || "";
   state.cart = (data.items || []).map(cartItemFromOrderItem);
   state.selectedCartKey = state.cart[0]?.key || null;
-  state.reviewBaselineKeys = state.cart.map((item) => item.key);
+  state.reviewBaselineQuantities = reviewBaselineForCart();
   renderOrderSelector();
   renderCart();
 }
@@ -339,6 +339,10 @@ function itemLabel(item) {
   return `${item.quantity} x ${item.name}${item.notes ? ` (${item.notes})` : ""}`;
 }
 
+function reviewBaselineForCart() {
+  return Object.fromEntries(state.cart.map((item) => [item.key, Number(item.quantity || 0)]));
+}
+
 function updateOrderTypeView() {
   deliveryFields.hidden = orderType.value !== "DELIVERY";
   if (!isDineIn()) state.selectedTable = null;
@@ -380,7 +384,7 @@ async function selectTable(tableId, options = {}) {
     customerName.value = state.customer?.name || "";
     state.cart = (data.items || []).map(cartItemFromOrderItem);
     state.selectedCartKey = state.cart[0]?.key || null;
-    state.reviewBaselineKeys = state.cart.map((item) => item.key);
+    state.reviewBaselineQuantities = reviewBaselineForCart();
   }
   if (requestId !== tableSelectionRequest || state.activeTableId !== Number(tableId)) return;
   updateOrderTypeView();
@@ -563,10 +567,17 @@ async function saveCurrentOrder(force = false) {
 }
 
 async function submitCurrentKot() {
-  const baseline = new Set(state.reviewBaselineKeys || []);
+  const baseline = state.reviewBaselineQuantities || {};
   const submittedItems = state.cart.filter((item) => item.sentToKitchen);
-  const previousItems = state.cart.filter((item) => baseline.has(item.key) && !item.sentToKitchen);
-  const newItems = state.cart.filter((item) => !baseline.has(item.key) && !item.sentToKitchen);
+  const previousItems = state.cart
+    .filter((item) => Object.prototype.hasOwnProperty.call(baseline, item.key) && !item.sentToKitchen)
+    .map((item) => ({ ...item, quantity: Math.min(Number(item.quantity || 0), Number(baseline[item.key] || 0)) }))
+    .filter((item) => item.quantity > 0);
+  const newItems = state.cart.flatMap((item) => {
+    if (item.sentToKitchen) return [];
+    const delta = Number(item.quantity || 0) - Number(baseline[item.key] || 0);
+    return delta > 0 ? [{ ...item, quantity: delta }] : [];
+  });
   const summary = [
     `Order ${state.orderReference || state.orderId || "new"}`,
     "",
@@ -588,7 +599,7 @@ async function submitCurrentKot() {
     state.kotSubmitted = true;
     state.dirty = false;
     state.cart.forEach((item) => { item.sentToKitchen = true; });
-    state.reviewBaselineKeys = state.cart.map((item) => item.key);
+    state.reviewBaselineQuantities = reviewBaselineForCart();
     kotStatus.textContent = data.message || "KOT submitted";
     kotStatus.className = "success-message";
     submitKot.title = data.kotReference ? `Last KOT: ${data.kotReference}` : "KOT submitted";
