@@ -1,6 +1,6 @@
 {
   "name": "pos-app",
-  "version": "1.0.34",
+  "version": "1.0.35",
   "description": "Restaurant POS local backend",
   "main": "electron/main.js",
   "scripts": {
