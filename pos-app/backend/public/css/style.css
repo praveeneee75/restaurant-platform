@@ -182,14 +182,30 @@ button:hover,
 }
 
 .login-box {
-  width: min(380px, calc(100% - 32px));
-  margin: 12vh auto;
-  padding: 28px;
+  width: min(440px, calc(100% - 32px));
+  margin: clamp(24px, 10vh, 96px) auto;
+  padding: 28px clamp(18px, 5vw, 32px);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: var(--shadow);
   text-align: center;
+}
+
+.login-box h2 {
+  margin: 0 0 8px;
+  line-height: 1.2;
+}
+
+.login-box input,
+.login-box button,
+.login-box .secondary-btn {
+  width: 100%;
+}
+
+.login-box .activation-status-panel {
+  width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .login-box label {

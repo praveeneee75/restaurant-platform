@@ -31,6 +31,7 @@ const state = {
   dirty: false,
   kotSubmitted: false,
   pendingEditKey: null
+  ,reviewBaselineKeys: []
 };
 let tableSelectionRequest = 0;
 
@@ -178,6 +179,7 @@ async function restoreSelectedTableOrder() {
   customerName.value = state.customer?.name || "";
   state.cart = (data.items || []).map(cartItemFromOrderItem);
   state.selectedCartKey = state.cart[0]?.key || null;
+  state.reviewBaselineKeys = state.cart.map((item) => item.key);
   renderOrderSelector();
   renderCart();
 }
@@ -333,6 +335,10 @@ function cartItemFromOrderItem(item) {
   };
 }
 
+function itemLabel(item) {
+  return `${item.quantity} x ${item.name}${item.notes ? ` (${item.notes})` : ""}`;
+}
+
 function updateOrderTypeView() {
   deliveryFields.hidden = orderType.value !== "DELIVERY";
   if (!isDineIn()) state.selectedTable = null;
@@ -374,6 +380,7 @@ async function selectTable(tableId, options = {}) {
     customerName.value = state.customer?.name || "";
     state.cart = (data.items || []).map(cartItemFromOrderItem);
     state.selectedCartKey = state.cart[0]?.key || null;
+    state.reviewBaselineKeys = state.cart.map((item) => item.key);
   }
   if (requestId !== tableSelectionRequest || state.activeTableId !== Number(tableId)) return;
   updateOrderTypeView();
@@ -556,16 +563,21 @@ async function saveCurrentOrder(force = false) {
 }
 
 async function submitCurrentKot() {
+  const baseline = new Set(state.reviewBaselineKeys || []);
   const submittedItems = state.cart.filter((item) => item.sentToKitchen);
-  const newItems = state.cart.filter((item) => !item.sentToKitchen);
+  const previousItems = state.cart.filter((item) => baseline.has(item.key) && !item.sentToKitchen);
+  const newItems = state.cart.filter((item) => !baseline.has(item.key) && !item.sentToKitchen);
   const summary = [
     `Order ${state.orderReference || state.orderId || "new"}`,
     "",
     "Already submitted:",
-    ...(submittedItems.length ? submittedItems.map((item) => `${item.quantity} x ${item.name}`) : ["None"]),
+    ...(submittedItems.length ? submittedItems.map(itemLabel) : ["None"]),
+    "",
+    "Previously in this check:",
+    ...(previousItems.length ? previousItems.map(itemLabel) : ["None"]),
     "",
     "New in this KOT:",
-    ...(newItems.length ? newItems.map((item) => `${item.quantity} x ${item.name}`) : ["None"])
+    ...(newItems.length ? newItems.map(itemLabel) : ["None"])
   ].join("\n");
   if (!newItems.length) return alert(`${summary}\n\nThere are no new items to submit.`);
   if (!confirm(`${summary}\n\nSubmit this KOT?`)) return;
@@ -576,6 +588,7 @@ async function submitCurrentKot() {
     state.kotSubmitted = true;
     state.dirty = false;
     state.cart.forEach((item) => { item.sentToKitchen = true; });
+    state.reviewBaselineKeys = state.cart.map((item) => item.key);
     kotStatus.textContent = data.message || "KOT submitted";
     kotStatus.className = "success-message";
     submitKot.title = data.kotReference ? `Last KOT: ${data.kotReference}` : "KOT submitted";
