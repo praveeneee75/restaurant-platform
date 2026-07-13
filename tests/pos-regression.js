@@ -10,6 +10,7 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'pos-app/package.
 const server = fs.readFileSync(path.join(root, 'pos-app/backend/server.js'), 'utf8');
 
 assert.match(live, /activeTableId/);
+assert.match(live, /const isPositiveId/);
 assert.match(live, /tableSelectionRequest/);
 assert.match(live, /data-item-minus/);
 assert.match(live, /data-item-plus/);

@@ -35,6 +35,7 @@ const state = {
 let tableSelectionRequest = 0;
 
 const amount = (value) => Number(value || 0).toFixed(2);
+const isPositiveId = (value) => Number.isInteger(Number(value)) && Number(value) > 0;
 const money = (value) => `${state.settings?.currency || "INR"} ${amount(value)}`;
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 
