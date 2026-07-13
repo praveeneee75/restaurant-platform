@@ -11,6 +11,8 @@ const server = fs.readFileSync(path.join(root, 'pos-app/backend/server.js'), 'ut
 
 assert.match(live, /activeTableId/);
 assert.match(live, /const isPositiveId/);
+assert.match(live, /itemSearch/);
+assert.match(live, /!item\.sentToKitchen/);
 assert.match(live, /tableSelectionRequest/);
 assert.match(live, /data-item-minus/);
 assert.match(live, /data-item-plus/);

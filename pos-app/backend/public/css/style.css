@@ -520,6 +520,29 @@ button:hover,
   word-break: normal;
 }
 
+.item-search {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr);
+  align-items: center;
+  gap: 10px;
+  color: #40516a;
+  font-weight: 700;
+}
+
+.item-search input {
+  min-width: 0;
+}
+
+.table-tile.table-occupied {
+  background: #e9f8ee;
+  border-color: #42a866;
+}
+
+.table-tile.table-available {
+  background: #fff;
+  border-color: #dfe3e8;
+}
+
 .item-tile {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -603,7 +626,7 @@ button:hover,
 
 .pos-menu {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto 1fr;
   gap: 16px;
   padding: 16px;
   overflow: hidden;

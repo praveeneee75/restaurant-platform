@@ -38,6 +38,7 @@ const amount = (value) => Number(value || 0).toFixed(2);
 const isPositiveId = (value) => Number.isInteger(Number(value)) && Number(value) > 0;
 const money = (value) => `${state.settings?.currency || "INR"} ${amount(value)}`;
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+const itemSearch = document.getElementById("itemSearch");
 
 async function postJson(url, body) {
   const res = await fetch(url, {
@@ -222,7 +223,7 @@ function refreshCartAndMenu() {
 
 function renderTables() {
   tablesList.innerHTML = state.tables.map((table) => `
-    <button class="table-tile ${state.selectedTable?.id === table.id ? "active" : ""}" data-table="${table.id}">
+    <button class="table-tile table-${String(table.status || "AVAILABLE").toLowerCase()} ${state.selectedTable?.id === table.id ? "active" : ""}" data-table="${table.id}">
       <strong>${esc(table.table_name)}</strong><span>${esc(table.status)}</span>
     </button>
   `).join("");
@@ -257,7 +258,8 @@ function renderCategories() {
 }
 
 function renderItems(categoryId) {
-  const itemTiles = state.items.filter((item) => item.category_id === categoryId).map((item) => {
+  const query = (itemSearch?.value || "").trim().toLowerCase();
+  const itemTiles = state.items.filter((item) => item.category_id === categoryId && (!query || item.name.toLowerCase().includes(query))).map((item) => {
     const quantity = state.activeTableId ? cartQuantityForItem(item.id) : 0;
     return `
       <button class="item-tile ${quantity > 0 ? "selected" : ""}" data-item="${item.id}">
@@ -267,7 +269,7 @@ function renderItems(categoryId) {
       </button>
     `;
   }).join("");
-  const comboTiles = state.combos.map((combo) => {
+  const comboTiles = state.combos.filter((combo) => !query || combo.name.toLowerCase().includes(query)).map((combo) => {
     const quantity = state.activeTableId ? cartQuantityForCombo(combo.id) : 0;
     return `
       <button class="item-tile combo-tile ${quantity > 0 ? "selected" : ""}" data-combo="${combo.id}">
@@ -470,10 +472,14 @@ function addItemToCart(menuItem, modifiers) {
   const modifierIds = modifiers.map((modifier) => modifier.id).sort((a, b) => a - b);
   const key = `item-${menuItem.id}-${modifierIds.join(".") || "none"}`;
   const unitPrice = Number(menuItem.price || 0) + modifiers.reduce((sum, modifier) => sum + Number(modifier.price_delta || 0), 0);
-  const line = state.cart.find((item) => item.key === key);
+  const line = state.cart.find((item) => item.key === key && !item.sentToKitchen);
   if (line) line.quantity += 1;
-  else state.cart.push({ ...menuItem, key, price: unitPrice, quantity: 1, modifiers });
-  state.selectedCartKey = key;
+  else {
+    const nextKey = state.cart.some((item) => item.key === key) ? `${key}-new-${Date.now()}` : key;
+    state.cart.push({ ...menuItem, key: nextKey, price: unitPrice, quantity: 1, modifiers });
+    state.selectedCartKey = nextKey;
+  }
+  if (line) state.selectedCartKey = line.key;
   state.dirty = true;
   refreshCartAndMenu();
 }
@@ -757,6 +763,7 @@ addModifiedItem.addEventListener("click", () => {
 paymentMode.addEventListener("change", renderCart);
 redeemPoints.addEventListener("input", renderCart);
 orderType.addEventListener("change", updateOrderTypeView);
+itemSearch.addEventListener("input", () => renderItems(state.selectedCategoryId));
 deliveryFee.addEventListener("input", renderCart);
 orderSelector.addEventListener("change", async () => {
   if (!state.selectedTable || !orderSelector.value) return;
