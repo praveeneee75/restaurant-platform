@@ -1168,7 +1168,8 @@ app.post('/desktop/license/refresh', async (req, res) => {
 // ACTIVATE POS
 // ========================
 app.post('/activate', async (req, res) => {
-  const { restaurantId, licenseKey } = req.body;
+  const restaurantId = String(req.body?.restaurantId || '').trim().toUpperCase();
+  const licenseKey = String(req.body?.licenseKey || '').trim().toUpperCase();
 
   if (!restaurantId || !licenseKey) {
     return res.status(400).json({
@@ -1195,7 +1196,7 @@ app.post('/activate', async (req, res) => {
     if (!response.data.valid) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid license'
+        message: response.data.message || 'The restaurant code and license key do not match an active license.'
       });
     }
 
@@ -1270,7 +1271,7 @@ db.close();
     success: false,
     message: licenseServerUnavailable
       ? 'KMaster cloud could not be reached. Check the connection and try again.'
-      : (err.response?.data?.message || 'License activation failed')
+      : (err.response?.data?.message || err.message || 'License activation failed')
   });
 }
 });

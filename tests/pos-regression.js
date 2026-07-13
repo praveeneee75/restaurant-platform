@@ -40,6 +40,8 @@ assert.doesNotMatch(login, /Open billing view/);
 assert.match(billing, /Authentication required/);
 assert.match(billing, /normalizeTableName/);
 assert.match(billing, /o\.table_id/);
+assert.match(server, /String\(req\.body\?\.restaurantId/);
+assert.match(server, /String\(req\.body\?\.licenseKey/);
 
 console.log(JSON.stringify({
   passed: true,
