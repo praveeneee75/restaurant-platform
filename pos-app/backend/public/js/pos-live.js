@@ -32,6 +32,7 @@ const state = {
   kotSubmitted: false,
   pendingEditKey: null
   ,reviewBaselineQuantities: {}
+  ,parcelTableId: null
 };
 let tableSelectionRequest = 0;
 
@@ -158,8 +159,9 @@ async function loadOpenOrdersForTable(tableId, selectedOrderId = null) {
 
 async function restoreSelectedTableOrder() {
   if (!state.selectedTable?.id) return;
-  await loadOpenOrdersForTable(state.selectedTable.id);
-  const orderId = state.openOrders[0]?.id;
+  const rememberedOrderId = state.orderId;
+  await loadOpenOrdersForTable(state.selectedTable.id, rememberedOrderId);
+  const orderId = state.openOrders.find((order) => Number(order.id) === Number(rememberedOrderId))?.id || state.openOrders[0]?.id;
   if (!orderId) {
     state.orderId = null;
     state.orderReference = null;
@@ -353,6 +355,7 @@ function updateOrderTypeView() {
 async function selectTable(tableId, options = {}) {
   const requestId = ++tableSelectionRequest;
   state.activeTableId = Number(tableId);
+  state.parcelTableId = null;
   localStorage.setItem("posActiveTableId", String(tableId));
   if (!isDineIn()) orderType.value = "DINE_IN";
   state.customer = null;
@@ -545,8 +548,8 @@ async function saveCurrentOrder(force = false) {
   const data = await postJson("/orders/save", {
     orderId: state.orderId,
     orderType: orderType.value,
-    tableId: state.selectedTable?.id || null,
-    tableName: state.selectedTable?.table_name || null,
+    tableId: isDineIn() ? (state.selectedTable?.id || null) : (state.parcelTableId || null),
+    tableName: isDineIn() ? (state.selectedTable?.table_name || null) : (state.tables.find((table) => table.id === state.parcelTableId)?.table_name || null),
     customerId: state.customer?.id || null,
     deliveryAddress: deliveryAddress.value,
     deliveryPhone: deliveryPhone.value || customerPhone.value,
@@ -805,11 +808,16 @@ orderSelector.addEventListener("change", async () => {
   const data = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(orderId)}`).then((res) => res.json());
   if (!data.order) return;
   state.orderId = data.order.id;
+  state.orderReference = data.order.order_reference || `${data.order.order_sequence || data.order.id}-${data.order.customer_ref || `A${data.order.id}`}`;
+  state.kotSubmitted = (data.items || []).some((item) => item.kot_id);
+  state.dirty = false;
   state.customer = data.customer || null;
   customerPhone.value = state.customer?.phone || "";
   customerName.value = state.customer?.name || "";
   state.cart = (data.items || []).map(cartItemFromOrderItem);
   state.selectedCartKey = state.cart[0]?.key || null;
+  state.reviewBaselineQuantities = reviewBaselineForCart();
+  orderMeta.textContent = `Order ${state.orderReference}`;
   renderCart();
 });
 searchCustomer.addEventListener("click", searchCustomerByPhone);
@@ -829,6 +837,7 @@ splitBillBtn.addEventListener("click", openSplitBillModal);
 newCheckBtn.addEventListener("click", () => {
   if (!state.selectedTable) return alert("Select a table first");
   state.orderId = null;
+  state.parcelTableId = null;
   state.orderReference = null;
   state.openOrders = [];
   state.cart = [];
@@ -843,16 +852,19 @@ newCheckBtn.addEventListener("click", () => {
   updateOrderTypeView();
 });
 parcelCheckBtn.addEventListener("click", () => {
+  if (!state.selectedTable) return alert("Select the customer's table first");
+  state.parcelTableId = state.selectedTable.id;
+  const parcelCustomer = state.customer;
   state.orderId = null;
   state.orderReference = null;
   state.openOrders = [];
   state.cart = [];
   state.selectedCartKey = null;
-  state.customer = null;
+  state.customer = parcelCustomer;
   state.dirty = false;
   state.kotSubmitted = false;
-  customerPhone.value = "";
-  customerName.value = "";
+  customerPhone.value = state.customer?.phone || "";
+  customerName.value = state.customer?.name || "";
   orderType.value = "TAKEAWAY";
   kotStatus.textContent = "Separate parcel check started";
   updateOrderTypeView();

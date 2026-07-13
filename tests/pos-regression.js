@@ -42,6 +42,10 @@ assert.match(billing, /normalizeTableName/);
 assert.match(billing, /o\.table_id/);
 assert.match(server, /String\(req\.body\?\.restaurantId/);
 assert.match(server, /String\(req\.body\?\.licenseKey/);
+assert.match(live, /rememberedOrderId/);
+assert.match(live, /parcelTableId/);
+assert.match(live, /parcelCustomer/);
+assert.match(billing, /open bills/);
 
 console.log(JSON.stringify({
   passed: true,
