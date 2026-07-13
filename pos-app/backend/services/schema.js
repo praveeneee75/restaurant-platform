@@ -159,6 +159,7 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'order_items', 'started_at DATETIME');
   addColumn(db, 'order_items', 'ready_at DATETIME');
   addColumn(db, 'order_items', 'served_at DATETIME');
+  addColumn(db, 'order_items', 'notes TEXT');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS kots (

@@ -4774,7 +4774,7 @@ function createKotJobs(db, orderId) {
     WHERE o.id = ?
   `).get(orderId);
   const rows = db.prepare(`
-    SELECT oi.id AS order_item_id, oi.item_id, oi.quantity, oi.price, oi.combo_id, oi.combo_name, i.name, c.kitchen_id, k.printer_id, k.name AS kitchen_name
+    SELECT oi.id AS order_item_id, oi.item_id, oi.quantity, oi.price, oi.combo_id, oi.combo_name, oi.notes, i.name, c.kitchen_id, k.printer_id, k.name AS kitchen_name
     FROM order_items oi
     JOIN items i ON i.id = oi.item_id
     JOIN categories c ON c.id = i.category_id
@@ -5325,8 +5325,8 @@ app.post('/orders/save', (req, res) => {
             const componentQuantity = quantity * Number(comboItem.quantity || 1);
             const pricedQuantity = index === 0 ? componentQuantity : 1;
             const componentPrice = index === 0 ? Number(combo.price) * quantity / pricedQuantity : 0;
-            db.prepare('INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price, combo_id, combo_name, combo_quantity) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-              .run(id, comboItem.item_id, componentQuantity, comboItem.kitchen_id, componentPrice, combo.id, combo.name, quantity);
+            db.prepare('INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price, combo_id, combo_name, combo_quantity, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+              .run(id, comboItem.item_id, componentQuantity, comboItem.kitchen_id, componentPrice, combo.id, combo.name, quantity, normaliseText(item.notes) || null);
           });
           total += Number(combo.price) * quantity;
           return;
@@ -5341,8 +5341,8 @@ app.post('/orders/save', (req, res) => {
         if (!menu) throw new Error('Menu item not found');
         const modifiers = validateSelectedModifiers(db, itemId, selectedModifierIds(item));
         const unitPrice = Number(menu.price) + modifiers.reduce((sum, modifier) => sum + Number(modifier.price_delta || 0), 0);
-        const result = db.prepare('INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price) VALUES (?, ?, ?, ?, ?)')
-          .run(id, itemId, quantity, menu.kitchen_id, unitPrice);
+        const result = db.prepare('INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price, notes) VALUES (?, ?, ?, ?, ?, ?)')
+          .run(id, itemId, quantity, menu.kitchen_id, unitPrice, normaliseText(item.notes) || null);
         insertOrderItemModifiers(db, result.lastInsertRowid, modifiers);
         total += unitPrice * quantity;
       });
@@ -5415,7 +5415,7 @@ app.get('/orders/open', (req, res) => {
         .run(order.order_sequence, order.customer_ref, order.order_reference, order.id);
     }
     const items = order ? db.prepare(`
-      SELECT oi.id AS order_item_id, oi.item_id AS id, i.name, oi.quantity, oi.price, oi.kot_id, oi.combo_id, oi.combo_name, oi.combo_quantity
+      SELECT oi.id AS order_item_id, oi.item_id AS id, i.name, oi.quantity, oi.price, oi.kot_id, oi.combo_id, oi.combo_name, oi.combo_quantity, oi.notes
       FROM order_items oi JOIN items i ON i.id = oi.item_id
       WHERE oi.order_id = ?
     `).all(order.id) : [];

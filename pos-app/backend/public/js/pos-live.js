@@ -292,11 +292,13 @@ function renderCart() {
         <span>${money(item.price)}</span>
         ${item.sentToKitchen ? "<small>Sent to kitchen</small>" : ""}
         ${(item.modifiers || []).map((modifier) => `<small>+ ${esc(modifier.name)}</small>`).join("")}
+        ${item.notes ? `<small class="item-note">Note: ${esc(item.notes)}</small>` : ""}
       </div>
       <div class="qty-controls">
         <button data-minus="${item.key}" ${item.sentToKitchen ? "disabled" : ""}>-</button>
         <span>${item.quantity}</span>
         <button data-plus="${item.key}" ${item.sentToKitchen ? "disabled" : ""}>+</button>
+        <button data-note="${item.key}" ${item.sentToKitchen ? "disabled" : ""}>Note</button>
         <button data-remove="${item.key}" ${item.sentToKitchen ? "disabled" : ""}>Remove</button>
       </div>
     </div>
@@ -326,6 +328,7 @@ function cartItemFromOrderItem(item) {
     price: item.price,
     quantity: item.quantity,
     modifiers: item.modifiers || [],
+    notes: item.notes || "",
     sentToKitchen: Boolean(item.kot_id)
   };
 }
@@ -541,7 +544,7 @@ async function saveCurrentOrder(force = false) {
     expectedDeliveryTime: expectedDeliveryTime.value || null,
     items: state.cart.map((item) => item.comboId
       ? ({ orderItemId: item.orderItemId || null, comboId: item.comboId, quantity: item.quantity })
-      : ({ orderItemId: item.orderItemId || null, itemId: item.id, quantity: item.quantity, modifiers: (item.modifiers || []).filter((modifier) => modifier.id).map((modifier) => modifier.id) }))
+      : ({ orderItemId: item.orderItemId || null, itemId: item.id, quantity: item.quantity, notes: item.notes || "", modifiers: (item.modifiers || []).filter((modifier) => modifier.id).map((modifier) => modifier.id) }))
   });
   state.orderId = data.orderId;
   state.orderReference = data.orderReference || state.orderReference || data.orderId;
@@ -657,6 +660,13 @@ document.addEventListener("click", async (event) => {
       line.quantity += 1;
       state.selectedCartKey = line.key;
       state.dirty = true;
+    }
+  }
+  if (target.dataset.note) {
+    const line = state.cart.find((item) => item.key === target.dataset.note);
+    if (line && !line.sentToKitchen) {
+      const note = prompt(`Kitchen note for ${line.name}`, line.notes || "");
+      if (note !== null) { line.notes = note.trim(); state.dirty = true; renderCart(); }
     }
   }
   if (target.dataset.minus) {
@@ -792,6 +802,37 @@ moveTableBtn.addEventListener("click", async () => {
   await moveOrderToTable(targetTable.id);
 });
 splitBillBtn.addEventListener("click", openSplitBillModal);
+newCheckBtn.addEventListener("click", () => {
+  if (!state.selectedTable) return alert("Select a table first");
+  state.orderId = null;
+  state.orderReference = null;
+  state.openOrders = [];
+  state.cart = [];
+  state.selectedCartKey = null;
+  state.customer = null;
+  state.dirty = false;
+  state.kotSubmitted = false;
+  customerPhone.value = "";
+  customerName.value = "";
+  orderType.value = "DINE_IN";
+  kotStatus.textContent = "New customer check started";
+  updateOrderTypeView();
+});
+parcelCheckBtn.addEventListener("click", () => {
+  state.orderId = null;
+  state.orderReference = null;
+  state.openOrders = [];
+  state.cart = [];
+  state.selectedCartKey = null;
+  state.customer = null;
+  state.dirty = false;
+  state.kotSubmitted = false;
+  customerPhone.value = "";
+  customerName.value = "";
+  orderType.value = "TAKEAWAY";
+  kotStatus.textContent = "Separate parcel check started";
+  updateOrderTypeView();
+});
 closeSplitBillModal.addEventListener("click", () => {
   splitBillModal.hidden = true;
 });
