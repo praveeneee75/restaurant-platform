@@ -46,6 +46,9 @@ assert.match(live, /rememberedOrderId/);
 assert.match(live, /parcelTableId/);
 assert.match(live, /parcelCustomer/);
 assert.match(billing, /open bills/);
+assert.match(live, /const requestId = \+\+tableSelectionRequest/);
+assert.match(live, /Number\(data\.order\?\.id\) !== orderId/);
+assert.match(server, /c\.name AS customer_name/);
 
 console.log(JSON.stringify({
   passed: true,

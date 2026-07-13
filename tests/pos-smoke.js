@@ -103,7 +103,14 @@ async function main() {
   // Shared-table regression: three independent customer checks, a repeat KOT,
   // a linked parcel check, and a table transfer must remain separately visible.
   const sharedTable = (pos.tables || []).find((table) => table.table_name === 'Table 3') || pos.tables.find((table) => table.status === 'AVAILABLE');
-  const moveTarget = (pos.tables || []).find((table) => table.id !== sharedTable?.id && table.table_name === 'Table 4') || pos.tables.find((table) => table.id !== sharedTable?.id);
+  let moveTarget = null;
+  for (const candidate of (pos.tables || []).filter((table) => table.id !== sharedTable?.id)) {
+    const candidateOrders = await json('GET', `/orders/open-list?restaurantId=${restaurantId}&tableId=${candidate.id}`);
+    if (!candidateOrders.orders.length) {
+      moveTarget = candidate;
+      break;
+    }
+  }
   const sharedItems = (pos.items || []).slice(0, 3);
   if (!sharedTable || !moveTarget || sharedItems.length < 3) throw new Error('Shared-table smoke test needs Table 3, another table, and three items');
   const customers = [];
