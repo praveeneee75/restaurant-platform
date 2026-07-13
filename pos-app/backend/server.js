@@ -3800,7 +3800,7 @@ app.get('/analytics/dashboard', (req, res) => {
   try {
     const salesTrend = db.prepare(`
       SELECT DATE(COALESCE(settled_at, created_at)) AS date, SUM(total_amount) AS total, COUNT(*) AS orders
-      FROM orders
+      FROM orders o
       WHERE payment_status = 'PAID' AND COALESCE(status, '') != 'CANCELLED'
         AND DATE(COALESCE(settled_at, created_at)) BETWEEN DATE(?) AND DATE(?)
       GROUP BY DATE(COALESCE(settled_at, created_at))
@@ -5513,10 +5513,11 @@ app.get('/orders/open-list', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     const orders = db.prepare(`
-      SELECT id, table_id, table_no, order_type, total_amount, payment_status, status, created_at, updated_at, order_sequence, customer_ref, order_reference
-      FROM orders
-      WHERE table_id = ? AND status NOT IN ('PAID', 'CANCELLED') AND payment_status != 'PAID'
-      ORDER BY created_at ASC, id ASC
+      SELECT o.id, o.table_id, o.table_no, o.order_type, o.total_amount, o.payment_status, o.status, o.created_at, o.updated_at, o.order_sequence, o.customer_ref, o.order_reference, c.name AS customer_name
+      FROM orders o
+      LEFT JOIN customers c ON c.id = o.customer_id
+      WHERE o.table_id = ? AND o.status NOT IN ('PAID', 'CANCELLED') AND o.payment_status != 'PAID'
+      ORDER BY o.created_at ASC, o.id ASC
     `).all(tableId);
     res.json({ success: true, orders });
   } catch (err) {
@@ -6163,8 +6164,12 @@ app.get('/orders/live', (req, res) => {
     const orders = db.prepare(`
       SELECT
         o.id,
+        o.table_id,
         o.order_type,
         o.table_no,
+        o.order_sequence,
+        o.customer_ref,
+        o.order_reference,
         o.status,
         o.payment_status,
         o.total_amount,

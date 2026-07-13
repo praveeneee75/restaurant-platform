@@ -20,3 +20,19 @@ document.addEventListener('click', async e => { const button = e.target.closest(
 billingSearch.addEventListener('input', () => { renderTables(); renderRecent(); });
 refreshBilling.addEventListener('click', () => load().catch(e => billingStatus.textContent = e.message));
 load().catch(e => billingStatus.textContent = e.message);
+
+// Keep every open customer bill visible inside its table card.
+setTimeout(() => {
+  const byTable = new Map();
+  visibleOrders().filter(o => o.payment_status !== 'PAID').forEach(o => {
+    const key = Number(o.table_id) > 0 ? `id:${Number(o.table_id)}` : `name:${normalizeTableName(o.table_no)}`;
+    const orders = byTable.get(key) || [];
+    orders.push(o);
+    byTable.set(key, orders);
+  });
+  tableMap.innerHTML = state.tables.map(t => {
+    const orders = byTable.get(`id:${Number(t.id)}`) || byTable.get(`name:${normalizeTableName(t.table_name)}`) || [];
+    const bills = orders.length ? orders.map(o => `<button class="billing-open-bill" data-order-id="${o.id}"><strong>${esc(o.order_reference || `${o.order_sequence || o.id}-${o.customer_ref || `A${o.id}`}`)}</strong><span>${esc(o.customer_name || `Customer ${o.customer_ref || ''}`)} · ${money(o.total_amount)}</span></button>`).join('') : '<span>Available</span>';
+    return `<section class="billing-table-card ${orders.length ? 'running' : 'blank'}"><strong>${esc(t.table_name)}</strong><div class="billing-open-bills">${bills}</div></section>`;
+  }).join('');
+}, 100);

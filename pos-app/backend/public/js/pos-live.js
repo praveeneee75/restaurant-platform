@@ -247,8 +247,8 @@ function renderOrderSelector() {
     return;
   }
   orderSelector.innerHTML = [
-    `<option value="${current?.id || ""}">${current ? `Order ${current.order_reference || current.id}` : "Current check"}</option>`,
-    ...state.openOrders.filter((order) => Number(order.id) !== Number(current?.id)).map((order) => `<option value="${order.id}">Order ${order.order_reference || order.id} - ${money(order.total_amount)}</option>`)
+    `<option value="${current?.id || ""}">${current ? `Order ${current.order_reference || current.id}${current.customer_name ? ` - ${current.customer_name}` : ""}` : "Current check"}</option>`,
+    ...state.openOrders.filter((order) => Number(order.id) !== Number(current?.id)).map((order) => `<option value="${order.id}">Order ${order.order_reference || order.id}${order.customer_name ? ` - ${esc(order.customer_name)}` : ""} - ${money(order.total_amount)}</option>`)
   ].join("");
   if (current) orderSelector.value = String(current.id);
 }
@@ -805,8 +805,12 @@ deliveryFee.addEventListener("input", renderCart);
 orderSelector.addEventListener("change", async () => {
   if (!state.selectedTable || !orderSelector.value) return;
   const orderId = Number(orderSelector.value);
+  const requestId = ++tableSelectionRequest;
+  state.cart = [];
+  state.selectedCartKey = null;
+  renderCart();
   const data = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(orderId)}`).then((res) => res.json());
-  if (!data.order) return;
+  if (requestId !== tableSelectionRequest || Number(data.order?.id) !== orderId || Number(state.activeTableId) !== Number(state.selectedTable.id)) return;
   state.orderId = data.order.id;
   state.orderReference = data.order.order_reference || `${data.order.order_sequence || data.order.id}-${data.order.customer_ref || `A${data.order.id}`}`;
   state.kotSubmitted = (data.items || []).some((item) => item.kot_id);
