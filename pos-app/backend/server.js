@@ -5265,15 +5265,10 @@ app.post('/orders/save', (req, res) => {
 
       let id = orderId;
       let itemsToSave = items;
-      if (!id && safeTableId) {
-        const existing = db.prepare(`
-          SELECT id FROM orders
-          WHERE table_id = ? AND status NOT IN ('PAID', 'CANCELLED') AND payment_status != 'PAID'
-            AND (? IS NULL OR customer_id = ? OR customer_id IS NULL)
-          ORDER BY id DESC LIMIT 1
-        `).get(safeTableId, isPositiveId(customerId) ? customerId : null, isPositiveId(customerId) ? customerId : null);
-        if (existing) id = existing.id;
-      }
+      // A missing orderId means this is a new customer check. Never infer an
+      // existing order from the table: several customers may share one table.
+      // Existing checks must be edited only when the client explicitly sends
+      // their orderId from the order selector.
       const oldValue = id ? db.prepare('SELECT * FROM orders WHERE id = ?').get(id) : null;
       if (!id) {
         const identity = safeTableId ? nextOrderIdentity(db, safeTableId) : { orderSequence: null, customerRef: null, orderReference: null };
