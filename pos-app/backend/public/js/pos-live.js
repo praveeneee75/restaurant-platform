@@ -140,7 +140,7 @@ async function refreshLiveState({ updateCart = false } = {}) {
   const data = await fetch(`/pos/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`).then((res) => res.json());
   applyBootstrap(data);
   await refreshShiftCashStatus();
-  if (state.selectedTable?.id) await restoreSelectedTableOrder();
+  if (state.selectedTable?.id && updateCart) await restoreSelectedTableOrder();
   renderTables();
   renderCategories();
   if (state.selectedCategoryId) renderItems(state.selectedCategoryId);
@@ -917,5 +917,5 @@ cancelOrder.addEventListener("click", async () => {
 });
 
 boot().then(renderCart).catch((err) => alert(err.message));
-setInterval(() => refreshLiveState().catch(() => {}), 5000);
+setInterval(() => refreshLiveState().catch(() => {}), 15000);
 window.addEventListener("focus", () => refreshLiveState().catch(() => {}));

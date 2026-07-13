@@ -5477,6 +5477,8 @@ app.get('/orders/invoices', (req, res) => {
     const rows = db.prepare(`
       SELECT
         o.id,
+        o.table_id,
+        o.order_reference,
         o.invoice_no,
         o.table_no,
         o.order_type,
