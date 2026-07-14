@@ -80,21 +80,10 @@
       <input id="cashAmount" type="number" step="0.01" placeholder="Cash amount">
       <input id="cardAmount" type="number" step="0.01" placeholder="Card amount">
       <input id="upiAmount" type="number" step="0.01" placeholder="UPI amount">
-      <div class="shift-cash-panel">
-        <strong>Shift & Cash</strong>
-        <p id="shiftCashStatus">Loading shift status...</p>
-        <div class="cart-actions">
-          <button id="clockInBtn" type="button" class="secondary-btn">Clock In</button>
-          <button id="clockOutBtn" type="button" class="secondary-btn">Clock Out</button>
-        </div>
-        <div class="cart-actions">
-          <button id="openRegisterBtn" type="button" class="secondary-btn">Open Register</button>
-          <button id="closeRegisterBtn" type="button" class="secondary-btn">Close Register</button>
-        </div>
-        <div class="cart-actions">
-          <button id="cashInBtn" type="button" class="secondary-btn">Cash In</button>
-          <button id="cashOutBtn" type="button" class="secondary-btn">Cash Out</button>
-        </div>
+      <div class="order-state-legend" aria-label="Order item status">
+        <span><i class="legend saved"></i>Saved / sent</span>
+        <span><i class="legend pending"></i>Saved locally, not sent</span>
+        <span><i class="legend fresh"></i>New item</span>
       </div>
       <div class="cart-actions">
         <button id="moveTableBtn" type="button" class="secondary-btn">Move Table</button>

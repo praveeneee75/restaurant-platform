@@ -187,10 +187,7 @@ async function restoreSelectedTableOrder() {
 }
 
 async function refreshShiftCashStatus() {
-  if (!actor.id) {
-    shiftCashStatus.textContent = "Login user missing. Shift controls need a logged-in user.";
-    return;
-  }
+  return;
   const [attendanceData, cashData] = await Promise.all([
     fetch(`/attendance/current?restaurantId=${encodeURIComponent(restaurantId)}&userId=${encodeURIComponent(actor.id)}`).then((res) => res.json()).catch(() => ({ attendance: null })),
     fetch(`/cash-register/current?restaurantId=${encodeURIComponent(restaurantId)}`).then((res) => res.json()).catch(() => ({ session: null, expectedCash: 0 }))
@@ -198,7 +195,7 @@ async function refreshShiftCashStatus() {
   state.attendance = attendanceData.attendance || null;
   state.cashSession = cashData.session || null;
   state.expectedCash = Number(cashData.expectedCash || 0);
-  shiftCashStatus.textContent = `${state.attendance ? "Clocked in" : "Not clocked in"} | Register: ${state.cashSession ? `Open ${money(state.expectedCash)}` : "Closed"}`;
+  return;
 }
 
 async function promptAmount(label) {
@@ -279,7 +276,7 @@ function renderItems(categoryId) {
       <button class="item-tile combo-tile ${quantity > 0 ? "selected" : ""}" data-combo="${combo.id}">
         <strong>${esc(combo.name)}</strong>
         <span>${money(combo.price)}</span>
-        ${quantity > 0 ? `<em>${quantity}</em>` : ""}
+        ${quantity > 0 ? `<span class="tile-quantity-controls"><span data-combo-minus="${combo.id}" role="button">-</span><em>${quantity}</em><span data-combo-plus="${combo.id}" role="button">+</span></span>` : ""}
       </button>
     `;
   }).join("");
@@ -290,7 +287,7 @@ function renderCart() {
   cartTitle.textContent = isDineIn() ? (state.selectedTable ? state.selectedTable.table_name : "Select a table") : orderType.options[orderType.selectedIndex].text;
   orderMeta.textContent = state.orderId ? `Order ${state.orderReference || state.orderId}` : "New order";
   cartItems.innerHTML = state.cart.map((item) => `
-    <div class="cart-line ${state.selectedCartKey === item.key ? "selected" : ""}" data-cart-line="${item.key}" role="button" tabindex="0" aria-label="Edit ${esc(item.name)}">
+    <div class="cart-line ${state.selectedCartKey === item.key ? "selected" : ""} ${item.sentToKitchen ? "saved" : state.orderId ? "pending-save" : "new-item"}" data-cart-line="${item.key}" role="button" tabindex="0" aria-label="Edit ${esc(item.name)}">
       <div>
         <strong>${esc(item.name)}</strong>
         <span>${money(item.price)}</span>
@@ -606,6 +603,7 @@ async function submitCurrentKot() {
     kotStatus.textContent = data.message || "KOT submitted";
     kotStatus.className = "success-message";
     submitKot.title = data.kotReference ? `Last KOT: ${data.kotReference}` : "KOT submitted";
+    await loadOpenOrdersForTable(state.selectedTable?.id, state.orderId);
     refreshCartAndMenu();
   }
   alert(data.message || "KOT submitted");
@@ -681,6 +679,15 @@ document.addEventListener("click", async (event) => {
   }
   if (target.dataset.item) openModifierModal(Number(target.dataset.item));
   if (target.dataset.combo) addCombo(Number(target.dataset.combo));
+  if (target.dataset.comboPlus || target.dataset.comboMinus) {
+    const comboId = Number(target.dataset.comboPlus || target.dataset.comboMinus);
+    const line = state.cart.find((item) => Number(item.comboId) === comboId);
+    if (line && !line.sentToKitchen) {
+      line.quantity += target.dataset.comboPlus ? 1 : -1;
+      state.selectedCartKey = line.key;
+      state.dirty = true;
+    }
+  }
   if (target.dataset.plus) {
     const line = state.cart.find((item) => item.key === target.dataset.plus);
     if (line && !line.sentToKitchen) {
@@ -897,6 +904,8 @@ createSplitCheckBtn.addEventListener("click", async () => {
     renderCart();
   }
 });
+/* Register and attendance controls are intentionally not exposed in POS. */
+/*
 clockInBtn.addEventListener("click", async () => {
   await postJson("/attendance/clock-in", { userId: actor.id, openingNote: prompt("Opening note") || "" });
   await refreshShiftCashStatus();
@@ -930,6 +939,7 @@ cashOutBtn.addEventListener("click", async () => {
   await postJson("/cash-register/movement", { type: "CASH_OUT", amount: amountValue, reason: prompt("Reason") || "" });
   await refreshShiftCashStatus();
 });
+*/
 cancelOrder.addEventListener("click", async () => {
   if (!state.orderId || !confirm("Cancel this order?")) return;
   await postJson("/orders/cancel", { orderId: state.orderId });
