@@ -270,7 +270,7 @@ function renderItems(categoryId) {
       </button>
     `;
   }).join("");
-  const comboTiles = state.combos.filter((combo) => !query || combo.name.toLowerCase().includes(query)).map((combo) => {
+  const comboTiles = state.combos.filter((combo) => (!combo.category_id || Number(combo.category_id) === Number(categoryId)) && (!query || combo.name.toLowerCase().includes(query))).map((combo) => {
     const quantity = state.activeTableId ? cartQuantityForCombo(combo.id) : 0;
     return `
       <button class="item-tile combo-tile ${quantity > 0 ? "selected" : ""}" data-combo="${combo.id}">
@@ -811,7 +811,8 @@ addModifiedItem.addEventListener("click", () => {
 paymentMode.addEventListener("change", renderCart);
 redeemPoints.addEventListener("input", renderCart);
 orderType.addEventListener("change", updateOrderTypeView);
-itemSearch.addEventListener("input", () => renderItems(state.selectedCategoryId));
+let itemSearchTimer;
+itemSearch.addEventListener("input", () => { clearTimeout(itemSearchTimer); itemSearchTimer = setTimeout(() => renderItems(state.selectedCategoryId), 120); });
 deliveryFee.addEventListener("input", renderCart);
 orderSelector.addEventListener("change", async () => {
   if (!state.selectedTable || !orderSelector.value) return;

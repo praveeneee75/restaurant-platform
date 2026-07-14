@@ -591,6 +591,9 @@ button:hover,
 .table-panel table { width: 100%; table-layout: auto; }.table-panel td, .table-panel th { vertical-align: middle; }.table-panel td:last-child, .table-panel th:last-child { width: 130px; white-space: nowrap; }
 .billing-open-bill strong, .billing-open-bill span { display: block; overflow-wrap: anywhere; }.billing-open-bill span { color: #dbeafe; margin-top: 3px; }
 @media (max-width: 700px) { .invoice-filters { grid-template-columns: 1fr; } .table-panel { overflow-x: auto; } .table-panel table { min-width: 760px; } }
+.cart-line.saved { background: #dcfce7 !important; border-left: 5px solid #16a34a !important; }
+.cart-line.pending-save { background: #fef3c7 !important; border-left: 5px solid #d97706 !important; }
+.cart-line.new-item { background: #dbeafe !important; border-left: 5px solid #2563eb !important; }
 .billing-summary-panel { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 22px; }.billing-summary-panel div { padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }.billing-summary-panel span, .billing-summary-panel strong { display: block; }.billing-summary-panel span { color: var(--muted); font-size: 12px; }.billing-summary-panel strong { margin-top: 6px; font-size: 20px; }
 .billing-detail { padding: 22px; background: #fff; border-left: 1px solid var(--border); }.billing-empty { margin-top: 35vh; color: var(--muted); text-align: center; }.bill-lines { margin: 24px 0; border-top: 1px solid var(--border); }.bill-lines div { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }.bill-total { display: flex; justify-content: space-between; padding: 18px 0; font-size: 20px; }.billing-hint { color: var(--muted); font-size: 13px; }
 .billing-payment { display: grid; gap: 10px; margin-top: 12px; padding-top: 16px; border-top: 1px solid var(--border); }.billing-payment h3 { margin: 0; }
