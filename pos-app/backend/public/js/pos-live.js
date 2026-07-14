@@ -669,6 +669,19 @@ async function createCustomerFromBilling() {
 }
 
 document.addEventListener("click", async (event) => {
+  const comboControl = event.target.closest("[data-combo-plus], [data-combo-minus]");
+  if (comboControl) {
+    const comboId = Number(comboControl.dataset.comboPlus || comboControl.dataset.comboMinus);
+    const line = state.cart.find((item) => Number(item.comboId) === comboId);
+    if (line && !line.sentToKitchen) {
+      line.quantity += comboControl.dataset.comboPlus ? 1 : -1;
+      state.selectedCartKey = line.key;
+      state.dirty = true;
+      state.cart = state.cart.filter((item) => item.quantity > 0);
+      refreshCartAndMenu();
+    }
+    return;
+  }
   const target = event.target.closest("button");
   if (!target) return;
   if (target.dataset.table) await selectTable(Number(target.dataset.table));
@@ -679,18 +692,6 @@ document.addEventListener("click", async (event) => {
   }
   if (target.dataset.item) openModifierModal(Number(target.dataset.item));
   if (target.dataset.combo) addCombo(Number(target.dataset.combo));
-  if (target.dataset.comboPlus || target.dataset.comboMinus) {
-    const comboId = Number(target.dataset.comboPlus || target.dataset.comboMinus);
-    const line = state.cart.find((item) => Number(item.comboId) === comboId);
-    if (line && !line.sentToKitchen) {
-      line.quantity += target.dataset.comboPlus ? 1 : -1;
-      state.selectedCartKey = line.key;
-      state.dirty = true;
-    }
-    state.cart = state.cart.filter((item) => item.quantity > 0);
-    refreshCartAndMenu();
-    return;
-  }
   if (target.dataset.plus) {
     const line = state.cart.find((item) => item.key === target.dataset.plus);
     if (line && !line.sentToKitchen) {

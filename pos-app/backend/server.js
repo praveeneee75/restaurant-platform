@@ -6169,6 +6169,7 @@ app.get('/orders/live', (req, res) => {
         o.payment_status,
         o.total_amount,
         o.delivery_fee,
+        EXISTS (SELECT 1 FROM order_items submitted_items WHERE submitted_items.order_id = o.id AND submitted_items.kot_id IS NOT NULL) AS has_submitted_kot,
         o.created_at,
         c.name AS customer_name,
         c.phone AS customer_phone,
