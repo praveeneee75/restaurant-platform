@@ -578,7 +578,7 @@ button:hover,
 .legend { display: inline-block; width: 11px; height: 11px; margin-right: 4px; border-radius: 3px; background: #e2e8f0; }
 .legend.running { background: #bbf7d0; }.legend.paid { background: #bae6fd; }.legend.kot { background: #fde68a; }
 .billing-toolbar input { width: min(300px, 100%); }
-.billing-table-map { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
+.billing-table-map { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; }
 .billing-table-card { min-height: 132px; display: grid; align-content: start; gap: 8px; padding: 16px; border: 2px solid #d6dfeb; border-radius: 10px; background: #fff; color: var(--text); text-align: left; box-shadow: 0 4px 12px rgba(15,23,42,.05); transition: transform .15s ease, box-shadow .15s ease; }
 .billing-table-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(15,23,42,.1); }
 .billing-table-card strong { font-size: 16px; }.billing-table-card span { color: #526581; font-size: 13px; }.billing-table-card em { font-style: normal; font-weight: 800; font-size: 16px; }
@@ -589,7 +589,7 @@ button:hover,
 .invoice-filters { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto; align-items: end; gap: 12px; }
 .invoice-filters input, .invoice-filters button { min-height: 44px; }
 .table-panel table { width: 100%; table-layout: auto; }.table-panel td, .table-panel th { vertical-align: middle; }.table-panel td:last-child, .table-panel th:last-child { width: 130px; white-space: nowrap; }
-.billing-open-bill strong, .billing-open-bill span { display: block; overflow-wrap: anywhere; }.billing-open-bill span { color: #dbeafe; margin-top: 3px; }
+.billing-open-bill strong, .billing-open-bill span { display: block; min-width: 0; overflow-wrap: anywhere; }.billing-open-bill strong { font-size: 14px; line-height: 1.25; white-space: nowrap; }.billing-open-bill span { color: #dbeafe; margin-top: 5px; line-height: 1.35; }
 @media (max-width: 700px) { .invoice-filters { grid-template-columns: 1fr; } .table-panel { overflow-x: auto; } .table-panel table { min-width: 760px; } }
 .cart-line.saved { background: #dcfce7 !important; border-left: 5px solid #16a34a !important; }
 .cart-line.pending-save { background: #fef3c7 !important; border-left: 5px solid #d97706 !important; }
