@@ -10,8 +10,10 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&
 const money = v => `INR ${Number(v || 0).toFixed(2)}`;
 async function getJson(url) { const r = await fetch(url); const d = await r.json(); if (!r.ok) throw Error(d.message || 'Unable to load billing data'); return d; }
 function visibleOrders() { const q = (billingSearch.value || '').toLowerCase().trim(); return state.orders.filter(o => !q || `${o.id} ${o.table_no || ''} ${o.customer_name || ''} ${o.order_reference || ''}`.toLowerCase().includes(q)); }
+function normalizeTableName(value) { return String(value || '').trim().toLowerCase().replace(/\s+/g, ' '); }
 function tableOrders(table) { return visibleOrders().filter(o => o.payment_status !== 'PAID' && (Number(o.table_id) === Number(table.id) || String(o.table_no || '').trim().toLowerCase() === String(table.table_name || '').trim().toLowerCase())); }
 function renderTables() {
+  // Keep all open bills visible, including multiple customer checks at one table.
   tableMap.innerHTML = state.tables.map(table => {
     const orders = tableOrders(table);
     const bills = orders.length ? orders.map(order => `<button class="billing-open-bill" data-order-id="${order.id}"><strong>${esc(order.order_reference || `${order.order_sequence || order.id}-${order.customer_ref || `A${order.id}`}`)}</strong><span>${esc(order.customer_name || `Customer ${order.customer_ref || ''}`)} · ${money(order.total_amount)}</span></button>`).join('') : '<span>Available</span>';

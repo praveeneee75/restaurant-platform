@@ -687,6 +687,9 @@ document.addEventListener("click", async (event) => {
       state.selectedCartKey = line.key;
       state.dirty = true;
     }
+    state.cart = state.cart.filter((item) => item.quantity > 0);
+    refreshCartAndMenu();
+    return;
   }
   if (target.dataset.plus) {
     const line = state.cart.find((item) => item.key === target.dataset.plus);

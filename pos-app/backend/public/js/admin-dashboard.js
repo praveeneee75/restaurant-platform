@@ -415,8 +415,9 @@ function renderInvoices() {
       <td>${esc(invoice.order_type || "")}</td>
       <td>${money(invoice.total_amount)}</td>
       <td>${esc(invoice.settled_at || "")}</td>
+      <td><button type="button" class="secondary-btn invoice-view" data-invoice-id="${invoice.id}">View / PDF</button></td>
     </tr>
-  `).join("") || `<tr><td colspan="6">No invoices found.</td></tr>`;
+  `).join("") || `<tr><td colspan="7">No invoices found.</td></tr>`;
   invoiceStatus.textContent = "Invoices loaded";
 }
 
@@ -770,6 +771,15 @@ loadInvoices.addEventListener("click", () => loadInvoiceList().catch((err) => {
   invoiceStatus.textContent = err.message;
   alert(err.message);
 }));
+invoicesTable.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-invoice-id]");
+  if (!button) return;
+  const invoice = state.invoices.find((row) => String(row.id) === String(button.dataset.invoiceId));
+  if (!invoice) return;
+  const printWindow = window.open("", "_blank", "width=760,height=900");
+  printWindow.document.write(`<html><head><title>${esc(invoice.invoice_no || "Invoice")}</title><style>body{font:16px Arial;padding:32px}h1{margin-bottom:24px}table{width:100%;border-collapse:collapse}td{padding:10px;border-bottom:1px solid #ddd}strong{font-size:20px}</style></head><body><h1>Invoice ${esc(invoice.invoice_no || `#${invoice.id}`)}</h1><table><tr><td>Customer</td><td>${esc(invoice.customer_name || "Walk-in customer")}</td></tr><tr><td>Phone</td><td>${esc(invoice.customer_phone || "")}</td></tr><tr><td>Table</td><td>${esc(invoice.table_no || "")}</td></tr><tr><td>Type</td><td>${esc(invoice.order_type || "")}</td></tr><tr><td>Total</td><td><strong>${money(invoice.total_amount)}</strong></td></tr><tr><td>Settled</td><td>${esc(invoice.settled_at || "")}</td></tr></table><script>window.onload=()=>window.print()</script></body></html>`);
+  printWindow.document.close();
+});
 runDisasterCheck.addEventListener("click", async () => {
   const data = await fetchJson(`/disaster/check?restaurantId=${encodeURIComponent(restaurantId)}`);
   commercialStatus.textContent = data.databaseOk ? "Database integrity check passed" : "Database integrity check failed";
@@ -1105,3 +1115,5 @@ expenseDate.value ||= todayIso();
 loadAll().catch((err) => {
   adminStatus.textContent = err.message;
 });
+const requestedView = new URLSearchParams(location.search).get("view");
+if (requestedView) showView(requestedView);
