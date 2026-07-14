@@ -287,7 +287,7 @@ function renderCart() {
   cartTitle.textContent = isDineIn() ? (state.selectedTable ? state.selectedTable.table_name : "Select a table") : orderType.options[orderType.selectedIndex].text;
   orderMeta.textContent = state.orderId ? `Order ${state.orderReference || state.orderId}` : "New order";
   cartItems.innerHTML = state.cart.map((item) => `
-    <div class="cart-line ${state.selectedCartKey === item.key ? "selected" : ""} ${item.sentToKitchen ? "saved" : state.orderId ? "pending-save" : "new-item"}" data-cart-line="${item.key}" role="button" tabindex="0" aria-label="Edit ${esc(item.name)}">
+    <div class="cart-line ${state.selectedCartKey === item.key ? "selected" : ""} ${item.sentToKitchen ? "saved" : item.savedLocally ? "pending-save" : "new-item"}" data-cart-line="${item.key}" role="button" tabindex="0" aria-label="Edit ${esc(item.name)}">
       <div>
         <strong>${esc(item.name)}</strong>
         <span>${money(item.price)}</span>
@@ -330,7 +330,8 @@ function cartItemFromOrderItem(item) {
     quantity: item.quantity,
     modifiers: item.modifiers || [],
     notes: item.notes || "",
-    sentToKitchen: Boolean(item.kot_id)
+    sentToKitchen: Boolean(item.kot_id),
+    savedLocally: !item.kot_id
   };
 }
 
@@ -462,6 +463,7 @@ function openEditSelectedItem() {
     const quantity = Number(prompt(`Quantity for ${menuItem.name}`, String(line.quantity)));
     if (!Number.isInteger(quantity) || quantity < 1) return alert("Enter a whole quantity of 1 or more");
     line.quantity = quantity;
+    line.savedLocally = false;
     state.dirty = true;
     refreshCartAndMenu();
     return;
@@ -490,7 +492,7 @@ function addItemToCart(menuItem, modifiers) {
   if (line) line.quantity += 1;
   else {
     const nextKey = state.cart.some((item) => item.key === key) ? `${key}-new-${Date.now()}` : key;
-    state.cart.push({ ...menuItem, key: nextKey, price: unitPrice, quantity: 1, modifiers });
+    state.cart.push({ ...menuItem, key: nextKey, price: unitPrice, quantity: 1, modifiers, savedLocally: false });
     state.selectedCartKey = nextKey;
   }
   if (line) state.selectedCartKey = line.key;
@@ -531,7 +533,7 @@ function addCombo(comboId) {
   const included = state.comboItems.filter((item) => item.combo_id === combo.id).map((item) => `${item.item_name} x${item.quantity}`).join(", ");
   const line = state.cart.find((item) => item.key === key);
   if (line) line.quantity += 1;
-  else state.cart.push({ key, comboId: combo.id, name: combo.name, price: combo.price, quantity: 1, modifiers: included ? [{ name: included, id: 0 }] : [] });
+  else state.cart.push({ key, comboId: combo.id, name: combo.name, price: combo.price, quantity: 1, modifiers: included ? [{ name: included, id: 0 }] : [], savedLocally: false });
   state.selectedCartKey = key;
   state.dirty = true;
   refreshCartAndMenu();
@@ -559,6 +561,7 @@ async function saveCurrentOrder(force = false) {
   });
   state.orderId = data.orderId;
   state.orderReference = data.orderReference || state.orderReference || data.orderId;
+  state.cart.forEach((item) => { if (!item.sentToKitchen) item.savedLocally = true; });
   state.dirty = false;
   setSelectedTableStatus("OCCUPIED");
   orderMeta.textContent = `Order ${state.orderReference}`;
@@ -676,6 +679,7 @@ document.addEventListener("click", async (event) => {
     if (line && !line.sentToKitchen) {
       line.quantity += comboControl.dataset.comboPlus ? 1 : -1;
       state.selectedCartKey = line.key;
+      line.savedLocally = false;
       state.dirty = true;
       state.cart = state.cart.filter((item) => item.quantity > 0);
       refreshCartAndMenu();
@@ -696,6 +700,7 @@ document.addEventListener("click", async (event) => {
     const line = state.cart.find((item) => item.key === target.dataset.plus);
     if (line && !line.sentToKitchen) {
       line.quantity += 1;
+      line.savedLocally = false;
       state.selectedCartKey = line.key;
       state.dirty = true;
     }
@@ -704,13 +709,14 @@ document.addEventListener("click", async (event) => {
     const line = state.cart.find((item) => item.key === target.dataset.note);
     if (line && !line.sentToKitchen) {
       const note = prompt(`Kitchen note for ${line.name}`, line.notes || "");
-      if (note !== null) { line.notes = note.trim(); state.dirty = true; renderCart(); }
+      if (note !== null) { line.notes = note.trim(); line.savedLocally = false; state.dirty = true; renderCart(); }
     }
   }
   if (target.dataset.minus) {
     const line = state.cart.find((item) => item.key === target.dataset.minus);
     if (line && !line.sentToKitchen) {
       line.quantity -= 1;
+      line.savedLocally = false;
       state.selectedCartKey = line.key;
       state.dirty = true;
     }
@@ -790,7 +796,7 @@ addModifiedItem.addEventListener("click", () => {
     const existing = state.cart.find((item) => item.key === state.pendingEditKey);
     if (existing) {
       state.cart = state.cart.filter((item) => item.key !== state.pendingEditKey);
-      const replacement = { ...existing, ...state.pendingItem, modifiers: modifiers.slice() };
+      const replacement = { ...existing, ...state.pendingItem, modifiers: modifiers.slice(), savedLocally: false };
       replacement.price = Number(state.pendingItem.price || 0) + modifiers.reduce((sum, modifier) => sum + Number(modifier.price_delta || 0), 0);
       replacement.quantity = existing.quantity;
       const modifierIdsSorted = modifiers.map((modifier) => modifier.id).sort((a, b) => a - b);
