@@ -4707,7 +4707,7 @@ app.get('/pos/bootstrap', (req, res) => {
         ORDER BY t.id
       `).all(),
       categories: db.prepare('SELECT id, name FROM categories WHERE active = 1 ORDER BY name').all(),
-      items: db.prepare('SELECT id, name, category_id, price FROM items WHERE active = 1 ORDER BY name').all(),
+      items: db.prepare("SELECT id, printf('ITM-%04d', id) AS item_code, name, category_id, price FROM items WHERE active = 1 ORDER BY name").all(),
       modifierGroups: db.prepare(`
         SELECT img.item_id, mg.id, mg.name, mg.min_select, mg.max_select, mg.required
         FROM item_modifier_groups img
@@ -6170,6 +6170,7 @@ app.get('/orders/live', (req, res) => {
         o.total_amount,
         o.delivery_fee,
         EXISTS (SELECT 1 FROM order_items submitted_items WHERE submitted_items.order_id = o.id AND submitted_items.kot_id IS NOT NULL) AS has_submitted_kot,
+        COALESCE((SELECT SUM(submitted_items.quantity * submitted_items.price) FROM order_items submitted_items WHERE submitted_items.order_id = o.id AND submitted_items.kot_id IS NOT NULL), 0) AS submitted_total,
         o.created_at,
         c.name AS customer_name,
         c.phone AS customer_phone,

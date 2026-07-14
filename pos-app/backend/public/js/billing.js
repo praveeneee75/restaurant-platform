@@ -11,6 +11,7 @@ const money = v => `INR ${Number(v || 0).toFixed(2)}`;
 async function getJson(url) { const r = await fetch(url); const d = await r.json(); if (!r.ok) throw Error(d.message || 'Unable to load billing data'); return d; }
 function visibleOrders() { const q = (billingSearch.value || '').toLowerCase().trim(); return state.orders.filter(o => !q || `${o.id} ${o.table_no || ''} ${o.customer_name || ''} ${o.order_reference || ''}`.toLowerCase().includes(q)); }
 function normalizeTableName(value) { return String(value || '').trim().toLowerCase().replace(/\s+/g, ' '); }
+function billingAmount(order) { return order.has_submitted_kot ? (order.submitted_total ?? order.total_amount) : 0; }
 function visibleOrders() { const q = (billingSearch.value || '').toLowerCase().trim(); return state.orders.filter(o => o.has_submitted_kot && (!q || `${o.id} ${o.table_no || ''} ${o.customer_name || ''} ${o.order_reference || ''}`.toLowerCase().includes(q))); }
 function tableOrders(table) { return visibleOrders().filter(o => o.payment_status !== 'PAID' && (Number(o.table_id) === Number(table.id) || String(o.table_no || '').trim().toLowerCase() === String(table.table_name || '').trim().toLowerCase())); }
 function renderTables() {
@@ -38,3 +39,5 @@ async function showSubmittedOrder(orderId) {
   billingDetail.innerHTML = `<header><div><h2>${esc(d.order.order_reference || `Order ${d.order.id}`)}</h2><p>${esc(d.order.table_no || d.order.order_type)} · ${esc(d.customer?.name || 'No customer')}</p></div><a class="primary-btn" href="/pos-live.html?restaurantId=${encodeURIComponent(restaurantId)}">Open POS</a></header><div class="bill-lines">${items.map(i => `<div><span>${esc(i.name)} × ${i.quantity}</span><strong>${money(i.price * i.quantity)}</strong></div>`).join('') || '<p>No submitted items</p>'}</div><div class="bill-total"><span>Submitted total</span><strong>${money(submittedTotal)}</strong></div><div class="billing-payment"><h3>Payment</h3><p class="billing-hint">Only KOT-submitted items are shown here. Save additional items in POS and submit a new KOT before billing them.</p><select id="billingPaymentMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></select><input id="billingPaymentAmount" type="number" step="0.01" value="${submittedTotal.toFixed(2)}"><button id="settleBilling" class="primary-btn" data-settle-order="${d.order.id}">Settle and create invoice</button></div>`;
 }
 showOrder = showSubmittedOrder;
+function applySubmittedTotals() { state.orders.forEach(order => { if (order.has_submitted_kot) order.total_amount = Number(order.submitted_total || 0); }); renderTables(); renderRecent(); }
+setTimeout(applySubmittedTotals, 0);

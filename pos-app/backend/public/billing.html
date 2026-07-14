@@ -13,7 +13,7 @@
     <div class="billing-recent"><h3>Recent order details</h3><div class="billing-tabs"><button data-recent-filter="DINE_IN">Dine in</button><button data-recent-filter="TAKEAWAY">Parcel</button><button data-recent-filter="ALL" class="active">All</button></div><div id="recentOrders"></div></div>
   </aside>
   <main class="billing-main">
-    <header class="billing-topbar"><div><h1>Table View</h1><p id="billingStatus">Loading billing data...</p></div><div class="billing-actions"><button id="refreshBilling" class="secondary-btn">Refresh</button><a class="secondary-btn" href="/pos-live.html">Open POS</a></div></header>
+    <header class="billing-topbar"><div><h1>Table View</h1><p id="billingStatus">Loading billing data...</p></div><div class="billing-actions"><button id="refreshBilling" class="secondary-btn">Refresh</button><a class="secondary-btn" href="/pos-live.html">Open POS</a><a class="secondary-btn" href="/admin.html?view=invoices#invoices">Admin</a></div></header>
     <section class="billing-toolbar"><div class="billing-legend"><span><i class="legend blank"></i>Available</span><span><i class="legend running"></i>Running</span><span><i class="legend paid"></i>Paid</span><span><i class="legend kot"></i>Running KOT</span></div><input id="billingSearch" type="search" placeholder="Search table, order or customer"></section>
     <section id="tableMap" class="billing-table-map"></section>
     <section class="billing-summary-panel"><div><span>Open bills</span><strong id="openBills">0</strong></div><div><span>Paid today</span><strong id="paidToday">0</strong></div><div><span>Today's collection</span><strong id="collectionTotal">INR 0.00</strong></div></section>

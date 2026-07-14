@@ -620,6 +620,12 @@ button:hover,
   min-height: 112px;
   overflow: hidden;
 }
+.item-tile > strong { grid-column: 1 / -1; grid-row: 1; text-align: left; overflow-wrap: anywhere; }
+.item-tile > .item-price { grid-column: 1 / -1; grid-row: 2; justify-self: start; text-align: left; }
+.item-tile > .tile-quantity-controls { grid-column: 1 / -1; grid-row: 3; width: 100%; justify-content: space-between; }
+.item-tile > .tile-quantity-controls em { flex: 1; text-align: center; }
+.item-tile > strong { grid-column: 1 / -1 !important; grid-row: 1 !important; }
+.item-tile > .item-price { grid-column: 1 / -1 !important; grid-row: 2 !important; justify-self: start; }
 
 .item-tile > strong {
   grid-column: 1;

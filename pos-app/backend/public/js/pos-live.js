@@ -260,12 +260,12 @@ function renderCategories() {
 
 function renderItems(categoryId) {
   const query = (itemSearch?.value || "").trim().toLowerCase();
-  const itemTiles = state.items.filter((item) => item.category_id === categoryId && (!query || item.name.toLowerCase().includes(query))).map((item) => {
+  const itemTiles = state.items.filter((item) => item.category_id === categoryId && (!query || `${item.item_code || ""} ${item.name}`.toLowerCase().includes(query))).map((item) => {
     const quantity = state.activeTableId ? cartQuantityForItem(item.id) : 0;
     return `
       <button class="item-tile ${quantity > 0 ? "selected" : ""}" data-item="${item.id}">
-        <strong>${esc(item.name)}</strong>
-        <span>${money(item.price)}</span>
+        <strong>${esc(item.item_code || `ITM-${String(item.id).padStart(4, "0")}`)} · ${esc(item.name)}</strong>
+        <span class="item-price">${money(item.price)}</span>
         ${quantity > 0 ? `<span class="tile-quantity-controls"><span data-item-minus="${item.id}" role="button">-</span><em>${quantity}</em><span data-item-plus="${item.id}" role="button">+</span></span>` : ""}
       </button>
     `;
