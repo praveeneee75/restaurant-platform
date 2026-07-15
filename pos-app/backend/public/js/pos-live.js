@@ -328,8 +328,10 @@ function renderCart() {
   payableTotal.textContent = `Payable: ${money(payableAmount())}`;
   moveTableBtn.disabled = !isDineIn() || !state.selectedTable || !state.orderId;
   // A new order has no ID until it is saved, so it must still be possible to send its first KOT.
-  submitKot.disabled = !(state.cart.length > 0 && (!state.orderId || state.dirty));
-  submitKot.title = submitKot.disabled ? "Submit KOT only after the order changes" : "";
+  const baseline = state.reviewBaselineQuantities || {};
+  const hasNewKotItems = state.cart.some((item) => !item.sentToKitchen && Number(item.quantity || 0) > Number(baseline[item.key] || 0));
+  submitKot.disabled = !(state.cart.length > 0 && (!state.orderId || state.dirty || hasNewKotItems));
+  submitKot.title = submitKot.disabled ? "Save or add an item before submitting a KOT" : "Submit new items to the kitchen";
   if (paymentMode.value !== "SPLIT") {
     cashAmount.value = paymentMode.value === "CASH" ? amount(payableAmount()) : "";
     cardAmount.value = paymentMode.value === "CARD" ? amount(payableAmount()) : "";
@@ -358,7 +360,9 @@ function itemLabel(item) {
 }
 
 function reviewBaselineForCart() {
-  return Object.fromEntries(state.cart.map((item) => [item.key, Number(item.quantity || 0)]));
+  // Only quantities already sent to the kitchen belong to the KOT baseline.
+  // Saved local lines must remain eligible for the next KOT after a table switch.
+  return Object.fromEntries(state.cart.map((item) => [item.key, item.sentToKitchen ? Number(item.quantity || 0) : 0]));
 }
 
 function updateOrderTypeView() {
@@ -611,7 +615,7 @@ async function submitCurrentKot() {
     "New in this KOT:",
     ...(newItems.length ? newItems.map(itemLabel) : ["None"])
   ].join("\n");
-  if (!newItems.length) return alert(`${summary}\n\nThere are no new items to submit.`);
+  if (!newItems.length) return alert(`${summary}\n\nThere are no unsent items to submit. Add an item or save a new item before sending the KOT.`);
   if (!confirm(`${summary}\n\nSubmit this KOT?`)) return;
   const saved = await saveCurrentOrder();
   if (!saved) return;
