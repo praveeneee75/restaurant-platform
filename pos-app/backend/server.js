@@ -5963,14 +5963,10 @@ app.post('/orders/settle', (req, res) => {
       if (redeem > balance) throw new Error('Insufficient loyalty points');
       // Billing settles only kitchen-submitted lines. Draft lines saved in POS
       // remain outside the payable amount until their KOT is submitted.
-      const submittedTotal = db.prepare(`
-        SELECT COALESCE(SUM(oi.price * oi.quantity), 0) AS total
-        FROM order_items oi
-        WHERE oi.order_id = ? AND oi.kot_id IS NOT NULL
-      `).get(orderId)?.total;
-      const grossAmount = submittedTotal !== undefined && Number(submittedTotal) > 0
-        ? Number(submittedTotal)
-        : Number(order.total_amount || 0);
+      // The save/reconciliation step is authoritative for the active check.
+      // Using a second aggregate here can include stale historical KOT rows and
+      // reject the exact payable amount shown in POS/Billing.
+      const grossAmount = Number(order.total_amount || 0);
       const serviceCharge = serviceChargeForAmount(db, grossAmount);
       const payableBeforeRoundOff = Math.max(grossAmount + serviceCharge - Math.min(redeem * pointValue, grossAmount + serviceCharge), 0);
       const payable = applyRoundOff(db, payableBeforeRoundOff);
