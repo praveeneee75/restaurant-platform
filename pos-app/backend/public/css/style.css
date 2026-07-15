@@ -960,6 +960,11 @@ button:hover,
   margin: 0;
 }
 
+.kds-topbar button {
+  min-width: 76px;
+  white-space: nowrap;
+}
+
 .kds-controls {
   display: flex;
   gap: 10px;
@@ -1008,6 +1013,11 @@ button:hover,
   align-items: center;
 }
 
+.kds-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .kds-card h3,
 .kds-card p {
   margin: 0;
@@ -1019,6 +1029,9 @@ button:hover,
 
 .kds-actions button {
   width: 100%;
+  min-height: 48px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .crm-grid {

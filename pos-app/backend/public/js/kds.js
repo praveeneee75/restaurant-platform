@@ -9,7 +9,8 @@ const state = { kitchens: [], kitchenId: null, lastPendingIds: new Set(), firstL
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 
 function minutesSince(value) {
-  const created = new Date(String(value).replace(" ", "T"));
+  const normalized = String(value || "").trim().replace(" ", "T");
+  const created = new Date(/[zZ]|[+-]\d\d:\d\d$/.test(normalized) ? normalized : `${normalized}Z`);
   const diff = Math.max(Date.now() - created.getTime(), 0);
   const minutes = Math.floor(diff / 60000);
   return minutes < 1 ? "Just now" : `${minutes} min`;

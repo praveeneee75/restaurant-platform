@@ -5537,12 +5537,14 @@ app.get('/orders/invoices/:id', (req, res) => {
           item_id: item.item_id,
           name: item.combo_name || item.name,
           quantity: item.combo_quantity || 1,
-          price: Number(item.price || 0),
+          price: 0,
+          lineTotal: 0,
           notes: item.notes
         });
-      } else if (Number(item.price || 0) > Number(comboRows.get(item.combo_id).price || 0)) {
-        comboRows.get(item.combo_id).price = Number(item.price);
       }
+      const comboRow = comboRows.get(item.combo_id);
+      comboRow.lineTotal += Number(item.price || 0) * Number(item.quantity || 0);
+      comboRow.price = comboRow.lineTotal / Math.max(Number(comboRow.quantity || 1), 1);
     });
     items.push(...comboRows.values());
     res.json({ success: true, invoice, items });

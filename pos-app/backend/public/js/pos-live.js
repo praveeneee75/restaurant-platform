@@ -277,7 +277,7 @@ function renderItems(categoryId) {
   const itemTiles = state.items.filter((item) => item.category_id === categoryId && (!query || `${item.item_code || ""} ${item.name}`.toLowerCase().includes(query))).map((item) => {
     const matchingLines = state.cart.filter((line) => line.id === item.id && !line.comboId);
     const quantity = matchingLines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
-    const stateClass = (state.kotSubmitted && !state.dirty) || matchingLines.some((line) => line.sentToKitchen) ? "saved" : matchingLines.some((line) => line.savedLocally) ? "pending-save" : quantity > 0 ? "new-item" : "";
+    const stateClass = matchingLines.some((line) => line.sentToKitchen) ? "saved" : matchingLines.some((line) => line.savedLocally) ? "pending-save" : quantity > 0 ? "new-item" : "";
     return `
       <button class="item-tile ${quantity > 0 ? "selected" : ""} ${stateClass}" data-item="${item.id}">
         <strong>${esc(displayItemCode(item))} · ${esc(item.name)}</strong>
@@ -289,7 +289,7 @@ function renderItems(categoryId) {
   const comboTiles = state.combos.filter((combo) => (!combo.category_id || Number(combo.category_id) === Number(categoryId)) && (!query || combo.name.toLowerCase().includes(query))).map((combo) => {
     const matchingLines = state.cart.filter((line) => line.comboId === combo.id);
     const quantity = matchingLines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
-    const stateClass = (state.kotSubmitted && !state.dirty) || matchingLines.some((line) => line.sentToKitchen) ? "saved" : matchingLines.some((line) => line.savedLocally) ? "pending-save" : quantity > 0 ? "new-item" : "";
+    const stateClass = matchingLines.some((line) => line.sentToKitchen) ? "saved" : matchingLines.some((line) => line.savedLocally) ? "pending-save" : quantity > 0 ? "new-item" : "";
     return `
       <button class="item-tile combo-tile ${quantity > 0 ? "selected" : ""} ${stateClass}" data-combo="${combo.id}">
         <strong>${esc(combo.name)}</strong>
