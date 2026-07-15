@@ -672,9 +672,9 @@
     <section class="admin-view" id="view-invoices">
       <div class="editor-panel">
         <h2>Invoices</h2>
-        <div class="toolbar">
-          <input id="invoiceFrom" type="date">
-          <input id="invoiceTo" type="date">
+        <div class="toolbar invoice-filters">
+          <label>From date<input id="invoiceFrom" type="date"></label>
+          <label>To date<input id="invoiceTo" type="date"></label>
           <button id="loadInvoices" type="button">Load Invoices</button>
         </div>
         <p id="invoiceStatus"></p>
@@ -687,6 +687,7 @@
           <tbody id="invoicesTable"></tbody>
         </table>
       </div>
+      <aside id="invoiceDetail" class="invoice-detail" hidden></aside>
     </section>
   </main>
 

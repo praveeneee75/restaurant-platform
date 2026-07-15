@@ -421,6 +421,25 @@ function renderInvoices() {
   invoiceStatus.textContent = "Invoices loaded";
 }
 
+async function showInvoiceDetail(invoiceId) {
+  const panel = document.getElementById('invoiceDetail');
+  const data = await fetchJson(`/orders/invoices/${encodeURIComponent(invoiceId)}?restaurantId=${encodeURIComponent(restaurantId)}`);
+  const invoice = data.invoice;
+  const items = data.items || [];
+  panel.innerHTML = `<header><div><h3>${esc(invoice.invoice_no || `Invoice #${invoice.id}`)}</h3><p class="invoice-detail-meta">${esc(invoice.customer_name || 'Walk-in customer')} · ${esc(invoice.table_no || invoice.order_type || '')} · ${esc(invoice.settled_at || '')}</p></div><button type="button" class="secondary-btn" id="downloadInvoicePdf">Print / Save PDF</button></header><div class="invoice-detail-lines">${items.map(item => `<div class="invoice-detail-line"><span>${esc(item.name)} × ${item.quantity}${item.notes ? `<small>Note: ${esc(item.notes)}</small>` : ''}</span><strong>${money(Number(item.price || 0) * Number(item.quantity || 0))}</strong></div>`).join('') || '<p>No items recorded.</p>'}</div><div class="invoice-detail-total"><span>Total</span><strong>${money(invoice.total_amount)}</strong></div>`;
+  panel.hidden = false;
+  document.getElementById('downloadInvoicePdf').onclick = () => downloadInvoicePdf(invoice, items);
+}
+
+function downloadInvoicePdf(invoice, items) {
+  const rows = items.map(item => `<tr><td>${esc(item.name)}</td><td>${item.quantity}</td><td>${money(Number(item.price || 0) * Number(item.quantity || 0))}</td></tr>`).join('');
+  const html = `<html><head><title>${esc(invoice.invoice_no || 'Invoice')}</title><style>body{font:14px Arial;padding:32px}table{width:100%;border-collapse:collapse}th,td{padding:9px;text-align:left;border-bottom:1px solid #ddd}h1{margin-bottom:6px}.total{margin-top:20px;font-size:18px;font-weight:bold;text-align:right}</style></head><body><h1>${esc(invoice.invoice_no || `Invoice #${invoice.id}`)}</h1><p>${esc(invoice.customer_name || 'Walk-in customer')} · ${esc(invoice.table_no || invoice.order_type || '')}<br>${esc(invoice.settled_at || '')}</p><table><thead><tr><th>Item</th><th>Qty</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table><p class="total">Total: ${money(invoice.total_amount)}</p></body></html>`;
+  const printWindow = window.open('', '_blank', 'width=760,height=900');
+  if (!printWindow) return;
+  printWindow.document.write(html.replace('</body>', '<script>window.onload=()=>window.print()<\\/script></body>'));
+  printWindow.document.close();
+}
+
 function findById(rows, id) {
   return (rows || []).find((row) => String(row.id) === String(id));
 }
@@ -776,6 +795,8 @@ invoicesTable.addEventListener("click", (event) => {
   if (!button) return;
   const invoice = state.invoices.find((row) => String(row.id) === String(button.dataset.invoiceId));
   if (!invoice) return;
+  showInvoiceDetail(invoice.id).catch((err) => { invoiceStatus.textContent = err.message; });
+  return;
   const printWindow = window.open("", "_blank", "width=760,height=900");
   printWindow.document.write(`<html><head><title>${esc(invoice.invoice_no || "Invoice")}</title><style>body{font:16px Arial;padding:32px}h1{margin-bottom:24px}table{width:100%;border-collapse:collapse}td{padding:10px;border-bottom:1px solid #ddd}strong{font-size:20px}</style></head><body><h1>Invoice ${esc(invoice.invoice_no || `#${invoice.id}`)}</h1><table><tr><td>Customer</td><td>${esc(invoice.customer_name || "Walk-in customer")}</td></tr><tr><td>Phone</td><td>${esc(invoice.customer_phone || "")}</td></tr><tr><td>Table</td><td>${esc(invoice.table_no || "")}</td></tr><tr><td>Type</td><td>${esc(invoice.order_type || "")}</td></tr><tr><td>Total</td><td><strong>${money(invoice.total_amount)}</strong></td></tr><tr><td>Settled</td><td>${esc(invoice.settled_at || "")}</td></tr></table><script>window.onload=()=>window.print()</script></body></html>`);
   printWindow.document.close();

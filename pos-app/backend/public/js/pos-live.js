@@ -43,6 +43,7 @@ const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&":
 const itemSearch = document.getElementById("itemSearch");
 const posToast = document.getElementById("posToast");
 let posToastTimer;
+const displayItemCode = (item) => String(item.item_code || String(item.id).padStart(4, "0")).replace(/^ITM[-\s]*/i, "");
 
 // Keep validation and completion messages inside the POS window so a native
 // blocking dialog cannot leave the Electron renderer with stale focus.
@@ -279,7 +280,7 @@ function renderItems(categoryId) {
     const stateClass = matchingLines.some((line) => line.sentToKitchen) ? "saved" : matchingLines.some((line) => line.savedLocally) ? "pending-save" : quantity > 0 ? "new-item" : "";
     return `
       <button class="item-tile ${quantity > 0 ? "selected" : ""} ${stateClass}" data-item="${item.id}">
-        <strong>${esc(item.item_code || `ITM-${String(item.id).padStart(4, "0")}`)} · ${esc(item.name)}</strong>
+        <strong>${esc(displayItemCode(item))} · ${esc(item.name)}</strong>
         <span class="item-price">${money(item.price)}</span>
         ${quantity > 0 ? `<span class="tile-quantity-controls"><span data-item-minus="${item.id}" role="button">-</span><em>${quantity}</em><span data-item-plus="${item.id}" role="button">+</span></span>` : ""}
       </button>

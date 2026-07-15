@@ -5502,6 +5502,32 @@ app.get('/orders/invoices', (req, res) => {
   }
 });
 
+app.get('/orders/invoices/:id', (req, res) => {
+  const { restaurantId } = req.query;
+  const invoiceId = Number(req.params.id);
+  if (!restaurantId || !isPositiveId(invoiceId)) return res.status(400).json({ success: false, message: 'restaurantId and invoice id are required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const invoice = db.prepare(`
+      SELECT o.*, c.name AS customer_name, c.phone AS customer_phone
+      FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+      WHERE o.id = ? AND o.status = 'PAID'
+    `).get(invoiceId);
+    if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+    const items = db.prepare(`
+      SELECT oi.id AS order_item_id, oi.item_id, COALESCE(oi.combo_name, i.name) AS name,
+             oi.quantity, oi.price, oi.notes
+      FROM order_items oi LEFT JOIN items i ON i.id = oi.item_id
+      WHERE oi.order_id = ? ORDER BY oi.id
+    `).all(invoiceId);
+    res.json({ success: true, invoice, items });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
 app.get('/orders/open-list', (req, res) => {
   const { restaurantId, tableId } = req.query;
   if (!restaurantId || !isPositiveId(tableId)) return res.status(400).json({ success: false, message: 'restaurantId and tableId are required' });
