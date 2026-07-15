@@ -6,15 +6,16 @@ const requestedAdminView = new URLSearchParams(window.location.search).get("view
 const standaloneAdminView = new URLSearchParams(window.location.search).get("standalone") === "1";
 const role = String(user?.role || "").toUpperCase();
 const adminAllowedRoles = new Set(["OWNER", "MANAGER_1", "MANAGER_2", "CASHIER"]);
-if (!user || !adminAllowedRoles.has(role) || (role === "CASHIER" && requestedAdminView !== "reservations")) {
+if (!user || !adminAllowedRoles.has(role) || (role === "CASHIER" && !["reservations", "items", "invoices"].includes(requestedAdminView))) {
   window.location.replace(`/login.html?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
   throw new Error("Admin access required");
 }
 const actor = { id: user.id, role: user.role || "OWNER" };
 if (standaloneAdminView) document.body.classList.add("standalone-admin-view");
 document.querySelectorAll("[data-logout]").forEach((button) => button.addEventListener("click", () => { localStorage.clear(); window.location.href = "/login.html"; }));
-if (standaloneAdminView && requestedAdminView === "invoices") {
-  document.querySelectorAll(".app-home-nav a").forEach((link) => link.classList.toggle("active", link.textContent.trim() === "Invoices"));
+if (standaloneAdminView && ["invoices", "items"].includes(requestedAdminView)) {
+  const activeLabel = requestedAdminView === "invoices" ? "Invoices" : "Availability";
+  document.querySelectorAll(".app-home-nav a").forEach((link) => link.classList.toggle("active", link.textContent.trim() === activeLabel));
 }
 const state = { admin: {}, inventory: {}, modifiers: {}, backups: {}, settings: {}, permissions: {}, devices: {}, reservations: [], expenseCategories: [], latestUpdate: null, commercial: {}, invoices: [] };
 
@@ -238,6 +239,12 @@ async function loadAll() {
   adminStatus.textContent = "Loading workspace...";
   await loadPermissions();
   await loadAdmin();
+  if (standaloneAdminView && requestedAdminView) {
+    if (requestedAdminView === "invoices") await loadInvoiceList().catch(() => undefined);
+    if (requestedAdminView === "reservations") await loadReservations().catch(() => undefined);
+    adminStatus.textContent = "Workspace ready";
+    return;
+  }
   const loaders = [loadModifiers(), loadBackup(), loadSettings(), loadUpdates(), loadAudit(), loadDeviceSessions(), loadExpenseCategories(), loadInvoiceList().catch(() => undefined)];
   if (moduleEnabled("INVENTORY")) loaders.push(loadInventory());
   if (moduleEnabled("RESERVATIONS")) loaders.push(loadReservations());

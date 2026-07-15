@@ -7,6 +7,7 @@ if (!sessionUser || !allowedRoles.has(String(sessionUser.role || '').toUpperCase
 const restaurantId = new URLSearchParams(location.search).get('restaurantId') || localStorage.getItem('restaurantId');
 document.querySelectorAll('[data-role-nav="invoices"]').forEach((el) => { el.hidden = !['OWNER', 'MANAGER_1', 'MANAGER_2', 'CASHIER'].includes(String(sessionUser.role || '').toUpperCase()); });
 document.querySelectorAll('[data-role-nav="admin"]').forEach((el) => { el.hidden = !['OWNER', 'MANAGER_1', 'MANAGER_2'].includes(String(sessionUser.role || '').toUpperCase()); });
+document.querySelectorAll('[data-role-nav="availability"]').forEach((el) => { el.hidden = !['OWNER', 'MANAGER_1', 'MANAGER_2', 'CASHIER', 'CAPTAIN'].includes(String(sessionUser.role || '').toUpperCase()); });
 document.querySelectorAll('[data-role-nav="kds"]').forEach((el) => { el.hidden = !['OWNER', 'MANAGER_2', 'KITCHEN'].includes(String(sessionUser.role || '').toUpperCase()); });
 document.querySelectorAll('[data-logout]').forEach((button) => button.addEventListener('click', () => { localStorage.clear(); location.href = '/login.html'; }));
 const state = { tables: [], orders: [], selected: null, filter: 'ALL' };

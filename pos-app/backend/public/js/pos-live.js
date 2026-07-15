@@ -98,7 +98,8 @@ function applyRoleAndModeUI() {
   const canSettle = ["CAPTAIN", "CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role);
   document.querySelectorAll('[data-role-nav="billing"]').forEach((el) => { el.hidden = !canBilling; });
   document.querySelectorAll('[data-role-nav="invoices"]').forEach((el) => { el.hidden = !canBilling; });
-  document.querySelectorAll('[data-role-nav="admin"]').forEach((el) => { el.hidden = true; });
+  document.querySelectorAll('[data-role-nav="admin"]').forEach((el) => { el.hidden = !["OWNER", "MANAGER_1", "MANAGER_2"].includes(role); });
+  document.querySelectorAll('[data-role-nav="availability"]').forEach((el) => { el.hidden = !["OWNER", "MANAGER_1", "MANAGER_2", "CASHIER", "CAPTAIN"].includes(role); });
   document.querySelectorAll('[data-role-nav="kds"]').forEach((el) => { el.hidden = role !== "OWNER" && role !== "MANAGER_2" && role !== "KITCHEN"; });
   document.querySelectorAll('[data-role-nav="availability"]').forEach((el) => { el.hidden = !["CAPTAIN", "CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role); });
   if (moveTableBtn) moveTableBtn.hidden = !canMove;

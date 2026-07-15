@@ -5,6 +5,7 @@ const user = JSON.parse(localStorage.getItem("user") || '{"role":"KITCHEN"}');
 const actor = { id: user.id, role: user.role || "KITCHEN", username: user.username };
 const allowedRoles = ["OWNER", "MANAGER_2", "KITCHEN"];
 if (!allowedRoles.includes(String(actor.role).toUpperCase())) { window.location.replace(`/login.html?returnTo=${encodeURIComponent(window.location.pathname)}`); throw new Error("KDS access required"); }
+document.querySelectorAll('[data-role-nav="availability"]').forEach((el) => { el.hidden = !['OWNER', 'MANAGER_1', 'MANAGER_2'].includes(String(actor.role).toUpperCase()); });
 document.querySelectorAll("[data-logout]").forEach((button) => button.addEventListener("click", () => { localStorage.clear(); window.location.href = "/login.html"; }));
 if (String(actor.role).toUpperCase() === "KITCHEN") document.getElementById("kdsBackBtn").hidden = true;
 const state = { kitchens: [], kitchenId: null, lastPendingIds: new Set(), firstLoad: true };
