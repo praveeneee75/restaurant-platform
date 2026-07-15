@@ -6523,7 +6523,15 @@ app.post('/kds/item-status', (req, res) => {
       db.prepare('UPDATE order_items SET status = ? WHERE id = ?').run(status === 'PENDING' ? 'PLACED' : status, orderItemId);
     }
     if (status === 'CANCELLED') {
-      db.prepare('UPDATE order_items SET cancelled_at = CURRENT_TIMESTAMP WHERE id = ?').run(orderItemId);
+      // order_items has no cancelled_at column. Keep the line visible for audit/billing,
+      // but zero its value so a cancelled item is not charged.
+      db.prepare('UPDATE order_items SET price = 0 WHERE id = ?').run(orderItemId);
+      db.prepare(`
+        UPDATE orders
+        SET total_amount = COALESCE((SELECT SUM(quantity * price) FROM order_items WHERE order_id = orders.id), 0),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = (SELECT order_id FROM order_items WHERE id = ?)
+      `).run(orderItemId);
     }
     const newValue = db.prepare('SELECT * FROM order_items WHERE id = ?').get(orderItemId);
     writeAudit(db, actor, 'UPDATE', 'KDS_ITEM', orderItemId, oldValue, newValue);

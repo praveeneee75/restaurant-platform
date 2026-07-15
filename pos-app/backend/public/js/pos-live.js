@@ -873,11 +873,21 @@ submitKot.addEventListener("click", submitCurrentKot);
 settleOrder.addEventListener("click", settleCurrentOrder);
 moveTableBtn.addEventListener("click", async () => {
   if (!isDineIn() || !state.selectedTable) return alert("Select a dine-in table first");
-  const targetTableName = prompt("Enter the table number/name to move to");
+  const destinations = state.tables
+    .filter((table) => Number(table.id) !== Number(state.selectedTable.id))
+    .map((table) => `${table.table_name} [${table.status || "AVAILABLE"}]`)
+    .join("\n");
+  if (!destinations) return alert("No destination tables are available");
+  const targetTableName = prompt(`Choose the destination table by entering its name:\n\n${destinations}`);
   if (!targetTableName) return;
-  const targetTable = state.tables.find((table) => table.table_name.toLowerCase() === targetTableName.trim().toLowerCase());
+  const targetName = targetTableName.trim().replace(/\s*\[.*\]$/, "").trim().toLowerCase();
+  const targetTable = state.tables.find((table) => table.table_name.toLowerCase() === targetName && Number(table.id) !== Number(state.selectedTable.id));
   if (!targetTable) return alert("Target table not found");
-  await moveOrderToTable(targetTable.id);
+  try {
+    await moveOrderToTable(targetTable.id);
+  } catch (error) {
+    alert(error.message || "The order could not be moved. Choose another destination table.");
+  }
 });
 splitBillBtn.addEventListener("click", openSplitBillModal);
 newCheckBtn.addEventListener("click", () => {
