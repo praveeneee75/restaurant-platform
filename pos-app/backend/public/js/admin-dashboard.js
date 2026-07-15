@@ -13,6 +13,9 @@ if (!user || !adminAllowedRoles.has(role) || (role === "CASHIER" && requestedAdm
 const actor = { id: user.id, role: user.role || "OWNER" };
 if (standaloneAdminView) document.body.classList.add("standalone-admin-view");
 document.querySelectorAll("[data-logout]").forEach((button) => button.addEventListener("click", () => { localStorage.clear(); window.location.href = "/login.html"; }));
+if (standaloneAdminView && requestedAdminView === "invoices") {
+  document.querySelectorAll(".app-home-nav a").forEach((link) => link.classList.toggle("active", link.textContent.trim() === "Invoices"));
+}
 const state = { admin: {}, inventory: {}, modifiers: {}, backups: {}, settings: {}, permissions: {}, devices: {}, reservations: [], expenseCategories: [], latestUpdate: null, commercial: {}, invoices: [] };
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
