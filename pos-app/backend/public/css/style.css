@@ -508,11 +508,22 @@ button:hover,
   border-left: 1px solid #e2e5ea;
   display: flex;
   flex-direction: column;
+  position: relative;
+  z-index: 3;
 }
 
 .pos-menu {
   min-width: 0;
   overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+.order-switcher,
+.order-switcher select,
+.order-switcher button {
+  position: relative;
+  z-index: 4;
 }
 
 .pos-tables header,

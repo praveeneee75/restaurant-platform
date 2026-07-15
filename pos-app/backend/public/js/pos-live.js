@@ -152,8 +152,9 @@ async function loadOpenOrdersForTable(tableId, selectedOrderId = null) {
   if (!isPositiveId(tableId)) return;
   const data = await fetch(`/orders/open-list?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${encodeURIComponent(tableId)}`).then((res) => res.json());
   state.openOrders = data.orders || [];
-  if (selectedOrderId) state.orderId = selectedOrderId;
-  else if (!state.orderId || !state.openOrders.some((order) => Number(order.id) === Number(state.orderId))) state.orderId = state.openOrders[0]?.id || null;
+  const requestedOrder = state.openOrders.find((order) => Number(order.id) === Number(selectedOrderId));
+  const currentOrder = state.openOrders.find((order) => Number(order.id) === Number(state.orderId));
+  state.orderId = requestedOrder?.id || currentOrder?.id || state.openOrders[0]?.id || null;
   renderOrderSelector();
 }
 
