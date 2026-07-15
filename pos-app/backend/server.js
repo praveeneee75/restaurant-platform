@@ -5518,12 +5518,33 @@ app.get('/orders/invoices/:id', (req, res) => {
       WHERE o.id = ? AND o.status = 'PAID'
     `).get(invoiceId);
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
-    const items = db.prepare(`
-      SELECT oi.id AS order_item_id, oi.item_id, COALESCE(oi.combo_name, i.name) AS name,
-             oi.quantity, oi.price, oi.notes
+    const rawItems = db.prepare(`
+      SELECT oi.id AS order_item_id, oi.item_id, oi.combo_id, oi.combo_name, oi.combo_quantity,
+             i.name, oi.quantity, oi.price, oi.notes
       FROM order_items oi LEFT JOIN items i ON i.id = oi.item_id
       WHERE oi.order_id = ? ORDER BY oi.id
     `).all(invoiceId);
+    const items = [];
+    const comboRows = new Map();
+    rawItems.forEach((item) => {
+      if (!item.combo_id) {
+        items.push(item);
+        return;
+      }
+      if (!comboRows.has(item.combo_id)) {
+        comboRows.set(item.combo_id, {
+          order_item_id: item.order_item_id,
+          item_id: item.item_id,
+          name: item.combo_name || item.name,
+          quantity: item.combo_quantity || 1,
+          price: Number(item.price || 0),
+          notes: item.notes
+        });
+      } else if (Number(item.price || 0) > Number(comboRows.get(item.combo_id).price || 0)) {
+        comboRows.get(item.combo_id).price = Number(item.price);
+      }
+    });
+    items.push(...comboRows.values());
     res.json({ success: true, invoice, items });
   } catch (err) {
     sendError(res, err);
@@ -6401,6 +6422,7 @@ app.get('/kds/orders', (req, res) => {
     const rows = db.prepare(`
       SELECT
         o.id AS order_id,
+        o.order_reference,
         o.table_no,
         o.order_type,
         o.created_at AS order_created_at,
@@ -6409,6 +6431,7 @@ app.get('/kds/orders', (req, res) => {
         oi.quantity,
         oi.price,
         oi.kot_id,
+        ksub.created_at AS kot_created_at,
         CASE WHEN oi.status = 'PLACED' THEN 'PENDING' ELSE oi.status END AS status,
         oi.started_at,
         oi.ready_at,
@@ -6417,6 +6440,7 @@ app.get('/kds/orders', (req, res) => {
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
       JOIN items i ON i.id = oi.item_id
+      LEFT JOIN kots ksub ON ksub.id = oi.kot_id
       WHERE oi.kitchen_id = ?
         AND o.status != 'CANCELLED'
         AND COALESCE(oi.status, 'PLACED') NOT IN ('SERVED', 'CANCELLED')
@@ -6438,6 +6462,7 @@ app.get('/kds/orders', (req, res) => {
       map[row.order_id] ||= {
         orderId: row.order_id,
         tableName: row.table_no || row.order_type || 'Parcel',
+        orderReference: row.order_reference || `${row.order_id}`,
         createdAt: row.order_created_at,
         items: []
       };
@@ -6452,7 +6477,7 @@ app.get('/kds/orders', (req, res) => {
         readyAt: row.ready_at,
         servedAt: row.served_at,
         kotId: row.kot_id || null,
-        kotReference: row.kot_id ? `${row.order_id}-${row.kot_id}` : null,
+        kotReference: row.kot_id ? `${row.order_reference || row.order_id}-${row.kot_id}` : null,
         modifiers: modifiersByItem[row.order_item_id] || []
       });
       return map;
@@ -6463,7 +6488,7 @@ app.get('/kds/orders', (req, res) => {
         if (!item.kotId) return;
         if (!kotOrder.includes(item.kotId)) kotOrder.push(item.kotId);
         item.kotSequence = kotOrder.indexOf(item.kotId) + 1;
-        item.kotReference = `${order.orderId}-${item.kotSequence}`;
+        item.kotReference = `${order.orderReference}-${item.kotSequence}`;
       });
     });
 
