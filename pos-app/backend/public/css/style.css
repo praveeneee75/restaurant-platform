@@ -298,9 +298,13 @@ button:hover,
   min-height: 100vh;
   max-height: 100vh;
   padding: 18px;
-  background: linear-gradient(180deg, #0f172a, #172033);
-  color: white;
+  background: #fff;
+  color: var(--text);
+  border-right: 1px solid var(--border);
 }
+.admin-shell .brand-block { color: var(--text); }.admin-shell .nav-group-title { color: var(--muted); }.admin-shell .nav-btn { color: var(--text); }.admin-shell .nav-btn:hover,.admin-shell .nav-btn.active { background:#eaf1ff; color:#1e3a8a; }
+.standalone-admin-view .admin-sidebar { display:none; }.standalone-admin-view .admin-main { grid-column:1 / -1; }
+.context-label { display:block; padding:11px 12px; color:var(--muted); font-weight:700; font-size:13px; }
 
 .brand-block {
   display: flex;

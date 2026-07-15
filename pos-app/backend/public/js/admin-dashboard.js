@@ -3,6 +3,7 @@ if (restaurantId) localStorage.setItem("restaurantId", restaurantId);
 
 const user = JSON.parse(localStorage.getItem("user") || "null");
 const requestedAdminView = new URLSearchParams(window.location.search).get("view") || "";
+const standaloneAdminView = new URLSearchParams(window.location.search).get("standalone") === "1";
 const role = String(user?.role || "").toUpperCase();
 const adminAllowedRoles = new Set(["OWNER", "MANAGER_1", "MANAGER_2", "CASHIER"]);
 if (!user || !adminAllowedRoles.has(role) || (role === "CASHIER" && requestedAdminView !== "reservations")) {
@@ -10,6 +11,8 @@ if (!user || !adminAllowedRoles.has(role) || (role === "CASHIER" && requestedAdm
   throw new Error("Admin access required");
 }
 const actor = { id: user.id, role: user.role || "OWNER" };
+if (standaloneAdminView) document.body.classList.add("standalone-admin-view");
+document.querySelectorAll("[data-logout]").forEach((button) => button.addEventListener("click", () => { localStorage.clear(); window.location.href = "/login.html"; }));
 const state = { admin: {}, inventory: {}, modifiers: {}, backups: {}, settings: {}, permissions: {}, devices: {}, reservations: [], expenseCategories: [], latestUpdate: null, commercial: {}, invoices: [] };
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
