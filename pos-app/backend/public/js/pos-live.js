@@ -262,9 +262,11 @@ function renderCategories() {
 function renderItems(categoryId) {
   const query = (itemSearch?.value || "").trim().toLowerCase();
   const itemTiles = state.items.filter((item) => item.category_id === categoryId && (!query || `${item.item_code || ""} ${item.name}`.toLowerCase().includes(query))).map((item) => {
-    const quantity = state.activeTableId ? cartQuantityForItem(item.id) : 0;
+    const matchingLines = state.cart.filter((line) => line.id === item.id && !line.comboId);
+    const quantity = matchingLines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
+    const stateClass = matchingLines.some((line) => line.sentToKitchen) ? "saved" : matchingLines.some((line) => line.savedLocally) ? "pending-save" : quantity > 0 ? "new-item" : "";
     return `
-      <button class="item-tile ${quantity > 0 ? "selected" : ""}" data-item="${item.id}">
+      <button class="item-tile ${quantity > 0 ? "selected" : ""} ${stateClass}" data-item="${item.id}">
         <strong>${esc(item.item_code || `ITM-${String(item.id).padStart(4, "0")}`)} · ${esc(item.name)}</strong>
         <span class="item-price">${money(item.price)}</span>
         ${quantity > 0 ? `<span class="tile-quantity-controls"><span data-item-minus="${item.id}" role="button">-</span><em>${quantity}</em><span data-item-plus="${item.id}" role="button">+</span></span>` : ""}
@@ -272,9 +274,11 @@ function renderItems(categoryId) {
     `;
   }).join("");
   const comboTiles = state.combos.filter((combo) => (!combo.category_id || Number(combo.category_id) === Number(categoryId)) && (!query || combo.name.toLowerCase().includes(query))).map((combo) => {
-    const quantity = state.activeTableId ? cartQuantityForCombo(combo.id) : 0;
+    const matchingLines = state.cart.filter((line) => line.comboId === combo.id);
+    const quantity = matchingLines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
+    const stateClass = matchingLines.some((line) => line.sentToKitchen) ? "saved" : matchingLines.some((line) => line.savedLocally) ? "pending-save" : quantity > 0 ? "new-item" : "";
     return `
-      <button class="item-tile combo-tile ${quantity > 0 ? "selected" : ""}" data-combo="${combo.id}">
+      <button class="item-tile combo-tile ${quantity > 0 ? "selected" : ""} ${stateClass}" data-combo="${combo.id}">
         <strong>${esc(combo.name)}</strong>
         <span>${money(combo.price)}</span>
         ${quantity > 0 ? `<span class="tile-quantity-controls"><span data-combo-minus="${combo.id}" role="button">-</span><em>${quantity}</em><span data-combo-plus="${combo.id}" role="button">+</span></span>` : ""}

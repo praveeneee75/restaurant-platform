@@ -632,31 +632,26 @@ button:hover,
 
 .item-tile {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: 10px;
-  min-height: 112px;
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(42px, auto) auto 30px;
+  align-items: start;
+  gap: 6px;
+  min-height: 148px;
   overflow: hidden;
 }
-.item-tile > strong { grid-column: 1 / -1; grid-row: 1; text-align: left; overflow-wrap: anywhere; }
-.item-tile > .item-price { grid-column: 1 / -1; grid-row: 2; justify-self: start; text-align: left; }
-.item-tile > .tile-quantity-controls { grid-column: 1 / -1; grid-row: 3; width: 100%; justify-content: space-between; }
-.item-tile > .tile-quantity-controls em { flex: 1; text-align: center; }
-.item-tile > strong { grid-column: 1 / -1 !important; grid-row: 1 !important; }
-.item-tile > .item-price { grid-column: 1 / -1 !important; grid-row: 2 !important; justify-self: start; }
-
 .item-tile > strong {
   grid-column: 1;
-  grid-row: 1 / span 2;
-  min-width: 0;
-  overflow-wrap: break-word;
-}
-
-.item-tile > span:not(.tile-quantity-controls) {
-  grid-column: 2;
   grid-row: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.2;
+}
+.item-tile > .item-price,
+.item-tile > span:not(.tile-quantity-controls) {
+  grid-column: 1;
+  grid-row: 2;
   margin-top: 0;
+  justify-self: start;
   white-space: nowrap;
 }
 
@@ -672,6 +667,10 @@ button:hover,
 .item-tile.selected {
   background: #eef5ff;
 }
+
+.item-tile.saved { background: #dcfce7; border-color: #16a34a; }
+.item-tile.pending-save { background: #fef3c7; border-color: #d97706; }
+.item-tile.new-item { background: #dbeafe; border-color: #2563eb; }
 
 .item-tile em {
   position: absolute;
@@ -690,14 +689,16 @@ button:hover,
 }
 
 .tile-quantity-controls {
-  grid-column: 2;
-  grid-row: 2;
+  grid-column: 1;
+  grid-row: 3;
   display: inline-flex !important;
   align-items: center;
   gap: 8px;
   margin: 0;
   white-space: nowrap;
 }
+
+.tile-quantity-controls em { flex: 1; text-align: center; }
 
 .tile-quantity-controls span[role="button"] {
   display: inline-grid;
