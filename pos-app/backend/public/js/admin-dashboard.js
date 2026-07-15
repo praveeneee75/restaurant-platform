@@ -13,10 +13,8 @@ if (!user || !adminAllowedRoles.has(role) || (role === "CASHIER" && !["reservati
 const actor = { id: user.id, role: user.role || "OWNER" };
 if (standaloneAdminView) document.body.classList.add("standalone-admin-view");
 document.querySelectorAll("[data-logout]").forEach((button) => button.addEventListener("click", () => { localStorage.clear(); window.location.href = "/login.html"; }));
-if (standaloneAdminView && ["invoices", "items"].includes(requestedAdminView)) {
-  const activeLabel = requestedAdminView === "invoices" ? "Invoices" : "Availability";
-  document.querySelectorAll(".app-home-nav a").forEach((link) => link.classList.toggle("active", link.textContent.trim() === activeLabel));
-}
+const activeAdminNavLabel = requestedAdminView === "invoices" ? "Invoices" : requestedAdminView === "items" ? "Availability" : "Admin";
+document.querySelectorAll(".app-home-nav a").forEach((link) => link.classList.toggle("active", link.textContent.trim() === activeAdminNavLabel));
 const state = { admin: {}, inventory: {}, modifiers: {}, backups: {}, settings: {}, permissions: {}, devices: {}, reservations: [], expenseCategories: [], latestUpdate: null, commercial: {}, invoices: [] };
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));

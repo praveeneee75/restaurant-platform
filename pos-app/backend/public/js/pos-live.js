@@ -152,8 +152,8 @@ function applyBootstrap(data) {
   if (selectedTableId) {
     state.selectedTable = state.tables.find((table) => table.id === selectedTableId) || state.selectedTable;
   }
-  if (!state.categories.some((category) => category.id === state.selectedCategoryId)) {
-    state.selectedCategoryId = state.categories[0]?.id || null;
+  if (state.selectedCategoryId !== "ALL" && !state.categories.some((category) => category.id === state.selectedCategoryId)) {
+    state.selectedCategoryId = "ALL";
   }
   if (window.activeRestaurantName) {
     const restaurantName = state.settings.restaurantName || restaurantId;
@@ -314,16 +314,16 @@ function renderOrderSelector() {
 }
 
 function renderCategories() {
-  categories.innerHTML = state.categories.map((category) => `
+  categories.innerHTML = [`<button class="${state.selectedCategoryId === "ALL" ? "active" : ""}" data-category="ALL">All</button>`, ...state.categories.map((category) => `
     <button class="${state.selectedCategoryId === category.id ? "active" : ""}" data-category="${category.id}">
       ${esc(category.name)}
     </button>
-  `).join("");
+  `)].join("");
 }
 
 function renderItems(categoryId) {
   const query = (itemSearch?.value || "").trim().toLowerCase();
-  const itemTiles = state.items.filter((item) => item.category_id === categoryId && (!query || `${item.item_code || ""} ${item.name}`.toLowerCase().includes(query))).map((item) => {
+  const itemTiles = state.items.filter((item) => (categoryId === "ALL" || item.category_id === categoryId) && (!query || `${item.item_code || ""} ${item.name}`.toLowerCase().includes(query))).map((item) => {
     const matchingLines = state.cart.filter((line) => line.id === item.id && !line.comboId);
     const quantity = matchingLines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
     const stateClass = matchingLines.some((line) => line.sentToKitchen) ? "saved" : matchingLines.some((line) => line.savedLocally) ? "pending-save" : quantity > 0 ? "new-item" : "";
@@ -335,7 +335,7 @@ function renderItems(categoryId) {
       </button>
     `;
   }).join("");
-  const comboTiles = state.combos.filter((combo) => (!combo.category_id || Number(combo.category_id) === Number(categoryId)) && (!query || combo.name.toLowerCase().includes(query))).map((combo) => {
+  const comboTiles = state.combos.filter((combo) => (categoryId === "ALL" || !combo.category_id || Number(combo.category_id) === Number(categoryId)) && (!query || combo.name.toLowerCase().includes(query))).map((combo) => {
     const matchingLines = state.cart.filter((line) => line.comboId === combo.id);
     const quantity = matchingLines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
     const stateClass = matchingLines.some((line) => line.sentToKitchen) ? "saved" : matchingLines.some((line) => line.savedLocally) ? "pending-save" : quantity > 0 ? "new-item" : "";
@@ -764,7 +764,7 @@ document.addEventListener("click", async (event) => {
   if (!target) return;
   if (target.dataset.table) await selectTable(Number(target.dataset.table));
   if (target.dataset.category) {
-    state.selectedCategoryId = Number(target.dataset.category);
+    state.selectedCategoryId = target.dataset.category === "ALL" ? "ALL" : Number(target.dataset.category);
     renderCategories();
     renderItems(state.selectedCategoryId);
   }

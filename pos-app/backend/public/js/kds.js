@@ -68,6 +68,9 @@ async function boot() {
   }
   const data = await fetch(`/admin/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`).then((res) => res.json());
   if (!data.success) throw new Error(data.message);
+  const restaurantName = data.restaurant?.name || data.settings?.restaurantName || restaurantId;
+  const nameElement = document.getElementById("kdsRestaurantName");
+  if (nameElement) nameElement.textContent = restaurantName;
   state.kitchens = data.kitchens || [];
   state.kitchenId = Number(new URLSearchParams(window.location.search).get("kitchenId")) || Number(localStorage.getItem("kdsKitchenId")) || state.kitchens[0]?.id;
   renderKitchenOptions();
