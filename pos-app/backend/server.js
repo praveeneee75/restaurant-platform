@@ -5300,7 +5300,11 @@ app.post('/orders/save', (req, res) => {
 
         // The client includes orderItemId for lines already sent to the kitchen. They cannot
         // be silently rewritten; changes must be a new line/KOT or a KDS cancellation.
-        itemsToSave = items.filter((item) => !submittedItemIds.has(Number(item.orderItemId)));
+        itemsToSave = items
+          .filter((item) => !submittedItemIds.has(Number(item.orderItemId)))
+          // A client refresh can carry the same order-item ID more than once;
+          // never persist that submitted line again during an edit/save.
+          .filter((item, index, rows) => !item.orderItemId || index === rows.findIndex((candidate) => Number(candidate.orderItemId) === Number(item.orderItemId)));
       }
 
       itemsToSave.forEach((item) => {
