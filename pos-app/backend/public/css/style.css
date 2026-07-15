@@ -287,7 +287,9 @@ button:hover,
 .admin-shell {
   display: grid;
   grid-template-columns: 240px 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
 }
+.admin-shell > .app-home-nav { grid-column: 1 / -1; }
 
 .admin-sidebar {
   position: sticky;
@@ -489,10 +491,15 @@ button:hover,
 .pos-shell {
   display: grid;
   grid-template-columns: 250px 1fr 360px;
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
   min-width: 0;
   overflow: hidden;
 }
+
+.app-home-nav { grid-column: 1 / -1; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:12px 18px; background:#fff; border-bottom:1px solid #dbe4ef; position:sticky; top:0; z-index:10; }
+.app-home-brand { display:flex; align-items:center; gap:4px; color:#123b8f; font-size:17px; white-space:nowrap; }.app-home-brand span { color:#e85d2a; }.app-home-brand small { margin-left:12px; color:var(--muted); font-size:12px; font-weight:600; }
+.app-home-nav nav { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:7px; }.app-home-nav a,.app-home-nav button { min-height:38px; padding:9px 13px; border:1px solid #d6dfeb; border-radius:8px; background:#f7faff; color:#173d86; text-decoration:none; font-weight:750; cursor:pointer; }.app-home-nav a:hover,.app-home-nav a.active,.app-home-nav button:hover { background:#2563eb; border-color:#2563eb; color:#fff; }
 
 .pos-tables,
 .pos-cart {
@@ -592,7 +599,7 @@ button:hover,
   font-style: italic;
 }
 
-.billing-shell { display: grid; grid-template-columns: 210px minmax(0, 1fr) 340px; min-height: 100vh; background: #f4f7fb; }
+.billing-shell { display: grid; grid-template-columns: 210px minmax(0, 1fr) 340px; grid-template-rows: auto minmax(0, 1fr); min-height: 100vh; background: #f4f7fb; }.billing-shell > .app-home-nav { grid-column: 1 / -1; }
 .billing-sidebar { padding: 20px 14px; background: #fff; border-right: 1px solid var(--border); }
 .billing-brand { padding: 8px 10px 24px; font-weight: 900; color: #123b8f; letter-spacing: .04em; }
 .billing-brand span { color: #e85d2a; }
@@ -647,6 +654,7 @@ button:hover,
 .billing-payment { display: grid; gap: 10px; margin-top: 12px; padding-top: 16px; border-top: 1px solid var(--border); }.billing-payment h3 { margin: 0; }
 
 @media (max-width: 1000px) { .billing-shell { grid-template-columns: 170px minmax(0, 1fr); }.billing-detail { grid-column: 1 / -1; border-top: 1px solid var(--border); border-left: 0; }.billing-empty { margin-top: 10px; } }
+@media (max-width: 850px) { .app-home-nav { align-items: stretch; flex-direction: column; }.app-home-nav nav { justify-content: flex-start; overflow-x: auto; flex-wrap: nowrap; }.app-home-nav a,.app-home-nav button { flex: 0 0 auto; } }
 @media (max-width: 650px) { .billing-shell { display: block; }.billing-sidebar { border-right: 0; border-bottom: 1px solid var(--border); }.billing-sidebar nav { display: flex; overflow-x: auto; }.billing-recent { display: none; }.billing-main { padding: 14px; }.billing-topbar, .billing-toolbar { align-items: stretch; flex-direction: column; }.billing-summary-panel { grid-template-columns: 1fr; }.billing-detail { padding: 14px; } }
 
 .table-tile.table-occupied {

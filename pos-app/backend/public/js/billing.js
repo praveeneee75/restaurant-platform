@@ -5,6 +5,8 @@ if (!sessionUser || !allowedRoles.has(String(sessionUser.role || '').toUpperCase
   throw new Error('Authentication required');
 }
 const restaurantId = new URLSearchParams(location.search).get('restaurantId') || localStorage.getItem('restaurantId');
+document.querySelectorAll('[data-role-nav="invoices"]').forEach((el) => { el.hidden = !['OWNER', 'MANAGER_1', 'MANAGER_2', 'CASHIER'].includes(String(sessionUser.role || '').toUpperCase()); });
+document.querySelectorAll('[data-role-nav="admin"]').forEach((el) => { el.hidden = !['OWNER', 'MANAGER_1', 'MANAGER_2'].includes(String(sessionUser.role || '').toUpperCase()); });
 const state = { tables: [], orders: [], selected: null, filter: 'ALL' };
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = v => `INR ${Number(v || 0).toFixed(2)}`;

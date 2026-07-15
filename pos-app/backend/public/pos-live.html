@@ -7,19 +7,24 @@
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body class="pos-shell">
+  <header class="app-home-nav">
+    <div class="app-home-brand"><strong>K'MASTER</strong> <span>POS</span><small id="activeRestaurantNameTop">Loading restaurant...</small></div>
+    <nav aria-label="POS home sections">
+      <a data-pos-mode="DINE_IN" href="/pos-live.html?mode=DINE_IN">POS Dine In</a>
+      <a data-pos-mode="PARCEL" href="/pos-live.html?mode=PARCEL">POS Parcel</a>
+      <a data-pos-mode="PARTY" href="/pos-live.html?mode=PARTY">POS Party Order</a>
+      <a data-role-nav="billing" href="/billing.html">Billing</a>
+      <a data-role-nav="invoices" href="/admin.html?view=invoices#invoices">Invoices</a>
+      <a data-role-nav="admin" href="/admin.html">Admin</a>
+      <button id="availabilityBtn" data-role-nav="availability" type="button" hidden>Availability</button>
+    </nav>
+  </header>
   <aside class="pos-tables">
     <header>
       <div>
         <h2 id="posModeTitle">POS Dine In</h2>
         <p id="activeRestaurantName" class="active-restaurant">Loading restaurant...</p>
       </div>
-    <nav class="pos-mode-nav" aria-label="POS modes">
-      <a data-pos-mode="DINE_IN" href="/pos-live.html?mode=DINE_IN">Dine In</a>
-      <a data-pos-mode="PARCEL" href="/pos-live.html?mode=PARCEL">Parcel</a>
-      <a data-pos-mode="PARTY" href="/pos-live.html?mode=PARTY">Party Order</a>
-      <a data-role-nav="billing" href="/billing.html">Billing</a>
-      <button id="availabilityBtn" data-role-nav="availability" type="button" hidden>Availability</button>
-    </nav>
     </header>
     <div id="tablesList" class="table-list"></div>
   </aside>
