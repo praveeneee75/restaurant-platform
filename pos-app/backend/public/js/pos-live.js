@@ -1,8 +1,16 @@
+const sessionUser = JSON.parse(localStorage.getItem("user") || "null");
+const role = String(sessionUser?.role || "").toUpperCase();
+const allowedPosRoles = new Set(["OWNER", "MANAGER_1", "MANAGER_2", "CASHIER", "CAPTAIN", "WAITER"]);
+if (!sessionUser || !allowedPosRoles.has(role)) {
+  window.location.replace(`/login.html?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+  throw new Error("POS login required");
+}
+const actor = { id: sessionUser.id, role };
+const modeParam = String(new URLSearchParams(window.location.search).get("mode") || "DINE_IN").toUpperCase();
+const posMode = ["DINE_IN", "PARCEL", "PARTY"].includes(modeParam) ? modeParam : "DINE_IN";
 const restaurantId = new URLSearchParams(window.location.search).get("restaurantId") || localStorage.getItem("restaurantId");
 if (restaurantId) localStorage.setItem("restaurantId", restaurantId);
 
-const user = JSON.parse(localStorage.getItem("user") || '{"role":"WAITER"}');
-const actor = { id: user.id, role: user.role || "WAITER" };
 const state = {
   tables: [],
   categories: [],
@@ -42,6 +50,8 @@ const money = (value) => `${state.settings?.currency || "INR"} ${amount(value)}`
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 const itemSearch = document.getElementById("itemSearch");
 const posToast = document.getElementById("posToast");
+const availabilityBtn = document.getElementById("availabilityBtn");
+const settlementType = document.getElementById("settlementType");
 let posToastTimer;
 const displayItemCode = (item) => String(item.item_code || String(item.id).padStart(4, "0")).replace(/^ITM[-\s]*/i, "");
 
@@ -70,7 +80,29 @@ async function postJson(url, body) {
 }
 
 function isDineIn() {
-  return orderType.value === "DINE_IN";
+  return posMode === "DINE_IN" && orderType.value === "DINE_IN";
+}
+
+function applyRoleAndModeUI() {
+  const modeTitle = document.getElementById("posModeTitle");
+  const labels = { DINE_IN: "POS Dine In", PARCEL: "POS Parcel", PARTY: "POS Party Order" };
+  if (modeTitle) modeTitle.textContent = labels[posMode];
+  document.title = labels[posMode];
+  document.querySelectorAll("[data-pos-mode]").forEach((link) => {
+    const mode = link.dataset.posMode;
+    link.classList.toggle("active", mode === posMode);
+    link.hidden = !["CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role) && mode !== "DINE_IN";
+  });
+  const canBilling = ["CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role);
+  const canMove = ["CAPTAIN", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role) && posMode === "DINE_IN";
+  const canSettle = ["CAPTAIN", "CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role);
+  document.querySelectorAll('[data-role-nav="billing"]').forEach((el) => { el.hidden = !canBilling; });
+  document.querySelectorAll('[data-role-nav="admin"]').forEach((el) => { el.hidden = true; });
+  document.querySelectorAll('[data-role-nav="availability"]').forEach((el) => { el.hidden = !["CAPTAIN", "CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role); });
+  if (moveTableBtn) moveTableBtn.hidden = !canMove;
+  if (settleOrder) settleOrder.hidden = !canSettle;
+  if (settlementType) settlementType.hidden = role !== "MANAGER_1";
+  if (posMode !== "DINE_IN") document.body.classList.add("pos-non-dine-in");
 }
 
 function deliveryFeeValue() {
@@ -136,6 +168,9 @@ function applyBootstrap(data) {
 }
 
 async function boot() {
+  if (posMode === "PARCEL") orderType.value = "TAKEAWAY";
+  if (posMode === "PARTY") orderType.value = "PHONE_ORDER";
+  applyRoleAndModeUI();
   const data = await fetch(`/pos/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`).then((res) => res.json());
   applyBootstrap(data);
   await refreshShiftCashStatus();
@@ -143,6 +178,13 @@ async function boot() {
   renderCategories();
   if (state.selectedCategoryId) renderItems(state.selectedCategoryId);
   updateOrderTypeView();
+  if (posMode !== "DINE_IN") {
+    state.selectedTable = null;
+    state.activeTableId = null;
+    renderTables();
+    renderCart();
+    return;
+  }
   const rememberedTableId = Number(localStorage.getItem("posActiveTableId") || 0);
   const remembered = state.tables.find((table) => Number(table.id) === rememberedTableId && table.status === "OCCUPIED");
   const firstOccupied = state.tables.find((table) => table.status === "OCCUPIED");
@@ -649,8 +691,9 @@ async function settleCurrentOrder() {
   if (Number(cashAmount.value) > 0) payments.push({ method: "CASH", amount: Number(cashAmount.value) });
   if (Number(cardAmount.value) > 0) payments.push({ method: "CARD", amount: Number(cardAmount.value) });
   if (Number(upiAmount.value) > 0) payments.push({ method: "UPI", amount: Number(upiAmount.value) });
-  const data = await postJson("/orders/settle", { orderId: state.orderId, customerId: state.customer?.id || null, redeemPoints: Math.floor(redeemPointsValue()), payments });
-  alert(`Invoice ${data.invoiceNo}`);
+  const isInvoice = settlementType?.value !== "NON_INVOICE";
+  const data = await postJson("/orders/settle", { orderId: state.orderId, customerId: state.customer?.id || null, redeemPoints: Math.floor(redeemPointsValue()), payments, isInvoice });
+  alert(isInvoice ? `Invoice ${data.invoiceNo}` : `Order settled without invoice. Reference ${data.invoiceNo}`);
   state.cart = [];
   state.selectedCartKey = null;
   state.orderId = null;
@@ -891,7 +934,7 @@ moveTableBtn.addEventListener("click", async () => {
 });
 splitBillBtn.addEventListener("click", openSplitBillModal);
 newCheckBtn.addEventListener("click", () => {
-  if (!state.selectedTable) return alert("Select a table first");
+  if (posMode === "DINE_IN" && !state.selectedTable) return alert("Select a table first");
   state.orderId = null;
   state.parcelTableId = null;
   state.orderReference = null;
@@ -903,11 +946,12 @@ newCheckBtn.addEventListener("click", () => {
   state.kotSubmitted = false;
   customerPhone.value = "";
   customerName.value = "";
-  orderType.value = "DINE_IN";
+  orderType.value = posMode === "PARCEL" ? "TAKEAWAY" : posMode === "PARTY" ? "PHONE_ORDER" : "DINE_IN";
   kotStatus.textContent = "New customer check started";
   updateOrderTypeView();
 });
 parcelCheckBtn.addEventListener("click", () => {
+  if (posMode !== "DINE_IN") return alert("Use the current POS mode for this order");
   if (!state.selectedTable) return alert("Select the customer's table first");
   state.parcelTableId = state.selectedTable.id;
   const parcelCustomer = state.customer;
@@ -996,6 +1040,17 @@ cancelOrder.addEventListener("click", async () => {
   state.kotSubmitted = false;
   await refreshLiveState({ updateCart: true });
   refreshCartAndMenu();
+});
+
+availabilityBtn?.addEventListener("click", async () => {
+  const code = prompt(`Enter the item code to change availability:\n\n${state.items.map((item) => `${displayItemCode(item)} - ${item.name}`).join("\n")}`);
+  if (!code) return;
+  const item = state.items.find((row) => String(row.item_code || row.id).toLowerCase() === code.trim().toLowerCase() || String(row.id) === code.trim());
+  if (!item) return alert("Item code not found");
+  const available = confirm(`${item.name}\n\nOK = Available\nCancel = Unavailable`);
+  await postJson("/pos/item-availability", { id: item.id, active: available });
+  alert(`${item.name} is now ${available ? "available" : "unavailable"}`);
+  await refreshLiveState();
 });
 
 boot().then(renderCart).catch((err) => alert(err.message));

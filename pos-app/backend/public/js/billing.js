@@ -1,5 +1,5 @@
 const sessionUser = JSON.parse(localStorage.getItem('user') || 'null');
-const allowedRoles = new Set(['OWNER', 'ADMIN', 'MANAGER', 'CASHIER', 'WAITER']);
+const allowedRoles = new Set(['OWNER', 'ADMIN', 'MANAGER', 'MANAGER_1', 'MANAGER_2', 'CASHIER']);
 if (!sessionUser || !allowedRoles.has(String(sessionUser.role || '').toUpperCase())) {
   location.replace(`/login.html?returnTo=${encodeURIComponent(location.pathname + location.search)}`);
   throw new Error('Authentication required');

@@ -67,6 +67,8 @@ const DEFAULT_ROLE_PERMISSIONS = {
   MANAGER_1: [
     'admin.view',
     'orders.create',
+    'billing.settle',
+    'billing.non_invoice',
     'orders.reopen',
     'orders.merge',
     'orders.transfer_table',
@@ -75,8 +77,8 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'kitchen.kds.view',
     'kitchen.status.update'
   ],
-  CASHIER: ['orders.create', 'billing.settle'],
-  CAPTAIN: ['orders.create', 'orders.transfer_table'],
+  CASHIER: ['orders.create', 'billing.settle', 'inventory.view'],
+  CAPTAIN: ['orders.create', 'orders.transfer_table', 'inventory.view'],
   WAITER: ['orders.create'],
   KITCHEN: ['kitchen.kds.view', 'kitchen.status.update']
 };
@@ -135,6 +137,14 @@ function seedDefaultPermissions(db) {
       upsert.run(roles[role], permissionId, codes.includes(code) ? 1 : 0);
     });
   });
+  // Add newly introduced operational permissions without overwriting owner-customized settings.
+  const grantPilotRole = db.prepare(`
+    UPDATE role_permissions SET allowed = 1
+    WHERE role_id = (SELECT id FROM roles WHERE name = ?)
+      AND permission_id IN (SELECT id FROM permissions WHERE code = ?)
+  `);
+  [['MANAGER_1', 'billing.settle'], ['MANAGER_1', 'billing.non_invoice'], ['CASHIER', 'inventory.view'], ['CAPTAIN', 'inventory.view']]
+    .forEach(([role, code]) => grantPilotRole.run(role, code));
   seededPermissionDbs.add(db);
 }
 

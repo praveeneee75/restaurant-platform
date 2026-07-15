@@ -503,6 +503,25 @@ button:hover,
   overflow: auto;
 }
 
+.pos-non-dine-in .pos-tables {
+  display: none;
+}
+
+.pos-shell.pos-non-dine-in {
+  grid-template-columns: 1fr 360px;
+}
+
+.pos-mode-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pos-mode-nav a.active {
+  font-weight: 800;
+  color: #2563eb;
+}
+
 .pos-cart {
   border-right: 0;
   border-left: 1px solid #e2e5ea;

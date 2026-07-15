@@ -1,7 +1,14 @@
 const restaurantId = new URLSearchParams(window.location.search).get("restaurantId") || localStorage.getItem("restaurantId");
 if (restaurantId) localStorage.setItem("restaurantId", restaurantId);
 
-const user = JSON.parse(localStorage.getItem("user") || '{"role":"OWNER"}');
+const user = JSON.parse(localStorage.getItem("user") || "null");
+const requestedAdminView = new URLSearchParams(window.location.search).get("view") || "";
+const role = String(user?.role || "").toUpperCase();
+const adminAllowedRoles = new Set(["OWNER", "MANAGER_1", "MANAGER_2", "CASHIER"]);
+if (!user || !adminAllowedRoles.has(role) || (role === "CASHIER" && requestedAdminView !== "reservations")) {
+  window.location.replace(`/login.html?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+  throw new Error("Admin access required");
+}
 const actor = { id: user.id, role: user.role || "OWNER" };
 const state = { admin: {}, inventory: {}, modifiers: {}, backups: {}, settings: {}, permissions: {}, devices: {}, reservations: [], expenseCategories: [], latestUpdate: null, commercial: {}, invoices: [] };
 
@@ -281,6 +288,14 @@ function applyModuleGuards() {
   });
   document.querySelectorAll('a[href="/kds.html"]').forEach((el) => { el.style.display = moduleEnabled("KDS") ? "" : "none"; });
   document.querySelectorAll('a[href="/customer.html"]').forEach((el) => { el.style.display = moduleEnabled("LOYALTY") ? "" : "none"; });
+  if (role === "CASHIER") {
+    document.querySelectorAll(".admin-nav .nav-group").forEach((el) => { el.style.display = "none"; });
+    const reservationsButton = document.querySelector('.nav-btn[data-view="reservations"]');
+    const reservationsGroup = reservationsButton?.closest(".nav-group");
+    if (reservationsGroup) reservationsGroup.style.display = "";
+    if (reservationsButton) reservationsButton.style.display = "";
+    document.querySelectorAll(".admin-view").forEach((panel) => { panel.style.display = panel.id === "view-reservations" ? "" : "none"; });
+  }
 }
 
 function renderReservations() {
@@ -1136,5 +1151,4 @@ expenseDate.value ||= todayIso();
 loadAll().catch((err) => {
   adminStatus.textContent = err.message;
 });
-const requestedView = new URLSearchParams(location.search).get("view");
-if (requestedView) showView(requestedView);
+if (requestedAdminView) showView(requestedAdminView);

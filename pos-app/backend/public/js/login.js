@@ -83,7 +83,7 @@ async function login() {
     } else if (role === "OWNER" || role === "MANAGER_2") {
       window.location.href = "/admin.html";
     } else {
-      window.location.href = "/pos-live.html";
+      window.location.href = `/pos-live.html?mode=DINE_IN`;
     }
   } catch (err) {
     console.error(err);

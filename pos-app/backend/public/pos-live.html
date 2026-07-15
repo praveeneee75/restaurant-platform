@@ -3,17 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Live Table POS</title>
+  <title>POS Dine In</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body class="pos-shell">
   <aside class="pos-tables">
     <header>
       <div>
-        <h2>Tables</h2>
+        <h2 id="posModeTitle">POS Dine In</h2>
         <p id="activeRestaurantName" class="active-restaurant">Loading restaurant...</p>
       </div>
-    <span class="pos-nav-links"><a href="/billing.html">Billing</a><a href="/admin.html">Admin</a></span>
+    <nav class="pos-mode-nav" aria-label="POS modes">
+      <a data-pos-mode="DINE_IN" href="/pos-live.html?mode=DINE_IN">Dine In</a>
+      <a data-pos-mode="PARCEL" href="/pos-live.html?mode=PARCEL">Parcel</a>
+      <a data-pos-mode="PARTY" href="/pos-live.html?mode=PARTY">Party Order</a>
+      <a data-role-nav="billing" href="/billing.html">Billing</a>
+      <button id="availabilityBtn" data-role-nav="availability" type="button" hidden>Availability</button>
+    </nav>
     </header>
     <div id="tablesList" class="table-list"></div>
   </aside>
@@ -76,6 +82,10 @@
         <option value="CARD">Card</option>
         <option value="UPI">UPI</option>
         <option value="SPLIT">Split Payment</option>
+      </select>
+      <select id="settlementType" hidden>
+        <option value="INVOICE">Create invoice</option>
+        <option value="NON_INVOICE">Settle without invoice</option>
       </select>
       <input id="cashAmount" type="number" step="0.01" placeholder="Cash amount">
       <input id="cardAmount" type="number" step="0.01" placeholder="Card amount">

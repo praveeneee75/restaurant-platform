@@ -138,6 +138,7 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'orders', 'paid_amount REAL DEFAULT 0');
   addColumn(db, 'orders', "payment_status TEXT DEFAULT 'UNPAID'");
   addColumn(db, 'orders', "invoice_no TEXT");
+  addColumn(db, 'orders', 'is_invoice INTEGER DEFAULT 1');
   addColumn(db, 'orders', "cancelled_at DATETIME");
   addColumn(db, 'orders', "settled_at DATETIME");
   addColumn(db, 'orders', 'customer_id INTEGER');

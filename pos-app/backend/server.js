@@ -30,6 +30,7 @@ const os = require('os');
 const zlib = require('zlib');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const { setupDatabase } = require('./services/dbSetup');
 const { openDatabase } = require('./db/database');
@@ -4610,10 +4611,11 @@ app.post('/tables/delete', (req, res) => {
 });
 
 app.get('/reservations/list', (req, res) => {
-  const { restaurantId, fromDate, toDate } = req.query;
+  const { restaurantId, fromDate, toDate, role } = req.query;
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    requirePermission(db, role, 'orders.create', 'Reservation permission required');
     const rows = db.prepare(`
       SELECT r.*, t.table_name
       FROM reservations r
@@ -4745,6 +4747,27 @@ app.get('/pos/bootstrap', (req, res) => {
         roundOffEnabled: getBooleanConfig(db, 'round_off_enabled', true)
       }
     });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/pos/item-availability', (req, res) => {
+  const { restaurantId, actor, id, active } = req.body;
+  if (!restaurantId || !isPositiveId(id) || !['CAPTAIN', 'CASHIER', 'MANAGER_1', 'MANAGER_2', 'OWNER'].includes(String(actor?.role || '').toUpperCase())) {
+    return res.status(403).json({ success: false, message: 'Item availability permission is required' });
+  }
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor.role, 'inventory.view', 'Item availability permission is required');
+    const oldValue = db.prepare('SELECT id, name, active FROM items WHERE id = ?').get(id);
+    if (!oldValue) throw new Error('Item not found');
+    db.prepare('UPDATE items SET active = ? WHERE id = ?').run(active === false ? 0 : 1, id);
+    const newValue = db.prepare('SELECT id, name, active FROM items WHERE id = ?').get(id);
+    writeAudit(db, actor, active === false ? 'DEACTIVATE' : 'ACTIVATE', 'ITEM_AVAILABILITY', id, oldValue, newValue);
+    res.json({ success: true, item: newValue });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -5955,7 +5978,7 @@ app.post('/orders/cancel', (req, res) => {
 });
 
 app.post('/orders/settle', (req, res) => {
-  const { restaurantId, actor, orderId, customerId, redeemPoints, payments } = req.body;
+  const { restaurantId, actor, orderId, customerId, redeemPoints, payments, isInvoice = true } = req.body;
   if (!restaurantId || !orderId || !Array.isArray(payments) || !canSell(actor?.role)) {
     return res.status(400).json({ success: false, message: 'Order, payments and sales permission are required' });
   }
@@ -5968,6 +5991,7 @@ app.post('/orders/settle', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     requirePermission(db, actor?.role, 'billing.settle', 'Billing settlement permission required');
+    if (isInvoice === false) requirePermission(db, actor?.role, 'billing.non_invoice', 'Non-invoice settlement requires manager permission');
     const settled = db.transaction(() => {
       const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
       if (!order) throw new Error('Order not found');
@@ -5997,7 +6021,9 @@ app.post('/orders/settle', (req, res) => {
       const loyaltyDiscount = Math.min(redeem * pointValue, grossAmount + serviceCharge);
       const paid = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
       if (paid < payable) throw new Error('Payment is less than payable total');
-      const invoiceNo = order.invoice_no || invoiceNumberForOrder(db, orderId);
+      const invoiceNo = isInvoice === false
+        ? (order.invoice_no || `RCP-${crypto.randomBytes(5).toString('hex').toUpperCase()}`)
+        : (order.invoice_no || invoiceNumberForOrder(db, orderId));
 
       if (redeem > 0) {
         const memberId = memberIdForCustomer(db, linkedCustomerId);
@@ -6021,10 +6047,10 @@ app.post('/orders/settle', (req, res) => {
       });
       db.prepare(`
         UPDATE orders
-        SET total_amount = ?, paid_amount = ?, payment_status = 'PAID', status = 'PAID', invoice_no = ?, settled_at = CURRENT_TIMESTAMP,
+        SET total_amount = ?, paid_amount = ?, payment_status = 'PAID', status = 'PAID', invoice_no = ?, is_invoice = ?, settled_at = CURRENT_TIMESTAMP,
             customer_id = COALESCE(?, customer_id), redeemed_points = ?, loyalty_discount = ?
         WHERE id = ?
-      `).run(payable, paid, invoiceNo, linkedCustomerId || null, redeem, loyaltyDiscount, orderId);
+      `).run(payable, paid, invoiceNo, isInvoice === false ? 0 : 1, linkedCustomerId || null, redeem, loyaltyDiscount, orderId);
       if (linkedCustomerId) {
         db.prepare('INSERT INTO customer_visits (customer_id, order_id, amount) VALUES (?, ?, ?)')
           .run(linkedCustomerId, orderId, paid);

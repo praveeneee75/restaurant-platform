@@ -4,6 +4,7 @@ if (restaurantId) localStorage.setItem("restaurantId", restaurantId);
 const user = JSON.parse(localStorage.getItem("user") || '{"role":"KITCHEN"}');
 const actor = { id: user.id, role: user.role || "KITCHEN", username: user.username };
 const allowedRoles = ["OWNER", "MANAGER_2", "KITCHEN"];
+if (String(actor.role).toUpperCase() === "KITCHEN") document.getElementById("kdsBackBtn").hidden = true;
 const state = { kitchens: [], kitchenId: null, lastPendingIds: new Set(), firstLoad: true };
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
