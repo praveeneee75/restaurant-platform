@@ -876,6 +876,24 @@ button:hover,
   display: none;
 }
 
+.pos-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 30;
+  width: min(420px, calc(100vw - 32px));
+  padding: 13px 16px;
+  transform: translateX(-50%);
+  border: 1px solid #93c5fd;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #163b78;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .18);
+  font-weight: 700;
+  text-align: center;
+  pointer-events: none;
+}
+
 .modifier-modal {
   width: min(620px, 100%);
   max-height: min(720px, 90vh);

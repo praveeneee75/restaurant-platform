@@ -41,6 +41,18 @@ const isPositiveId = (value) => Number.isInteger(Number(value)) && Number(value)
 const money = (value) => `${state.settings?.currency || "INR"} ${amount(value)}`;
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 const itemSearch = document.getElementById("itemSearch");
+const posToast = document.getElementById("posToast");
+let posToastTimer;
+
+// Keep validation and completion messages inside the POS window so a native
+// blocking dialog cannot leave the Electron renderer with stale focus.
+function alert(message) {
+  if (!posToast) return;
+  posToast.textContent = String(message || "");
+  posToast.hidden = false;
+  clearTimeout(posToastTimer);
+  posToastTimer = setTimeout(() => { posToast.hidden = true; }, 4200);
+}
 
 async function postJson(url, body) {
   const res = await fetch(url, {
