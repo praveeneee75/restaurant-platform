@@ -633,7 +633,9 @@ async function submitCurrentKot() {
 async function settleCurrentOrder() {
   const settledTableId = state.selectedTable?.id || null;
   const wasSubmittedAndEdited = state.kotSubmitted && state.dirty;
-  const saved = await saveCurrentOrder();
+  // Reconcile the visible cart with the server before billing, even when the
+  // screen is clean, so a stale order total cannot reject the displayed amount.
+  const saved = await saveCurrentOrder(true);
   if (!saved) return;
   if (wasSubmittedAndEdited) {
     await postJson("/orders/submit-kot", { orderId: state.orderId });

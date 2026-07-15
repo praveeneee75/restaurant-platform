@@ -435,10 +435,9 @@ async function showInvoiceDetail(invoiceId) {
 function printInvoice(invoice, items) {
   const rows = items.map(item => `<tr><td>${esc(item.name)}</td><td>${item.quantity}</td><td>${money(Number(item.price || 0) * Number(item.quantity || 0))}</td></tr>`).join('');
   const html = `<html><head><title>${esc(invoice.invoice_no || 'Invoice')}</title><style>body{font:14px Arial;padding:32px}table{width:100%;border-collapse:collapse}th,td{padding:9px;text-align:left;border-bottom:1px solid #ddd}h1{margin-bottom:6px}.total{margin-top:20px;font-size:18px;font-weight:bold;text-align:right}</style></head><body><h1>${esc(invoice.invoice_no || `Invoice #${invoice.id}`)}</h1><p>${esc(invoice.customer_name || 'Walk-in customer')} · ${esc(invoice.table_no || invoice.order_type || '')}<br>${esc(invoice.settled_at || '')}</p><table><thead><tr><th>Item</th><th>Qty</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table><p class="total">Total: ${money(invoice.total_amount)}</p></body></html>`;
-  const printWindow = window.open('', '_blank', 'width=760,height=900');
+  const printWindow = window.open(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`, '_blank', 'width=760,height=900');
   if (!printWindow) return;
-  printWindow.document.write(html.replace('</body>', '<script>window.onload=()=>window.print()<\\/script></body>'));
-  printWindow.document.close();
+  printWindow.onload = () => printWindow.print();
 }
 
 function findById(rows, id) {
