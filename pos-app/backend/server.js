@@ -3511,7 +3511,7 @@ app.get('/admin/bootstrap', (req, res) => {
       kitchens: db.prepare("SELECT id, name, printer_name, printer_id, active FROM kitchens WHERE (? = 'true' OR active = 1) ORDER BY name").all(includeInactive),
       categories: db.prepare(`
         SELECT c.id, c.name, c.kitchen_id, c.active, k.name AS kitchen_name
-        FROM categories c LEFT JOIN kitchens k ON k.id = c.kitchen_id
+        FROM categories c JOIN kitchens k ON k.id = c.kitchen_id AND k.active = 1
         WHERE (? = 'true' OR c.active = 1)
         ORDER BY c.name
       `).all(includeInactive),
@@ -3520,8 +3520,8 @@ app.get('/admin/bootstrap', (req, res) => {
                i.image_url, i.online_description, i.online_enabled,
                c.name AS category_name, k.name AS kitchen_name
         FROM items i
-        LEFT JOIN categories c ON c.id = i.category_id
-        LEFT JOIN kitchens k ON k.id = c.kitchen_id
+        JOIN categories c ON c.id = i.category_id AND c.active = 1
+        JOIN kitchens k ON k.id = c.kitchen_id AND k.active = 1
         WHERE (? = 'true' OR i.active = 1)
         ORDER BY i.name
       `).all(includeInactive),

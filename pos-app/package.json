@@ -1,15 +1,15 @@
 {
   "name": "pos-app",
-  "version": "1.0.70",
+  "version": "1.0.71",
   "description": "Restaurant POS local backend",
   "main": "electron/main.js",
   "scripts": {
     "start": "node backend/server.js",
     "dev": "node backend/server.js",
     "desktop": "electron electron/main.js",
-    "pre-dist:win": "electron-rebuild --force --which-module better-sqlite3 --version 42.5.0 && electron-rebuild --force --which-module bcrypt --version 42.5.0",
+    "verify:native": "node ../scripts/verify-pos-electron-native.js",
+    "dist:win": "electron-rebuild --force --which-module better-sqlite3 --version 42.5.0 && electron-rebuild --force --which-module bcrypt --version 42.5.0 && npm run verify:native && electron-builder --win nsis",
     "post-dist:win": "npm rebuild better-sqlite3 bcrypt",
-    "dist:win": "electron-builder --win nsis",
     "dist:mac": "electron-builder --mac dmg",
     "dist:linux": "electron-builder --linux AppImage deb",
     "dist:all": "electron-builder --win nsis --mac dmg --linux AppImage deb",
