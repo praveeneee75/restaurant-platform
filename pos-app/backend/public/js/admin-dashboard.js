@@ -171,6 +171,11 @@ async function loadUpdates() {
   const messages = [];
   if (latest.updateAvailable) messages.push(`New POS update available: ${latest.latestVersion}`);
   if (latest.releaseNotes) messages.push(latest.releaseNotes);
+  const activation = await fetchJson('/activation/status').catch(() => ({}));
+  if (activation.expiresAt) {
+    const days = Math.ceil((new Date(activation.expiresAt).getTime() - Date.now()) / 86400000);
+    if (days <= 30) messages.push(days < 0 ? 'POS license has expired.' : `POS license expires in ${days} day(s).`);
+  }
   notificationCount.textContent = String(messages.length);
   notificationButton.title = messages.join(' | ') || 'No new notifications';
   notificationButton.onclick = () => alert(messages.join('\n\n') || 'No new notifications');
