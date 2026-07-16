@@ -16,6 +16,8 @@ document.querySelectorAll("[data-logout]").forEach((button) => button.addEventLi
 const activeAdminNavLabel = requestedAdminView === "invoices" ? "Invoices" : requestedAdminView === "items" ? "Availability" : "Admin";
 document.querySelectorAll(".app-home-nav a").forEach((link) => link.classList.toggle("active", link.textContent.trim() === activeAdminNavLabel));
 const state = { admin: {}, inventory: {}, modifiers: {}, backups: {}, settings: {}, permissions: {}, devices: {}, reservations: [], expenseCategories: [], latestUpdate: null, commercial: {}, invoices: [] };
+const notificationButton = document.getElementById('notificationButton');
+const notificationCount = document.getElementById('notificationCount');
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 const money = (value) => Number(value || 0).toFixed(2);
@@ -159,9 +161,19 @@ async function loadExpenseCategories() {
 
 async function loadUpdates() {
   const version = await fetchJson("/version");
+  const headerVersion = document.getElementById('headerAppVersion');
+  if (headerVersion) headerVersion.textContent = `POS ${version.posVersion}`;
   updateCurrentVersion.textContent = `Current version: ${version.posVersion} | Print Agent: ${version.printAgentVersion || "Not detected"}`;
   const logs = await fetchJson(`/updates/logs?restaurantId=${encodeURIComponent(restaurantId)}`).catch(() => ({ logs: [] }));
   updateLogsPanel.innerHTML = (logs.logs || []).map((log) => `<p><strong>${esc(log.status)}</strong> ${esc(log.current_version || "")} -> ${esc(log.target_version || "")}<br><small>${esc(log.message || "")} ${esc(log.created_at || "")}</small></p>`).join("") || "<p>No update logs yet.</p>";
+  const latest = await fetchJson(`/updates/check?restaurantId=${encodeURIComponent(restaurantId)}`).catch(() => ({ updateAvailable: false }));
+  state.latestUpdate = latest;
+  const messages = [];
+  if (latest.updateAvailable) messages.push(`New POS update available: ${latest.latestVersion}`);
+  if (latest.releaseNotes) messages.push(latest.releaseNotes);
+  notificationCount.textContent = String(messages.length);
+  notificationButton.title = messages.join(' | ') || 'No new notifications';
+  notificationButton.onclick = () => alert(messages.join('\n\n') || 'No new notifications');
 }
 
 async function loadCommercial() {
@@ -238,6 +250,7 @@ async function loadAll() {
   await loadPermissions();
   await loadAdmin();
   if (standaloneAdminView && requestedAdminView) {
+    await loadUpdates().catch(() => undefined);
     if (requestedAdminView === "invoices") await loadInvoiceList().catch(() => undefined);
     if (requestedAdminView === "reservations") await loadReservations().catch(() => undefined);
     adminStatus.textContent = "Workspace ready";
@@ -245,7 +258,7 @@ async function loadAll() {
   }
   const loaders = [loadModifiers(), loadBackup(), loadSettings(), loadUpdates(), loadAudit(), loadDeviceSessions(), loadExpenseCategories(), loadInvoiceList().catch(() => undefined)];
   if (moduleEnabled("INVENTORY")) loaders.push(loadInventory());
-  if (moduleEnabled("RESERVATIONS")) loaders.push(loadReservations());
+  if (moduleEnabled("RESERVATIONS")) loaders.push(loadReservations().catch(() => undefined));
   await Promise.all(loaders);
   adminStatus.textContent = "Workspace ready";
 }
