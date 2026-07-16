@@ -352,7 +352,7 @@ function calculateOrderTotal(db, orderId) {
     SELECT oi.quantity, i.price
     FROM order_items oi
     JOIN items i ON oi.item_id = i.id
-    WHERE oi.order_id = ?
+    WHERE oi.order_id = ? AND oi.kot_id IS NOT NULL
   `).all(orderId);
 
   return rows.reduce((sum, r) => sum + r.quantity * r.price, 0);
