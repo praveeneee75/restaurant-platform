@@ -639,6 +639,7 @@ button:hover,
 .invoice-filters label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .invoice-filters input, .invoice-filters button { min-height: 44px; }
 .invoice-detail { margin-top: 16px; padding: 20px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.invoice-workspace { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr); gap: 16px; align-items: start; }.invoice-workspace .invoice-detail { margin-top: 0; position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; }.invoice-refund { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }.invoice-refund-fields { display: grid; gap: 8px; margin: 10px 0; }.invoice-refund .danger-btn { background: #dc2626; color: #fff; border: 0; border-radius: 6px; padding: 10px 14px; font-weight: 700; }.invoice-tax { font-size: 14px; color: var(--muted); }
 .invoice-detail header { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
 .invoice-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .invoice-detail h3 { margin: 0 0 5px; }
@@ -649,7 +650,7 @@ button:hover,
 .invoice-detail-total { display: flex; justify-content: space-between; font-size: 18px; font-weight: 800; }
 .table-panel table { width: 100%; table-layout: auto; }.table-panel td, .table-panel th { vertical-align: middle; }.table-panel td:last-child, .table-panel th:last-child { width: 130px; white-space: nowrap; }
 .billing-open-bill strong, .billing-open-bill span { display: block; min-width: 0; overflow-wrap: anywhere; }.billing-open-bill strong { font-size: 14px; line-height: 1.25; white-space: nowrap; }.billing-open-bill span { color: #dbeafe; margin-top: 5px; line-height: 1.35; }
-@media (max-width: 700px) { .invoice-filters { grid-template-columns: 1fr; } .table-panel { overflow-x: auto; } .table-panel table { min-width: 760px; } .invoice-detail header { flex-direction: column; } }
+@media (max-width: 1000px) { .invoice-workspace { grid-template-columns: 1fr; }.invoice-workspace .invoice-detail { position: static; max-height: none; } } @media (max-width: 700px) { .invoice-filters { grid-template-columns: 1fr; } .table-panel { overflow-x: auto; } .table-panel table { min-width: 760px; } .invoice-detail header { flex-direction: column; } }
 .cart-line.saved { background: #dcfce7 !important; border-left: 5px solid #16a34a !important; }
 .cart-line.pending-save { background: #fef3c7 !important; border-left: 5px solid #d97706 !important; }
 .cart-line.new-item { background: #dbeafe !important; border-left: 5px solid #2563eb !important; }

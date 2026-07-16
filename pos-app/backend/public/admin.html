@@ -434,6 +434,8 @@
               </select>
             </label>
             <label class="check-row"><input id="settingShowTaxOnBill" type="checkbox"> Show tax on bill</label>
+            <label>Tax name<input id="settingTaxName" placeholder="GST"></label>
+            <label>Tax rate % (included in item prices)<input id="settingTaxRate" type="number" min="0" max="100" step="0.01"></label>
             <label class="check-row"><input id="settingShowQrOnBill" type="checkbox"> Show QR on bill</label>
             <label>UPI ID<input id="settingUpiId"></label>
             <label class="check-row"><input id="settingServiceChargeEnabled" type="checkbox"> Enable service charge</label>
@@ -685,6 +687,7 @@
         </div>
         <p id="invoiceStatus"></p>
       </div>
+      <div class="invoice-workspace">
       <div class="table-panel">
         <table>
           <thead>
@@ -694,6 +697,7 @@
         </table>
       </div>
       <aside id="invoiceDetail" class="invoice-detail" hidden></aside>
+      </div>
     </section>
   </main>
 

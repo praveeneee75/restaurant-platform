@@ -38,6 +38,8 @@ const DEFAULT_SYSTEM_SETTINGS = {
   invoice_prefix: 'INV',
   invoice_reset_frequency: 'DAILY',
   show_tax_on_bill: '1',
+  tax_name: 'GST',
+  tax_rate: '0',
   show_qr_on_bill: '0',
   upi_id: '',
   service_charge_enabled: '0',

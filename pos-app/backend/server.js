@@ -812,7 +812,7 @@ app.use('/qr', moduleGate('QR_ORDERING'));
 app.use('/reservations', moduleGate('RESERVATIONS'));
 app.use('/cloud-sync', moduleGate('CLOUD_REPORTING'));
 
-const SETTINGS_PERCENT_KEYS = new Set(['service_charge_percent']);
+const SETTINGS_PERCENT_KEYS = new Set(['service_charge_percent', 'tax_rate']);
 const SETTINGS_NON_NEGATIVE_NUMBER_KEYS = new Set(['cash_discrepancy_threshold', 'online_min_order_amount']);
 
 function normaliseSettingsInput(input) {

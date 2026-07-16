@@ -441,7 +441,7 @@ function renderInvoices() {
       <td>${esc(invoice.order_type || "")}</td>
       <td>${money(invoice.total_amount)}</td>
       <td>${esc(invoice.settled_at || "")}</td>
-      <td><button type="button" class="secondary-btn invoice-view" data-invoice-id="${invoice.id}">View / PDF</button></td>
+      <td><button type="button" class="secondary-btn invoice-view" data-invoice-id="${invoice.id}" title="View invoice details">View</button></td>
     </tr>
   `).join("") || `<tr><td colspan="7">No invoices found.</td></tr>`;
   invoiceStatus.textContent = "Invoices loaded";
@@ -454,8 +454,32 @@ async function showInvoiceDetail(invoiceId) {
   const items = data.items || [];
   panel.innerHTML = `<header><div><h3>${esc(invoice.invoice_no || `Invoice #${invoice.id}`)}</h3><p class="invoice-detail-meta">${esc(invoice.customer_name || 'Walk-in customer')} · ${esc(invoice.table_no || invoice.order_type || '')} · ${esc(invoice.settled_at || '')}</p></div><div class="invoice-detail-actions"><button type="button" class="secondary-btn" id="printInvoice">Print</button><button type="button" class="secondary-btn" id="downloadInvoicePdf">Save PDF</button></div></header><div class="invoice-detail-lines">${items.map(item => `<div class="invoice-detail-line"><span>${esc(item.name)} × ${item.quantity}${item.notes ? `<small>Note: ${esc(item.notes)}</small>` : ''}</span><strong>${money(Number(item.price || 0) * Number(item.quantity || 0))}</strong></div>`).join('') || '<p>No items recorded.</p>'}</div><div class="invoice-detail-total"><span>Total</span><strong>${money(invoice.total_amount)}</strong></div>`;
   panel.hidden = false;
+  const refund = document.createElement('div');
+  const taxRate = Number(state.settings?.tax_rate || 0);
+  if (taxRate > 0) {
+    const tax = document.createElement('div');
+    tax.className = 'invoice-detail-total invoice-tax';
+    tax.innerHTML = `<span>${esc(state.settings?.tax_name || 'GST')} included (${taxRate}%)</span><strong>${money(Number(invoice.total_amount || 0) * taxRate / (100 + taxRate))}</strong>`;
+    panel.appendChild(tax);
+  }
+  refund.className = 'invoice-refund';
+  refund.innerHTML = '<h4>Refund</h4><p class="invoice-detail-meta">Refund cannot exceed the amount paid.</p><div class="invoice-refund-fields"><input id="refundAmount" type="number" min="0.01" max="' + Number(invoice.paid_amount || 0) + '" step="0.01" placeholder="Amount"><select id="refundMode"><option value="CASH">Cash</option><option value="UPI">UPI</option><option value="OWNER_FUND">Owner fund</option></select><input id="refundReason" maxlength="200" placeholder="Reason"></div><button type="button" class="danger-btn" id="refundInvoice">Refund</button><p id="refundStatus"></p>';
+  panel.appendChild(refund);
   document.getElementById('printInvoice').onclick = () => printInvoice(invoice, items);
   document.getElementById('downloadInvoicePdf').onclick = () => printInvoice(invoice, items);
+  const refundButton = document.getElementById('refundInvoice');
+  if (refundButton) refundButton.onclick = async () => {
+    const amount = Number(document.getElementById('refundAmount').value);
+    const status = document.getElementById('refundStatus');
+    if (!Number.isFinite(amount) || amount <= 0) { status.textContent = 'Enter a positive refund amount.'; return; }
+    if (amount > Number(invoice.paid_amount || 0)) { status.textContent = 'Refund cannot exceed the amount paid.'; return; }
+    if (!window.confirm(`Refund ${money(amount)} from this invoice?`)) return;
+    try {
+      const result = await postJson('/orders/refund', { restaurantId, orderId: invoice.id, amount, refundMode: document.getElementById('refundMode').value, reason: document.getElementById('refundReason').value, refundedByRole: actor.role });
+      status.textContent = `${money(result.refundedAmount)} refunded.`;
+      await showInvoiceDetail(invoice.id); await loadInvoiceList();
+    } catch (err) { status.textContent = err.message; }
+  };
 }
 
 function printInvoice(invoice, items) {
@@ -696,6 +720,8 @@ function renderSettings() {
   settingInvoicePrefix.value = settings.invoice_prefix || "INV";
   settingInvoiceResetFrequency.value = settings.invoice_reset_frequency || "DAILY";
   setChecked(settingShowTaxOnBill, settings.show_tax_on_bill);
+  settingTaxName.value = settings.tax_name || 'GST';
+  settingTaxRate.value = settings.tax_rate || '0';
   setChecked(settingShowQrOnBill, settings.show_qr_on_bill);
   settingUpiId.value = settings.upi_id || "";
   setChecked(settingServiceChargeEnabled, settings.service_charge_enabled);
@@ -760,6 +786,8 @@ function collectSettings() {
     invoice_prefix: settingInvoicePrefix.value,
     invoice_reset_frequency: settingInvoiceResetFrequency.value,
     show_tax_on_bill: checkedValue(settingShowTaxOnBill),
+    tax_name: settingTaxName.value.trim() || 'GST',
+    tax_rate: settingTaxRate.value || '0',
     show_qr_on_bill: checkedValue(settingShowQrOnBill),
     upi_id: settingUpiId.value,
     service_charge_enabled: checkedValue(settingServiceChargeEnabled),
