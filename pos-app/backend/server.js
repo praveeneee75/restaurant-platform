@@ -5178,7 +5178,7 @@ function deductInventoryForOrder(db, actor, orderId, reason) {
     FROM order_items oi
     JOIN recipes r ON r.menu_item_id = oi.item_id AND r.active = 1
     JOIN recipe_items ri ON ri.recipe_id = r.id AND ri.active = 1
-    WHERE oi.order_id = ?
+    WHERE oi.order_id = ? AND oi.kot_id IS NOT NULL
     GROUP BY ri.ingredient_id
   `).all(orderId);
 
@@ -6016,7 +6016,12 @@ app.post('/orders/settle', (req, res) => {
       // The save/reconciliation step is authoritative for the active check.
       // Using a second aggregate here can include stale historical KOT rows and
       // reject the exact payable amount shown in POS/Billing.
-      const grossAmount = Number(order.total_amount || 0);
+      const submittedTotal = db.prepare(`
+        SELECT COALESCE(SUM(quantity * price), 0) AS total
+        FROM order_items
+        WHERE order_id = ? AND kot_id IS NOT NULL
+      `).get(orderId);
+      const grossAmount = Number(submittedTotal?.total || 0);
       const serviceCharge = serviceChargeForAmount(db, grossAmount);
       const discountRows = tableExists(db, 'discounts')
         ? db.prepare('SELECT value, value_type FROM discounts WHERE order_id = ?').all(orderId)
