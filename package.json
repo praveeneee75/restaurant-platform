@@ -25,6 +25,7 @@
     "test": "node tests/smoke-commercial-readiness.js",
     "test:pos": "node tests/pos-smoke.js",
     "test:pos:regression": "node tests/pos-regression.js",
+    "test:pos:matrix": "node tests/pos-100-matrix.js",
     "test:saas": "node tests/saas-smoke.js"
   }
 }

@@ -2097,7 +2097,11 @@ app.post('/orders/apply-discount', (req, res) => {
         : d.value;
     }
 
-    const net = Math.max(gross - totalDiscount, 0);
+    // Keep the amount returned to POS/Billing identical to settlement. The
+    // settlement path includes service charge, so discount previews must too.
+    const serviceCharge = serviceChargeForAmount(db, gross);
+    const netBeforeRoundOff = Math.max(gross + serviceCharge - Math.min(totalDiscount, gross + serviceCharge), 0);
+    const net = applyRoundOff(db, netBeforeRoundOff);
 
     db.prepare(`
       UPDATE orders SET total_amount = ? WHERE id = ?
@@ -2117,6 +2121,8 @@ app.post('/orders/apply-discount', (req, res) => {
     res.json({
       success: true,
       grossAmount: gross,
+      serviceCharge,
+      roundOff: net - netBeforeRoundOff,
       discountAmount: totalDiscount,
       netPayable: net
     });
@@ -6038,7 +6044,7 @@ app.post('/orders/settle', (req, res) => {
       const paid = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
       // Allow sub-cent floating point noise while still rejecting a genuinely
       // underpaid settlement.
-      if (paid + 0.005 < payable) throw new Error('Payment is less than payable total');
+      if (paid + 0.005 < payable) throw new Error(`Payment is less than payable total (paid ${paid.toFixed(2)}, payable ${payable.toFixed(2)})`);
       const invoiceNo = isInvoice === false
         ? (order.invoice_no || `RCP-${crypto.randomBytes(5).toString('hex').toUpperCase()}`)
         : (order.invoice_no || invoiceNumberForOrder(db, orderId));
