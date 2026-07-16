@@ -2027,7 +2027,7 @@ app.get('/orders/:orderId/kots', (req, res) => {
 // APPLY DISCOUNT
 // ========================
 app.post('/orders/apply-discount', (req, res) => {
-  const {
+  let {
     restaurantId,
     orderId,
     type,        // MEMBERSHIP | PROMO | MANUAL
@@ -2044,7 +2044,7 @@ app.post('/orders/apply-discount', (req, res) => {
     });
   }
 
-  if (!['OWNER', 'MANAGER_2'].includes(appliedByRole)) {
+  if (!['OWNER', 'MANAGER_1', 'MANAGER_2', 'CASHIER'].includes(appliedByRole)) {
     return res.status(403).json({
       success: false,
       message: 'Only Manager 2 or Owner can apply discounts',
@@ -2072,12 +2072,15 @@ app.post('/orders/apply-discount', (req, res) => {
       if (!promo) {
         throw new Error('Invalid promo code');
       }
+      value = Number(promo.discount_value ?? promo.value ?? 0);
+      valueType = String(promo.discount_type || promo.value_type || 'RUPEES').toUpperCase() === 'PERCENT' ? 'PERCENT' : 'FLAT';
+      if (!Number.isFinite(value) || value <= 0) throw new Error('Promocode has no valid discount');
     }
 
     db.prepare(`
-      INSERT INTO discounts (order_id, type, value, value_type, applied_by)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(orderId, type, value, valueType, appliedByRole);
+      INSERT INTO discounts (order_id, type, value, value_type, applied_by, promo_code)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(orderId, type, value, valueType, appliedByRole, type === 'PROMO' ? promoCode : null);
 
     // Recalculate total
     const gross = calculateOrderTotal(db, orderId);
@@ -6015,12 +6018,22 @@ app.post('/orders/settle', (req, res) => {
       // reject the exact payable amount shown in POS/Billing.
       const grossAmount = Number(order.total_amount || 0);
       const serviceCharge = serviceChargeForAmount(db, grossAmount);
-      const payableBeforeRoundOff = Math.max(grossAmount + serviceCharge - Math.min(redeem * pointValue, grossAmount + serviceCharge), 0);
+      const discountRows = tableExists(db, 'discounts')
+        ? db.prepare('SELECT value, value_type FROM discounts WHERE order_id = ?').all(orderId)
+        : [];
+      const discountAmount = discountRows.reduce((sum, discount) => sum + (
+        String(discount.value_type || '').toUpperCase() === 'PERCENT'
+          ? grossAmount * Number(discount.value || 0) / 100
+          : Number(discount.value || 0)
+      ), 0);
+      const payableBeforeRoundOff = Math.max(grossAmount + serviceCharge - Math.min(discountAmount, grossAmount + serviceCharge) - Math.min(redeem * pointValue, grossAmount + serviceCharge), 0);
       const payable = applyRoundOff(db, payableBeforeRoundOff);
       const roundOff = payable - payableBeforeRoundOff;
       const loyaltyDiscount = Math.min(redeem * pointValue, grossAmount + serviceCharge);
       const paid = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-      if (paid < payable) throw new Error('Payment is less than payable total');
+      // Allow sub-cent floating point noise while still rejecting a genuinely
+      // underpaid settlement.
+      if (paid + 0.005 < payable) throw new Error('Payment is less than payable total');
       const invoiceNo = isInvoice === false
         ? (order.invoice_no || `RCP-${crypto.randomBytes(5).toString('hex').toUpperCase()}`)
         : (order.invoice_no || invoiceNumberForOrder(db, orderId));

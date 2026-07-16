@@ -82,6 +82,8 @@
         <button id="createCustomer" class="secondary-btn">Create Customer</button>
         <p id="customerSummary">No customer attached</p>
         <label>Redeem points<input id="redeemPoints" type="number" min="0" step="1" value="0"></label>
+        <div class="pos-discount-tools"><input id="promoCode" maxlength="40" placeholder="Promocode"><button id="applyPromoCode" type="button" class="secondary-btn">Apply</button><input id="discountAmount" type="number" min="0" step="0.01" placeholder="Discount amount"><button id="applyDiscountAmount" type="button" class="secondary-btn">Apply discount</button></div>
+        <p id="discountStatus" class="billing-hint"></p>
         <strong id="payableTotal">Payable: 0.00</strong>
       </div>
       <select id="paymentMode">

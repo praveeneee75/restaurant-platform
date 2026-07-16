@@ -33,6 +33,8 @@ const state = {
   pendingItem: null,
   pendingSplitItems: [],
   customer: null,
+  discountAmount: 0,
+  serverOrderTotal: null,
   attendance: null,
   cashSession: null,
   expectedCash: 0,
@@ -130,8 +132,18 @@ function serviceChargeValue() {
 }
 
 function payableAmount() {
-  const payable = Math.max(cartTotal() + serviceChargeValue() - redeemPointsValue(), 0);
+  const payable = Math.max(cartTotal() + serviceChargeValue() - redeemPointsValue() - Number(state.discountAmount || 0), 0);
   return state.settings?.roundOffEnabled ? Math.round(payable) : payable;
+}
+
+async function applyPosDiscount(type, value, valueType, promoCode) {
+  if (!state.orderId) { discountStatus.textContent = 'Save the order before applying a discount.'; return; }
+  try {
+    const result = await postJson('/orders/apply-discount', { orderId: state.orderId, type, value, valueType, promoCode, appliedByRole: role });
+    state.discountAmount = Number(result.discountAmount || 0);
+    discountStatus.textContent = `Discount applied: ${money(state.discountAmount)}`;
+    renderCart();
+  } catch (error) { discountStatus.textContent = error.message; }
 }
 
 function applyBootstrap(data) {
@@ -428,6 +440,7 @@ async function selectTable(tableId, options = {}) {
   localStorage.setItem("posActiveTableId", String(tableId));
   if (!isDineIn()) orderType.value = "DINE_IN";
   state.customer = null;
+  state.discountAmount = 0;
   customerPhone.value = "";
   customerName.value = "";
   state.selectedTable = state.tables.find((table) => table.id === tableId);
@@ -631,13 +644,14 @@ async function saveCurrentOrder(force = false) {
       : ({ orderItemId: item.orderItemId || null, itemId: item.id, quantity: item.quantity, notes: item.notes || "", modifiers: (item.modifiers || []).filter((modifier) => modifier.id).map((modifier) => modifier.id) }))
   });
   state.orderId = data.orderId;
+  state.serverOrderTotal = Number(data.total || 0);
   state.orderReference = data.orderReference || state.orderReference || data.orderId;
   state.cart.forEach((item) => { if (!item.sentToKitchen) item.savedLocally = true; });
   state.dirty = false;
   setSelectedTableStatus("OCCUPIED");
   orderMeta.textContent = `Order ${state.orderReference}`;
   await refreshLiveState();
-  return true;
+  return data;
 }
 
 async function submitCurrentKot() {
@@ -694,6 +708,17 @@ async function settleCurrentOrder() {
     await postJson("/orders/submit-kot", { orderId: state.orderId });
     state.kotSubmitted = true;
   }
+  // The final save is authoritative. Use its total for the default cash
+  // amount so switching checks or editing a submitted KOT cannot leave a
+  // stale client-side amount in the settlement request.
+  const serverTotal = Number(saved.total || state.serverOrderTotal || 0);
+  const serverPayable = Math.max(serverTotal + serviceChargeValue() - redeemPointsValue() - Number(state.discountAmount || 0), 0);
+  if (Number(cashAmount.value) > 0 && Number(cardAmount.value || 0) === 0 && Number(upiAmount.value || 0) === 0) {
+    const displayedPayable = payableAmount();
+    if (Math.abs(Number(cashAmount.value) - displayedPayable) < 0.01 || Math.abs(Number(cashAmount.value) - serverPayable) < 0.01) {
+      cashAmount.value = amount(serverPayable);
+    }
+  }
   const payments = [];
   if (Number(cashAmount.value) > 0) payments.push({ method: "CASH", amount: Number(cashAmount.value) });
   if (Number(cardAmount.value) > 0) payments.push({ method: "CARD", amount: Number(cardAmount.value) });
@@ -705,6 +730,7 @@ async function settleCurrentOrder() {
   state.selectedCartKey = null;
   state.orderId = null;
   state.orderReference = null;
+  state.serverOrderTotal = null;
   state.customer = null;
   state.dirty = false;
   state.kotSubmitted = false;
@@ -890,6 +916,8 @@ addModifiedItem.addEventListener("click", () => {
 
 paymentMode.addEventListener("change", renderCart);
 redeemPoints.addEventListener("input", renderCart);
+applyPromoCode.addEventListener("click", () => applyPosDiscount("PROMO", 1, "FLAT", promoCode.value.trim().toUpperCase()));
+applyDiscountAmount.addEventListener("click", () => applyPosDiscount("MANUAL", Number(discountAmount.value || 0), "FLAT", null));
 orderType.addEventListener("change", updateOrderTypeView);
 let itemSearchTimer;
 itemSearch.addEventListener("input", () => { clearTimeout(itemSearchTimer); itemSearchTimer = setTimeout(() => renderItems(state.selectedCategoryId), 120); });
