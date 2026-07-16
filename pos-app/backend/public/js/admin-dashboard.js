@@ -169,8 +169,7 @@ async function loadUpdates() {
   const latest = await fetchJson(`/updates/check?restaurantId=${encodeURIComponent(restaurantId)}`).catch(() => ({ updateAvailable: false }));
   state.latestUpdate = latest;
   const messages = [];
-  if (latest.updateAvailable) messages.push(`New POS update available: ${latest.latestVersion}`);
-  if (latest.releaseNotes) messages.push(latest.releaseNotes);
+  if (latest.updateAvailable) messages.push(`New POS update available: ${latest.latestVersion}${latest.releaseNotes ? `\n${latest.releaseNotes}` : ''}`);
   const activation = await fetchJson('/activation/status').catch(() => ({}));
   if (activation.expiresAt) {
     const days = Math.ceil((new Date(activation.expiresAt).getTime() - Date.now()) / 86400000);
@@ -178,7 +177,7 @@ async function loadUpdates() {
   }
   notificationCount.textContent = String(messages.length);
   notificationButton.title = messages.join(' | ') || 'No new notifications';
-  notificationButton.onclick = () => alert(messages.join('\n\n') || 'No new notifications');
+  notificationButton.onclick = () => alert(messages.length ? `Notifications\n\n${messages.join('\n\n')}` : 'No new notifications');
 }
 
 async function loadCommercial() {
