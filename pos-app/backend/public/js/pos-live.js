@@ -1,4 +1,13 @@
 const sessionUser = JSON.parse(localStorage.getItem("user") || "null");
+const POS_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+let posLastActivityAt = Date.now();
+const markPosActivity = () => { posLastActivityAt = Date.now(); };
+['click', 'keydown', 'pointermove', 'touchstart'].forEach((name) => window.addEventListener(name, markPosActivity, { passive: true }));
+setInterval(() => {
+  if (Date.now() - posLastActivityAt < POS_IDLE_TIMEOUT_MS) return;
+  localStorage.clear();
+  window.location.replace('/login.html?reason=timeout');
+}, 30 * 1000);
 const role = String(sessionUser?.role || "").toUpperCase();
 const allowedPosRoles = new Set(["OWNER", "MANAGER_1", "MANAGER_2", "CASHIER", "CAPTAIN", "WAITER"]);
 if (!sessionUser || !allowedPosRoles.has(role)) {

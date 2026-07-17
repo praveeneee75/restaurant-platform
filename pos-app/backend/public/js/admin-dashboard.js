@@ -91,7 +91,7 @@ function fillSelectWithBlank(element, rows, label = "name", blankLabel = "Not as
 }
 
 async function loadAdmin() {
-  state.admin = await fetchJson(`/admin/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`);
+  state.admin = await fetchJson(`/admin/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}&includeInactive=true`);
   if (window.activeRestaurantName) {
     const restaurantName = state.admin.restaurant?.name || restaurantId;
     activeRestaurantName.textContent = `${restaurantName} active`;
@@ -105,6 +105,17 @@ async function loadAdmin() {
   renderAdmin();
   applyModuleGuards();
 }
+
+// Expire unattended Admin sessions so a terminal is not left logged in indefinitely.
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+let lastActivityAt = Date.now();
+const markActivity = () => { lastActivityAt = Date.now(); };
+['click', 'keydown', 'pointermove', 'touchstart'].forEach((name) => window.addEventListener(name, markActivity, { passive: true }));
+setInterval(() => {
+  if (Date.now() - lastActivityAt < IDLE_TIMEOUT_MS) return;
+  localStorage.clear();
+  window.location.replace('/login.html?reason=timeout');
+}, 30 * 1000);
 
 async function loadInvoiceList() {
   const data = await fetchJson(`/orders/invoices?restaurantId=${encodeURIComponent(restaurantId)}&fromDate=${invoiceFrom.value || ""}&toDate=${invoiceTo.value || ""}&limit=100`);
@@ -278,7 +289,7 @@ function renderAdmin() {
   fillSelect(reservationTable, tables, "table_name");
   kitchensTable.innerHTML = kitchens.map((k) => `<tr><td>${esc(k.name)}</td><td>${esc(k.printer_name || "Not assigned")}</td><td>${k.active ? "Active" : "Inactive"}</td><td>${actions("kitchen", k.id)}</td></tr>`).join("");
   printersTable.innerHTML = printers.map((printer) => `<tr><td>${esc(printer.name)}</td><td>${esc(printer.type)}</td><td>${esc(printer.connection)}</td><td>${esc(printer.address || "")}</td><td>${printer.active ? "Active" : "Inactive"}</td><td>${actions("printer", printer.id)}</td></tr>`).join("");
-  categoriesTable.innerHTML = categories.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.kitchen_name || "")}</td><td>${c.active ? "Active" : "Inactive"}</td><td>${actions("category", c.id)}</td></tr>`).join("");
+  categoriesTable.innerHTML = categories.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.kitchen_name || "Unassigned")}${Number(c.kitchen_active) === 0 ? " (inactive kitchen)" : ""}</td><td>${c.active ? "Active" : "Inactive"}</td><td>${actions("category", c.id)}</td></tr>`).join("");
   const term = (itemSearch?.value || "").toLowerCase();
   itemsTable.innerHTML = items.filter((i) => !term || i.name.toLowerCase().includes(term)).map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td><td>${i.active ? "Active" : "Inactive"}${Number(i.online_enabled ?? 1) ? "" : " / Hidden online"}</td><td>${actions("item", i.id)}</td></tr>`).join("");
   usersTable.innerHTML = users.map((u) => {
@@ -1108,6 +1119,13 @@ exportAuditCsv.addEventListener("click", () => {
 document.addEventListener("click", async (event) => {
   const target = event.target.closest("button");
   if (!target) return;
+  if (target.dataset.resetForm) {
+    const form = document.getElementById(target.dataset.resetForm);
+    form?.reset();
+    const hidden = form?.querySelector("input[type='hidden']");
+    if (hidden) hidden.value = "";
+    return;
+  }
   const pick = (name) => target.dataset[name];
   try {
     if (pick("editKitchen")) return editKitchen(pick("editKitchen"));

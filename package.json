@@ -26,6 +26,7 @@
     "test:pos": "node tests/pos-smoke.js",
     "test:pos:regression": "node tests/pos-regression.js",
     "test:pos:matrix": "node tests/pos-100-matrix.js",
+    "test:admin:regression": "node tests/admin-regression.js",
     "test:saas": "node tests/saas-smoke.js"
   }
 }

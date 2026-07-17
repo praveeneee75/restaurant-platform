@@ -81,7 +81,7 @@
         <label>Kitchen name<input id="kitchenName" required></label>
         <label>KOT printer<select id="kitchenPrinterId"></select></label>
         <label class="check-row"><input id="kitchenActive" type="checkbox" checked> Active</label>
-        <button>Save Kitchen</button>
+        <button>Save Kitchen</button><button type="button" class="secondary-btn" data-reset-form="kitchenForm">Clear</button>
       </form>
       <div class="table-panel"><table><thead><tr><th>Name</th><th>KOT Printer</th><th>Status</th><th></th></tr></thead><tbody id="kitchensTable"></tbody></table></div>
     </section>
@@ -94,7 +94,7 @@
         <label>Connection<select id="printerConnection"><option>USB</option><option>NETWORK</option><option>WINDOWS</option><option>BLUETOOTH</option></select></label>
         <label>Address<input id="printerAddress" placeholder="IP address, Windows printer name or USB path"></label>
         <label class="check-row"><input id="printerActive" type="checkbox" checked> Active</label>
-        <button>Save Printer</button>
+        <button>Save Printer</button><button type="button" class="secondary-btn" data-reset-form="printerForm">Clear</button>
       </form>
       <div class="table-panel"><table><thead><tr><th>Printer</th><th>Type</th><th>Connection</th><th>Address</th><th>Status</th><th></th></tr></thead><tbody id="printersTable"></tbody></table></div>
     </section>
@@ -105,7 +105,7 @@
         <label>Category name<input id="categoryName" required></label>
         <label>Kitchen<select id="categoryKitchen" required></select></label>
         <label class="check-row"><input id="categoryActive" type="checkbox" checked> Active</label>
-        <button>Save Category</button>
+        <button>Save Category</button><button type="button" class="secondary-btn" data-reset-form="categoryForm">Clear</button>
       </form>
       <div class="table-panel"><table><thead><tr><th>Name</th><th>Kitchen</th><th>Status</th><th></th></tr></thead><tbody id="categoriesTable"></tbody></table></div>
     </section>
@@ -136,7 +136,7 @@
         <label>PIN<input id="userPin" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" placeholder="6 digits"></label>
         <label>Role<select id="userRole"><option>OWNER</option><option>MANAGER</option><option>MANAGER_2</option><option>MANAGER_1</option><option>CAPTAIN</option><option>CASHIER</option><option>WAITER</option><option>KITCHEN</option></select></label>
         <label class="check-row"><input id="userActive" type="checkbox" checked> Active</label>
-        <button>Save User</button>
+        <button>Save User</button><button type="button" class="secondary-btn" data-reset-form="userForm">Clear</button>
       </form>
       <div class="table-panel"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody id="usersTable"></tbody></table></div>
     </section>

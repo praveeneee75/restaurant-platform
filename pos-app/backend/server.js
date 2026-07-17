@@ -3516,9 +3516,10 @@ app.get('/admin/bootstrap', (req, res) => {
       printers: db.prepare("SELECT id, name, type, connection, address, active, created_at FROM printers WHERE (? = 'true' OR active = 1) ORDER BY type, name").all(includeInactive),
       kitchens: db.prepare("SELECT id, name, printer_name, printer_id, active FROM kitchens WHERE (? = 'true' OR active = 1) ORDER BY name").all(includeInactive),
       categories: db.prepare(`
-        SELECT c.id, c.name, c.kitchen_id, c.active, k.name AS kitchen_name
-        FROM categories c JOIN kitchens k ON k.id = c.kitchen_id AND k.active = 1
-        WHERE (? = 'true' OR c.active = 1)
+        SELECT c.id, c.name, c.kitchen_id, c.active, k.name AS kitchen_name,
+               COALESCE(k.active, 0) AS kitchen_active
+        FROM categories c LEFT JOIN kitchens k ON k.id = c.kitchen_id
+        WHERE (? = 'true' OR (c.active = 1 AND k.active = 1))
         ORDER BY c.name
       `).all(includeInactive),
       items: db.prepare(`
@@ -3526,9 +3527,9 @@ app.get('/admin/bootstrap', (req, res) => {
                i.image_url, i.online_description, i.online_enabled,
                c.name AS category_name, k.name AS kitchen_name
         FROM items i
-        JOIN categories c ON c.id = i.category_id AND c.active = 1
-        JOIN kitchens k ON k.id = c.kitchen_id AND k.active = 1
-        WHERE (? = 'true' OR i.active = 1)
+        LEFT JOIN categories c ON c.id = i.category_id
+        LEFT JOIN kitchens k ON k.id = c.kitchen_id
+        WHERE (? = 'true' OR (i.active = 1 AND c.active = 1 AND k.active = 1))
         ORDER BY i.name
       `).all(includeInactive),
       users: db.prepare(`
