@@ -18,6 +18,14 @@ document.querySelectorAll(".app-home-nav a").forEach((link) => link.classList.to
 const state = { admin: {}, inventory: {}, modifiers: {}, backups: {}, settings: {}, permissions: {}, devices: {}, reservations: [], expenseCategories: [], latestUpdate: null, commercial: {}, invoices: [] };
 const notificationButton = document.getElementById('notificationButton');
 const notificationCount = document.getElementById('notificationCount');
+const settingQrRequireTablePin = document.getElementById('settingQrRequireTablePin');
+const settingQrSessionMinutes = document.getElementById('settingQrSessionMinutes');
+const promoCodeForm = document.getElementById('promoCodeForm');
+const promoCodesTable = document.getElementById('promoCodesTable');
+const discoverPrinters = document.getElementById('discoverPrinters');
+const printerDiscoveryStatus = document.getElementById('printerDiscoveryStatus');
+const printerDiscoveryResults = document.getElementById('printerDiscoveryResults');
+const printerDiscoveryResultsLabel = document.getElementById('printerDiscoveryResultsLabel');
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 const money = (value) => Number(value || 0).toFixed(2);
@@ -141,6 +149,13 @@ async function loadBackup() {
 async function loadSettings() {
   state.settings = await fetchJson(`/settings?restaurantId=${encodeURIComponent(restaurantId)}`);
   renderSettings();
+}
+
+async function loadPromoCodes() {
+  const data = await fetchJson(`/admin/promo-codes?restaurantId=${encodeURIComponent(restaurantId)}&includeInactive=true`);
+  if (!promoCodesTable) return;
+  promoCodesTable.innerHTML = (data.promoCodes || []).map((promo) => `<tr><td><strong>${esc(promo.code)}</strong></td><td>${esc(promo.discount_type === 'PERCENT' ? `${promo.discount_value}%` : `INR ${money(promo.discount_value)}`)}${promo.max_discount_amount > 0 ? ` (cap INR ${money(promo.max_discount_amount)})` : ''}</td><td>INR ${money(promo.min_order_amount)}</td><td>${esc(promo.valid_from || 'Any')} - ${esc(promo.valid_to || 'Any')}</td><td>${promo.active ? '<span class="status-pill success">Active</span>' : '<span class="status-pill">Disabled</span>'}</td><td><button type="button" class="mini-btn" data-edit-promo="${promo.id}">Edit</button><button type="button" class="danger-btn" data-delete-promo="${promo.id}">Disable</button></td></tr>`).join('') || '<tr><td colspan="6">No promocodes configured.</td></tr>';
+  state.promoCodes = data.promoCodes || [];
 }
 
 async function loadPermissions() {
@@ -271,7 +286,7 @@ async function loadAll() {
     adminStatus.textContent = "Workspace ready";
     return;
   }
-  const loaders = [loadModifiers(), loadBackup(), loadSettings(), loadUpdates(), loadAudit(), loadDeviceSessions(), loadExpenseCategories(), loadInvoiceList().catch(() => undefined)];
+  const loaders = [loadModifiers(), loadBackup(), loadSettings(), loadPromoCodes(), loadUpdates(), loadAudit(), loadDeviceSessions(), loadExpenseCategories(), loadInvoiceList().catch(() => undefined)];
   if (moduleEnabled("INVENTORY")) loaders.push(loadInventory());
   if (moduleEnabled("RESERVATIONS")) loaders.push(loadReservations().catch(() => undefined));
   await Promise.all(loaders);
@@ -308,7 +323,10 @@ function renderAdmin() {
   }).join("");
   tablesTable.innerHTML = tables.map((t) => `<tr><td>${esc(t.table_name)}</td><td>${esc(t.status)}</td><td>${actions("table", t.id)}</td></tr>`).join("");
   qrLinksTable.innerHTML = tables.map((t) => {
-    const url = `${location.origin}/qr-menu.html?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${t.id}`;
+    const configuredBase = String(window.KMASTER_QR_PUBLIC_URL || '').replace(/\/$/, '');
+    const localHost = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(location.hostname);
+    const baseUrl = configuredBase || (localHost ? 'https://pos.kmasterpos.com' : location.origin);
+    const url = `${baseUrl}/qr-menu.html?v=1.0.76&restaurantId=${encodeURIComponent(restaurantId)}&tableId=${t.id}`;
     return `<tr><td>${esc(t.table_name)}</td><td><a href="${url}" target="_blank">${esc(url)}</a></td></tr>`;
   }).join("");
 }
@@ -480,8 +498,27 @@ async function showInvoiceDetail(invoiceId) {
   const data = await fetchJson(`/orders/invoices/${encodeURIComponent(invoiceId)}?restaurantId=${encodeURIComponent(restaurantId)}`);
   const invoice = data.invoice;
   const items = data.items || [];
+  const discounts = data.discounts || [];
+  const discountTotal = discounts.reduce((sum, row) => sum + (String(row.value_type || '').toUpperCase() === 'PERCENT'
+    ? Number(invoice.total_amount || 0) * Number(row.value || 0) / Math.max(100 - Number(row.value || 0), 1)
+    : Number(row.value || 0)), 0);
+  const refundedAmount = Number(invoice.refunded_amount || 0);
+  const remainingPaid = Math.max(Number(invoice.paid_amount || 0), 0);
   panel.innerHTML = `<header><div><h3>${esc(invoice.invoice_no || `Invoice #${invoice.id}`)}</h3><p class="invoice-detail-meta">${esc(invoice.customer_name || 'Walk-in customer')} · ${esc(invoice.table_no || invoice.order_type || '')} · ${esc(invoice.settled_at || '')}</p></div><div class="invoice-detail-actions"><button type="button" class="secondary-btn" id="printInvoice">Print</button><button type="button" class="secondary-btn" id="downloadInvoicePdf">Save PDF</button></div></header><div class="invoice-detail-lines">${items.map(item => `<div class="invoice-detail-line"><span>${esc(item.name)} × ${item.quantity}${item.notes ? `<small>Note: ${esc(item.notes)}</small>` : ''}</span><strong>${money(Number(item.price || 0) * Number(item.quantity || 0))}</strong></div>`).join('') || '<p>No items recorded.</p>'}</div><div class="invoice-detail-total"><span>Total</span><strong>${money(invoice.total_amount)}</strong></div>`;
   panel.hidden = false;
+  if (discountTotal > 0) {
+    const discountSummary = document.createElement('div');
+    discountSummary.className = 'invoice-discount-summary';
+    const label = discounts.length === 1 && discounts[0].promo_code ? `Discount applied (${esc(discounts[0].promo_code)})` : 'Discount applied';
+    discountSummary.innerHTML = `<div class="invoice-detail-total"><span>${label}</span><strong>-${money(discountTotal)}</strong></div>`;
+    panel.querySelector('.invoice-detail-total')?.before(discountSummary);
+  }
+  if (refundedAmount > 0) {
+    const refundSummary = document.createElement('div');
+    refundSummary.className = 'invoice-refund-summary';
+    refundSummary.innerHTML = `<div class="invoice-detail-total"><span>Refunded</span><strong>-${money(refundedAmount)}</strong></div><div class="invoice-detail-total"><span>Remaining paid</span><strong>${money(remainingPaid)}</strong></div>`;
+    panel.appendChild(refundSummary);
+  }
   const refund = document.createElement('div');
   const taxRate = Number(state.settings?.tax_rate || 0);
   if (taxRate > 0) {
@@ -491,7 +528,7 @@ async function showInvoiceDetail(invoiceId) {
     panel.appendChild(tax);
   }
   refund.className = 'invoice-refund';
-  refund.innerHTML = '<h4>Refund</h4><p class="invoice-detail-meta">Refund cannot exceed the amount paid.</p><div class="invoice-refund-fields"><input id="refundAmount" type="number" min="0.01" max="' + Number(invoice.paid_amount || 0) + '" step="0.01" placeholder="Amount"><select id="refundMode"><option value="CASH">Cash</option><option value="UPI">UPI</option><option value="OWNER_FUND">Owner fund</option></select><input id="refundReason" maxlength="200" placeholder="Reason"></div><button type="button" class="danger-btn" id="refundInvoice">Refund</button><p id="refundStatus"></p>';
+  refund.innerHTML = '<h4>Refund</h4><p class="invoice-detail-meta">Refund cannot exceed the remaining paid amount.</p><div class="invoice-refund-fields"><input id="refundAmount" type="number" min="0.01" max="' + remainingPaid + '" step="0.01" placeholder="Amount"><select id="refundMode"><option value="CASH">Cash</option><option value="UPI">UPI</option><option value="OWNER_FUND">Owner fund</option></select><input id="refundReason" maxlength="200" placeholder="Reason"></div><button type="button" class="danger-btn" id="refundInvoice">Refund</button><p id="refundStatus"></p>';
   panel.appendChild(refund);
   document.getElementById('printInvoice').onclick = () => printInvoice(invoice, items);
   document.getElementById('downloadInvoicePdf').onclick = () => printInvoice(invoice, items);
@@ -751,6 +788,8 @@ function renderSettings() {
   settingTaxName.value = settings.tax_name || 'GST';
   settingTaxRate.value = settings.tax_rate || '0';
   setChecked(settingShowQrOnBill, settings.show_qr_on_bill);
+  setChecked(settingQrRequireTablePin, settings.qr_require_table_pin === undefined ? true : settings.qr_require_table_pin);
+  settingQrSessionMinutes.value = settings.qr_session_minutes || '30';
   settingUpiId.value = settings.upi_id || "";
   setChecked(settingServiceChargeEnabled, settings.service_charge_enabled);
   settingServiceChargePercent.value = settings.service_charge_percent || "0";
@@ -817,6 +856,8 @@ function collectSettings() {
     tax_name: settingTaxName.value.trim() || 'GST',
     tax_rate: settingTaxRate.value || '0',
     show_qr_on_bill: checkedValue(settingShowQrOnBill),
+    qr_require_table_pin: checkedValue(settingQrRequireTablePin),
+    qr_session_minutes: settingQrSessionMinutes.value || '30',
     upi_id: settingUpiId.value,
     service_charge_enabled: checkedValue(settingServiceChargeEnabled),
     service_charge_percent: settingServiceChargePercent.value,
@@ -896,6 +937,22 @@ runDemoReset.addEventListener("click", async () => {
 
 kitchenForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/kitchens/save", { id: kitchenId.value || null, name: kitchenName.value, printerId: kitchenPrinterId.value || null, active: kitchenActive.checked }); kitchenForm.reset(); kitchenActive.checked = true; await loadAdmin(); });
 printerForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/printers/save", { id: printerId.value || null, name: printerName.value, type: printerType.value, connection: printerConnection.value, address: printerAddress.value, active: printerActive.checked }); printerForm.reset(); printerActive.checked = true; await loadAdmin(); });
+discoverPrinters?.addEventListener('click', async () => {
+  discoverPrinters.disabled = true;
+  printerDiscoveryStatus.textContent = 'Searching nearby printers...';
+  try {
+    const data = await fetchJson(`/admin/printers/discover?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}`);
+    printerDiscoveryResults.innerHTML = '<option value="">Select a printer</option>' + (data.printers || []).map((printer) => `<option value="${esc(JSON.stringify(printer))}">${esc(printer.name)} (${esc(printer.connection)})</option>`).join('');
+    printerDiscoveryResultsLabel.hidden = !(data.printers || []).length;
+    printerDiscoveryStatus.textContent = data.printers?.length ? `${data.printers.length} printer(s) found.` : 'No nearby printers found. Check power, Bluetooth, and network connection.';
+  } catch (err) { printerDiscoveryStatus.textContent = err.message; }
+  finally { discoverPrinters.disabled = false; }
+});
+printerDiscoveryResults?.addEventListener('change', () => {
+  if (!printerDiscoveryResults.value) return;
+  const printer = JSON.parse(printerDiscoveryResults.value);
+  printerName.value = printer.name; printerConnection.value = printer.connection; printerAddress.value = printer.address;
+});
 categoryForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/categories/save", { id: categoryId.value || null, name: categoryName.value, kitchenId: categoryKitchen.value, active: categoryActive.checked }); categoryForm.reset(); categoryActive.checked = true; await loadAdmin(); });
 itemForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, onlineDescription: itemOnlineDescription.value, imageUrl: itemImageUrl.value, isVeg: itemVeg.checked, allowParcel: itemParcel.checked, onlineEnabled: itemOnlineEnabled.checked, active: itemActive.checked }); itemForm.reset(); itemActive.checked = true; itemOnlineEnabled.checked = true; await loadAdmin(); });
 userForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/users/save", { id: userId.value || null, name: userName.value, username: userUsername.value, pin: userPin.value, role: userRole.value, active: userActive.checked }); userForm.reset(); userActive.checked = true; await loadAdmin(); });
@@ -1139,6 +1196,13 @@ document.addEventListener("click", async (event) => {
     if (pick("editModifierGroup")) return editModifierGroup(pick("editModifierGroup"));
     if (pick("editModifierOption")) return editModifierOption(pick("editModifierOption"));
     if (pick("editCombo")) return editCombo(pick("editCombo"));
+    if (pick("editPromo")) {
+      const promo = (state.promoCodes || []).find((row) => String(row.id) === String(pick("editPromo")));
+      if (promo) {
+        promoCodeId.value = promo.id; promoCodeValue.value = promo.code; promoDiscountType.value = promo.discount_type || 'RUPEES'; promoDiscountValue.value = promo.discount_value || 0; promoDiscountCap.value = promo.max_discount_amount || 0; promoMinOrder.value = promo.min_order_amount || 0; promoValidFrom.value = promo.valid_from || ''; promoValidTo.value = promo.valid_to || ''; promoActive.checked = Number(promo.active) === 1; document.querySelector('[data-view="settings"]')?.click();
+      }
+      return;
+    }
     if (pick("deleteKitchen") && confirm("Delete this kitchen?")) await postJson("/admin/kitchens/delete", { id: pick("deleteKitchen") }).then(loadAdmin);
     if (pick("deletePrinter") && confirm("Disable this printer?")) await postJson("/admin/printers/delete", { id: pick("deletePrinter") }).then(loadAdmin);
     if (pick("deleteCategory") && confirm("Delete this category?")) await postJson("/admin/categories/delete", { id: pick("deleteCategory") }).then(loadAdmin);
@@ -1156,6 +1220,7 @@ document.addEventListener("click", async (event) => {
     if (pick("deleteModifierOption") && confirm("Delete this modifier?")) await postJson("/modifiers/options/delete", { id: pick("deleteModifierOption") }).then(loadModifiers);
     if (pick("deleteModifierAssignment") && confirm("Delete this assignment?")) await postJson("/modifiers/assign/delete", { id: pick("deleteModifierAssignment") }).then(loadModifiers);
     if (pick("deleteCombo") && confirm("Delete this combo?")) await postJson("/combos/delete", { id: pick("deleteCombo") }).then(loadModifiers);
+    if (pick("deletePromo") && confirm("Disable this promocode?")) await postJson("/admin/promo-codes/delete", { id: pick("deletePromo") }).then(loadPromoCodes);
     if (pick("restoreBackup") && confirm("Restore this backup?")) await postJson("/backup/restore", { filename: pick("restoreBackup") }).then((data) => alert(data.message));
     if (pick("forceLogout") && confirm("Force logout this device?")) await postJson("/device-sessions/force-logout", { id: pick("forceLogout") }).then(loadDeviceSessions);
   } catch (err) {
@@ -1205,6 +1270,14 @@ exportProfitCsv.addEventListener("click", () => {
   window.location.href = `/reports/profit/export?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`;
 });
 document.getElementById("loadReservations").addEventListener("click", () => loadReservations().catch((err) => alert(err.message)));
+promoCodeForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await postJson('/admin/promo-codes/save', { id: promoCodeId.value || null, code: promoCodeValue.value, discountType: promoDiscountType.value, discountValue: promoDiscountValue.value, maxDiscountAmount: promoDiscountCap.value || 0, minOrderAmount: promoMinOrder.value || 0, validFrom: promoValidFrom.value || null, validTo: promoValidTo.value || null, active: promoActive.checked });
+    promoCodeForm.reset(); promoActive.checked = true; await loadPromoCodes();
+  } catch (err) { alert(err.message); }
+});
+document.getElementById('promoCodeReset')?.addEventListener('click', () => { promoCodeForm.reset(); promoCodeId.value = ''; promoActive.checked = true; });
 
 loadInventoryReports.addEventListener("click", async () => {
   const data = await fetchJson(`/inventory/reports?restaurantId=${encodeURIComponent(restaurantId)}&from=${inventoryReportFrom.value}&to=${inventoryReportTo.value}`);

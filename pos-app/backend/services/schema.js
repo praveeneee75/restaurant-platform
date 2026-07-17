@@ -41,6 +41,8 @@ const DEFAULT_SYSTEM_SETTINGS = {
   tax_name: 'GST',
   tax_rate: '0',
   show_qr_on_bill: '0',
+  qr_require_table_pin: '1',
+  qr_session_minutes: '30',
   upi_id: '',
   service_charge_enabled: '0',
   service_charge_percent: '0',
@@ -123,6 +125,10 @@ function ensureRestaurantSchema(db) {
   `);
 
   addColumn(db, 'tables', 'active INTEGER DEFAULT 1');
+  addColumn(db, 'tables', 'qr_session_pin TEXT');
+  addColumn(db, 'tables', 'qr_session_expires_at DATETIME');
+  addColumn(db, 'tables', 'qr_pin_failed_attempts INTEGER DEFAULT 0');
+  addColumn(db, 'tables', 'qr_pin_locked_until DATETIME');
 
   // Phase 2: seed common table names once for newly upgraded restaurants.
   const tableCount = db.prepare('SELECT COUNT(*) AS count FROM tables').get().count;
@@ -523,6 +529,7 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'promo_codes', 'discount_value REAL DEFAULT 0');
   addColumn(db, 'promo_codes', "discount_type TEXT DEFAULT 'RUPEES'");
   addColumn(db, 'promo_codes', 'min_order_amount REAL DEFAULT 0');
+  addColumn(db, 'promo_codes', 'max_discount_amount REAL DEFAULT 0');
   addColumn(db, 'promo_codes', 'valid_from DATE');
   addColumn(db, 'promo_codes', 'valid_to DATE');
   const settingsCount = db.prepare("SELECT COUNT(*) AS count FROM settings WHERE key IN ('loyalty_earn_amount', 'loyalty_point_value')").get().count;

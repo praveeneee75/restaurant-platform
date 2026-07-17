@@ -27,6 +27,8 @@
     "test:pos:regression": "node tests/pos-regression.js",
     "test:pos:matrix": "node tests/pos-100-matrix.js",
     "test:admin:regression": "node tests/admin-regression.js",
+    "test:billing:regression": "node tests/billing-controls-regression.js",
+    "test:production:urls": "node tests/production-url-regression.js",
     "test:saas": "node tests/saas-smoke.js"
   }
 }

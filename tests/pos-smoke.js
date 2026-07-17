@@ -152,6 +152,12 @@ async function main() {
     kdsOrders.push(...(kds.orders || []));
   }
   if (!kdsOrders.some((order) => [sharedOrders[0].orderId, sharedOrders[1].orderId, sharedOrders[2].orderId, parcel.orderId].includes(Number(order.orderId || order.id)))) throw new Error('Shared-table KOTs are missing from KDS');
+  const parcelKdsItems = kdsOrders
+    .filter((order) => Number(order.orderId || order.id) === Number(parcel.orderId))
+    .flatMap((order) => order.items || []);
+  if (parcelKdsItems.length !== 1 || Number(parcelKdsItems[0]?.quantity) !== 1) {
+    throw new Error(`Parcel KDS duplicate or incorrect quantity: expected 1 item, found ${parcelKdsItems.length}`);
+  }
   const multiCustomerResult = { table: sharedTable.table_name, openBills: sharedOpen.orders.length, movedOrderId: sharedOrders[2].orderId, parcelOrderId: parcel.orderId };
 
   let kdsResult = { skipped: true };

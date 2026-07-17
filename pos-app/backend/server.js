@@ -31,6 +31,8 @@ const zlib = require('zlib');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const net = require('net');
+const { execFileSync } = require('child_process');
 
 const { setupDatabase } = require('./services/dbSetup');
 const { openDatabase } = require('./db/database');
@@ -783,6 +785,7 @@ const SETTINGS_BOOLEAN_KEYS = new Set([
   'require_manager_pin_for_void',
   'show_tax_on_bill',
   'show_qr_on_bill',
+  'qr_require_table_pin',
   'service_charge_enabled',
   'round_off_enabled',
   'auto_print_kot',
@@ -842,6 +845,14 @@ function normaliseSettingsInput(input) {
       const interval = Number(value);
       if (!Number.isInteger(interval) || interval < 1) throw new Error('Backup interval must be a positive whole number');
       output[key] = String(interval);
+      return;
+    }
+    if (key === 'qr_session_minutes') {
+      const minutes = Number(value);
+      if (!Number.isInteger(minutes) || minutes < 5 || minutes > 240) {
+        throw new Error('QR PIN validity must be a whole number between 5 and 240 minutes');
+      }
+      output[key] = String(minutes);
       return;
     }
     if (SETTINGS_NON_NEGATIVE_NUMBER_KEYS.has(key)) {
@@ -2075,6 +2086,7 @@ app.post('/orders/apply-discount', (req, res) => {
       value = Number(promo.discount_value ?? promo.value ?? 0);
       valueType = String(promo.discount_type || promo.value_type || 'RUPEES').toUpperCase() === 'PERCENT' ? 'PERCENT' : 'FLAT';
       if (!Number.isFinite(value) || value <= 0) throw new Error('Promocode has no valid discount');
+      if (valueType === 'PERCENT') value = Math.min(value, 100);
     }
 
     db.prepare(`
@@ -3257,6 +3269,10 @@ if (activeRestaurant) {
   }
 }
 
+app.get('/qr-menu.html', (req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0,
   etag: true
@@ -3548,6 +3564,90 @@ app.get('/admin/bootstrap', (req, res) => {
   } finally {
     db.close();
   }
+});
+
+function probePrinterPort(host, port = 9100, timeout = 180) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let done = false;
+    const finish = (result) => { if (done) return; done = true; socket.destroy(); resolve(result); };
+    socket.setTimeout(timeout);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+    socket.connect(port, host);
+  });
+}
+
+app.get('/admin/printers/discover', (req, res) => {
+  const { restaurantId, role } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  if (!canManage(role)) return res.status(403).json({ success: false, message: 'Printer management permission required' });
+  const discovered = [];
+  try {
+    const interfaces = Object.values(os.networkInterfaces()).flat().filter((entry) => entry && entry.family === 'IPv4' && !entry.internal);
+    const hosts = new Set();
+    interfaces.forEach((entry) => {
+      const parts = entry.address.split('.');
+      if (parts.length === 4) for (let i = 1; i < 255; i += 1) hosts.add(`${parts[0]}.${parts[1]}.${parts[2]}.${i}`);
+    });
+    Promise.all([...hosts].map(async (host) => (await probePrinterPort(host)) ? host : null)).then((matches) => {
+      matches.filter(Boolean).forEach((host) => discovered.push({ name: `Network printer ${host}`, connection: 'NETWORK', address: `tcp://${host}:9100` }));
+      if (process.platform === 'win32') {
+        try {
+          const output = execFileSync('powershell.exe', ['-NoProfile', '-Command', "Get-Printer | Where-Object {$_.Name} | Select-Object -ExpandProperty Name"], { encoding: 'utf8', timeout: 3000 });
+          output.split(/\r?\n/).map((name) => name.trim()).filter(Boolean).forEach((name) => discovered.push({ name, connection: 'WINDOWS', address: name }));
+        } catch { /* OS printer enumeration is optional. */ }
+      }
+      res.json({ success: true, printers: discovered });
+    }).catch(() => res.json({ success: true, printers: discovered }));
+  } catch (err) { sendError(res, err); }
+});
+
+app.get('/admin/promo-codes', (req, res) => {
+  const { restaurantId, includeInactive } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const rows = db.prepare(`SELECT id, code, discount_value, discount_type, min_order_amount, max_discount_amount, valid_from, valid_to, active, created_at FROM promo_codes ${includeInactive === 'true' ? '' : 'WHERE active = 1'} ORDER BY code`).all();
+    res.json({ success: true, promoCodes: rows });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
+});
+
+app.post('/admin/promo-codes/save', (req, res) => {
+  const { restaurantId, actor, id, code, discountType, discountValue, maxDiscountAmount, minOrderAmount, validFrom, validTo, active } = req.body;
+  if (!restaurantId || !hasText(code)) return res.status(400).json({ success: false, message: 'Promocode is required' });
+  const type = String(discountType || 'RUPEES').toUpperCase();
+  const value = Number(discountValue);
+  const cap = Number(maxDiscountAmount || 0);
+  const minimum = Number(minOrderAmount || 0);
+  if (!['RUPEES', 'PERCENT'].includes(type) || !Number.isFinite(value) || value <= 0 || (type === 'PERCENT' && value > 100) || !Number.isFinite(cap) || cap < 0 || !Number.isFinite(minimum) || minimum < 0) {
+    return res.status(400).json({ success: false, message: 'Enter valid promocode discount details' });
+  }
+  if (validFrom && validTo && validFrom > validTo) return res.status(400).json({ success: false, message: 'Valid-from date cannot be after valid-to date' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'settings.manage', 'Promocode management permission required');
+    const cleanCode = normaliseText(code).toUpperCase();
+    const existing = db.prepare('SELECT id FROM promo_codes WHERE code = ? AND id != ?').get(cleanCode, id || 0);
+    if (existing) return res.status(409).json({ success: false, message: 'That promocode already exists' });
+    const result = id
+      ? db.prepare(`UPDATE promo_codes SET code = ?, discount_value = ?, discount_type = ?, value = ?, value_type = ?, min_order_amount = ?, max_discount_amount = ?, valid_from = ?, valid_to = ?, active = ? WHERE id = ?`).run(cleanCode, value, type, value, type, minimum, cap, validFrom || null, validTo || null, active === false ? 0 : 1, id)
+      : db.prepare(`INSERT INTO promo_codes (code, discount_value, discount_type, value, value_type, min_order_amount, max_discount_amount, valid_from, valid_to, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(cleanCode, value, type, value, type, minimum, cap, validFrom || null, validTo || null, active === false ? 0 : 1);
+    const promo = db.prepare('SELECT * FROM promo_codes WHERE id = ?').get(id || result.lastInsertRowid);
+    res.json({ success: true, promoCode: promo });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
+});
+
+app.post('/admin/promo-codes/delete', (req, res) => {
+  const { restaurantId, actor, id } = req.body;
+  if (!restaurantId || !isPositiveId(id)) return res.status(400).json({ success: false, message: 'Promocode id required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'settings.manage', 'Promocode management permission required');
+    db.prepare('UPDATE promo_codes SET active = 0 WHERE id = ?').run(id);
+    res.json({ success: true });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
 });
 
 app.post('/admin/printers/save', (req, res) => {
@@ -4620,6 +4720,49 @@ app.post('/tables/delete', (req, res) => {
   }
 });
 
+const qrPinAttempts = new Map();
+const QR_SESSION_MINUTES = 30;
+function qrPinRequired(db) {
+  return getBooleanConfig(db, 'qr_require_table_pin', true);
+}
+function qrSessionMinutes(db) {
+  const configured = Number(getConfigValue(db, 'qr_session_minutes', QR_SESSION_MINUTES));
+  return Number.isFinite(configured) ? Math.min(Math.max(Math.floor(configured), 5), 240) : QR_SESSION_MINUTES;
+}
+function newQrSessionPin() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+function qrSessionExpiry(db) {
+  return new Date(Date.now() + qrSessionMinutes(db) * 60 * 1000).toISOString();
+}
+function validQrSession(table, pin) {
+  if (!table?.qr_session_pin || String(table.qr_session_pin) !== String(pin || '')) return false;
+  return Boolean(table.qr_session_expires_at && new Date(table.qr_session_expires_at).getTime() > Date.now());
+}
+
+app.post('/qr/session/start', (req, res) => {
+  const { restaurantId, actor, tableId } = req.body;
+  const allowedRoles = new Set(['OWNER', 'MANAGER_1', 'MANAGER_2', 'CAPTAIN', 'WAITER', 'CASHIER']);
+  if (!restaurantId || !isPositiveId(tableId) || !allowedRoles.has(String(actor?.role || '').toUpperCase())) {
+    return res.status(400).json({ success: false, message: 'A logged-in restaurant user and table are required' });
+  }
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const table = db.prepare('SELECT * FROM tables WHERE id = ? AND active = 1').get(tableId);
+    if (!table) return res.status(404).json({ success: false, message: 'Table not found' });
+    const active = table.qr_session_pin && table.qr_session_expires_at && new Date(table.qr_session_expires_at).getTime() > Date.now();
+    const pin = active && table.status !== 'AVAILABLE' ? table.qr_session_pin : newQrSessionPin();
+    const expiresAt = active && table.status !== 'AVAILABLE' ? table.qr_session_expires_at : qrSessionExpiry(db);
+    db.prepare('UPDATE tables SET qr_session_pin = ?, qr_session_expires_at = ?, qr_pin_failed_attempts = 0, qr_pin_locked_until = NULL WHERE id = ?')
+      .run(pin, expiresAt, table.id);
+    res.json({ success: true, tableId: table.id, pin: qrPinRequired(db) ? pin : null, requiresPin: qrPinRequired(db), expiresAt, expiresInMinutes: qrSessionMinutes(db) });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
 app.get('/reservations/list', (req, res) => {
   const { restaurantId, fromDate, toDate, role } = req.query;
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
@@ -4874,12 +5017,36 @@ function createKotJobs(db, orderId) {
 }
 
 app.get('/qr/menu', (req, res) => {
-  const { restaurantId, tableId } = req.query;
-  if (!restaurantId || !isPositiveId(tableId)) return res.status(400).json({ success: false, message: 'restaurantId and tableId required' });
+  const { restaurantId, tableId, pin } = req.query;
+  if (!restaurantId || !isPositiveId(tableId)) return res.status(400).json({ success: false, message: 'A valid restaurant and table are required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
-    const table = db.prepare('SELECT id, table_name, status FROM tables WHERE id = ? AND active = 1').get(tableId);
+    const table = db.prepare('SELECT * FROM tables WHERE id = ? AND active = 1').get(tableId);
     if (!table) throw new Error('Table not found');
+    if (!qrPinRequired(db)) {
+      return res.json({
+        success: true,
+        table,
+        requiresPin: false,
+        restaurant: {
+          displayName: getConfigValue(db, 'restaurant_display_name', 'Restaurant POS'),
+          currency: getConfigValue(db, 'currency', 'INR')
+        },
+        categories: db.prepare('SELECT id, name FROM categories WHERE active = 1 ORDER BY name').all(),
+        items: db.prepare('SELECT id, name, category_id, price FROM items WHERE active = 1 ORDER BY name').all()
+      });
+    }
+    if (!/^\d{6}$/.test(String(pin || ''))) return res.status(400).json({ success: false, message: 'Enter the current 6-digit table PIN' });
+    const key = `${restaurantId}:${table.id}`;
+    const attempts = qrPinAttempts.get(key) || { count: 0, lockedUntil: 0 };
+    if (attempts.lockedUntil > Date.now()) return res.status(429).json({ success: false, message: 'Too many incorrect PIN attempts. Try again later.' });
+    if (!validQrSession(table, pin)) {
+      attempts.count += 1;
+      if (attempts.count >= 5) attempts.lockedUntil = Date.now() + 5 * 60 * 1000;
+      qrPinAttempts.set(key, attempts);
+      return res.status(403).json({ success: false, message: attempts.lockedUntil ? 'Too many incorrect PIN attempts. Try again later.' : 'That PIN is invalid or expired. Ask the waiter for the current table PIN.' });
+    }
+    qrPinAttempts.delete(key);
     res.json({
       success: true,
       table,
@@ -4898,25 +5065,29 @@ app.get('/qr/menu', (req, res) => {
 });
 
 app.post('/qr/orders/place', (req, res) => {
-  const { restaurantId, tableId, customerName, customerPhone, items } = req.body;
-  if (!restaurantId || !isPositiveId(tableId) || !Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ success: false, message: 'restaurantId, table and items are required' });
+  const { restaurantId, tableId, pin, customerName, customerPhone, items } = req.body;
+  const cleanName = normaliseText(customerName);
+  const cleanPhone = normalisePhone(customerPhone);
+  if (!restaurantId || !isPositiveId(tableId) || !cleanName || !cleanPhone || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ success: false, message: 'Customer name, 10-digit mobile number and at least one item are required' });
+  }
+  if (cleanName.length > 120 || !/^\d{10}$/.test(cleanPhone)) {
+    return res.status(400).json({ success: false, message: 'Enter a valid customer name and 10-digit mobile number' });
   }
   const db = openRestaurantDatabase(restaurantId);
   try {
     const saved = db.transaction(() => {
       const table = db.prepare('SELECT * FROM tables WHERE id = ? AND active = 1').get(tableId);
       if (!table) throw new Error('Table not found');
+      if (qrPinRequired(db) && !validQrSession(table, pin)) throw new Error('The table PIN is invalid or expired. Ask the waiter for the current PIN.');
       const reservation = activeReservationForTable(db, table.id);
       if (reservation) throw new Error(`This table is reserved for ${reservation.customer_name}. Please contact staff.`);
-      let customerId = null;
-      if (hasText(customerName) || hasText(customerPhone)) {
-        const existing = hasText(customerPhone) ? db.prepare('SELECT id FROM customers WHERE phone = ? AND active = 1').get(normaliseText(customerPhone)) : null;
-        customerId = existing?.id || db.prepare('INSERT INTO customers (name, phone) VALUES (?, ?)').run(normaliseText(customerName) || 'QR Customer', normaliseText(customerPhone) || null).lastInsertRowid;
-      }
+      const existing = db.prepare('SELECT id FROM customers WHERE phone = ? AND active = 1').get(cleanPhone);
+      const customerId = existing?.id || db.prepare('INSERT INTO customers (name, phone) VALUES (?, ?)').run(cleanName, cleanPhone).lastInsertRowid;
+      if (existing) db.prepare('UPDATE customers SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(cleanName, existing.id);
       const order = db.prepare(`
         INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, customer_id, order_source)
-        VALUES ('DINE_IN', ?, ?, 'OPEN', 0, 'UNPAID', ?, 'QR')
+        VALUES ('DINE_IN', ?, ?, 'PENDING_QR', 0, 'UNPAID', ?, 'QR')
       `).run(table.id, table.table_name, customerId);
       let total = 0;
       items.forEach((line) => {
@@ -4935,12 +5106,57 @@ app.post('/qr/orders/place', (req, res) => {
       });
       db.prepare("UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(total, order.lastInsertRowid);
       db.prepare("UPDATE tables SET status = 'OCCUPIED' WHERE id = ?").run(table.id);
-      createKotJobs(db, order.lastInsertRowid);
       writeAudit(db, { role: 'QR' }, 'CREATE', 'ORDER', order.lastInsertRowid, null, { orderSource: 'QR', total });
-      return { orderId: order.lastInsertRowid, total };
+      const orderMeta = db.prepare('SELECT order_reference, customer_ref FROM orders WHERE id = ?').get(order.lastInsertRowid);
+      return { orderId: order.lastInsertRowid, orderReference: orderMeta?.order_reference || String(order.lastInsertRowid), customerRef: orderMeta?.customer_ref || null, total, customerName: cleanName, customerPhone: cleanPhone };
     })();
     trackModuleUsage(restaurantId, 'QR_ORDERING', 'QR_ORDER_PLACED').catch(() => {});
-    res.json({ success: true, ...saved });
+    res.json({ success: true, status: 'WAITING_FOR_APPROVAL', message: 'Order received. Please ask the waiter to approve it.', ...saved });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/qr/orders/pending', (req, res) => {
+  const { restaurantId } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const orders = db.prepare(`
+      SELECT o.id, o.table_id, o.table_no, o.total_amount, o.created_at,
+             c.name AS customer_name, c.phone AS customer_phone
+      FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+      WHERE o.order_source = 'QR' AND o.status = 'PENDING_QR'
+      ORDER BY o.created_at ASC
+    `).all();
+    orders.forEach((order) => {
+      order.items = db.prepare(`SELECT i.name, oi.quantity FROM order_items oi JOIN items i ON i.id = oi.item_id WHERE oi.order_id = ? ORDER BY oi.id`).all(order.id);
+    });
+    res.json({ success: true, orders });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/qr/orders/approve', (req, res) => {
+  const { restaurantId, actor, orderId } = req.body;
+  if (!restaurantId || !isPositiveId(orderId) || !canSell(actor?.role)) return res.status(400).json({ success: false, message: 'Order and waiter approval permission are required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    let kotResult;
+    db.transaction(() => {
+      const order = db.prepare("SELECT * FROM orders WHERE id = ? AND order_source = 'QR' AND status = 'PENDING_QR'").get(orderId);
+      if (!order) throw new Error('QR order is no longer waiting for approval');
+      kotResult = createKotJobs(db, order.id);
+      db.prepare("UPDATE orders SET status = 'OPEN', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(order.id);
+      deductInventoryForOrder(db, actor, order.id, 'KOT_SUBMIT');
+      writeAudit(db, actor, 'APPROVE_QR_ORDER', 'ORDER', order.id, { status: 'PENDING_QR' }, { status: 'OPEN', kotReference: kotResult.kotReference });
+    })();
+    res.json({ success: true, kotReference: kotResult.kotReference, message: `QR order approved and KOT ${kotResult.kotReference} submitted` });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -5050,9 +5266,10 @@ app.post('/online/promo/validate', (req, res) => {
     if (Number(promo.min_order_amount || 0) > subtotal) throw new Error(`Minimum order amount is ${promo.min_order_amount}`);
     const discountType = promo.discount_type || promo.value_type || 'RUPEES';
     const discountValue = Number(promo.discount_value || promo.value || 0);
-    const discount = discountType === 'PERCENT'
+    let discount = discountType === 'PERCENT'
       ? Math.min(subtotal * discountValue / 100, subtotal)
       : Math.min(discountValue, subtotal);
+    if (Number(promo.max_discount_amount || 0) > 0) discount = Math.min(discount, Number(promo.max_discount_amount));
     res.json({ success: true, promo: { code: promo.code, discountType, discountValue, discount } });
   } catch (err) {
     sendError(res, err);
@@ -5125,6 +5342,7 @@ app.post('/online/orders/place', (req, res) => {
         discount = discountType === 'PERCENT'
           ? Math.min(total * discountValue / 100, total)
           : Math.min(discountValue, total);
+        if (Number(promo.max_discount_amount || 0) > 0) discount = Math.min(discount, Number(promo.max_discount_amount));
         db.prepare("INSERT INTO discounts (order_id, type, value, value_type, applied_by, promo_code) VALUES (?, 'PROMO', ?, ?, 'ONLINE', ?)")
           .run(order.lastInsertRowid, discountValue, discountType, promo.code);
       }
@@ -5550,7 +5768,8 @@ app.get('/orders/invoices/:id', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     const invoice = db.prepare(`
-      SELECT o.*, c.name AS customer_name, c.phone AS customer_phone
+      SELECT o.*, c.name AS customer_name, c.phone AS customer_phone,
+             COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.order_id = o.id), 0) AS refunded_amount
       FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
       WHERE o.id = ? AND o.status = 'PAID'
     `).get(invoiceId);
@@ -5561,6 +5780,10 @@ app.get('/orders/invoices/:id', (req, res) => {
       FROM order_items oi LEFT JOIN items i ON i.id = oi.item_id
       WHERE oi.order_id = ? ORDER BY oi.id
     `).all(invoiceId);
+    const discounts = tableExists(db) ? db.prepare(`
+      SELECT type, value, value_type, promo_code
+      FROM discounts WHERE order_id = ? ORDER BY id
+    `).all(invoiceId) : [];
     const items = [];
     const comboRows = new Map();
     rawItems.forEach((item) => {
@@ -5584,7 +5807,7 @@ app.get('/orders/invoices/:id', (req, res) => {
       comboRow.price = comboRow.lineTotal / Math.max(Number(comboRow.quantity || 1), 1);
     });
     items.push(...comboRows.values());
-    res.json({ success: true, invoice, items });
+    res.json({ success: true, invoice, items, discounts });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -6515,7 +6738,14 @@ app.get('/kds/orders', (req, res) => {
       return map;
     }, {});
 
-    const orders = rows.reduce((map, row) => {
+    // A KOT item must be displayed once per submitted line. Older party-order
+    // data can contain duplicate join rows; collapse only exact KOT/item/status
+    // duplicates while keeping separate KOTs and separate item lines intact.
+    const uniqueRows = [...new Map(rows.map((row) => [
+      `${row.order_id}:${row.kot_id || 'draft'}:${row.item_id}:${row.status}`,
+      row
+    ])).values()];
+    const orders = uniqueRows.reduce((map, row) => {
       map[row.order_id] ||= {
         orderId: row.order_id,
         tableName: row.table_no || row.order_type || 'Parcel',
@@ -6533,6 +6763,7 @@ app.get('/kds/orders', (req, res) => {
         startedAt: row.started_at,
         readyAt: row.ready_at,
         servedAt: row.served_at,
+        startTime: row.kot_created_at || row.order_created_at,
         kotId: row.kot_id || null,
         kotReference: row.kot_id ? `${row.order_reference || row.order_id}-${row.kot_id}` : null,
         modifiers: modifiersByItem[row.order_item_id] || []

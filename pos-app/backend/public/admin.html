@@ -92,7 +92,9 @@
         <label>Printer name<input id="printerName" placeholder="Kitchen thermal printer" required></label>
         <label>Type<select id="printerType"><option>KITCHEN</option><option>BILL</option><option>BAR</option><option>TOKEN</option></select></label>
         <label>Connection<select id="printerConnection"><option>USB</option><option>NETWORK</option><option>WINDOWS</option><option>BLUETOOTH</option></select></label>
-        <label>Address<input id="printerAddress" placeholder="IP address, Windows printer name or USB path"></label>
+        <label>Address<input id="printerAddress" placeholder="Selected printer address or system name"></label>
+        <div class="printer-discovery"><button type="button" class="secondary-btn" id="discoverPrinters">Search nearby printers</button><span id="printerDiscoveryStatus" class="form-hint">Network search uses the local restaurant network.</span></div>
+        <label id="printerDiscoveryResultsLabel" hidden>Discovered printer<select id="printerDiscoveryResults"><option value="">Select a printer</option></select></label>
         <label class="check-row"><input id="printerActive" type="checkbox" checked> Active</label>
         <button>Save Printer</button><button type="button" class="secondary-btn" data-reset-form="printerForm">Clear</button>
       </form>
@@ -292,6 +294,12 @@
       <div class="editor-panel">
         <h2>QR Ordering Links</h2>
         <p>Use these URLs to print QR codes with any QR generator.</p>
+        <article>
+          <h3>QR table security</h3>
+          <label class="check-row"><input id="settingQrRequireTablePin" type="checkbox"> Require the current table PIN before QR orders</label>
+          <label>PIN validity (minutes)<input id="settingQrSessionMinutes" type="number" min="5" max="240" step="5"></label>
+          <p class="form-hint">The waiter generates the PIN when opening the table. QR orders remain waiting for waiter confirmation.</p>
+        </article>
       </div>
       <div class="table-panel"><table><thead><tr><th>Table</th><th>QR Link</th></tr></thead><tbody id="qrLinksTable"></tbody></table></div>
     </section>
@@ -441,6 +449,22 @@
             <label class="check-row"><input id="settingServiceChargeEnabled" type="checkbox"> Enable service charge</label>
             <label>Service charge %<input id="settingServiceChargePercent" type="number" min="0" max="100" step="0.01"></label>
             <label class="check-row"><input id="settingRoundOffEnabled" type="checkbox"> Round off bill</label>
+            <div class="billing-admin-promos">
+              <h3>Promocodes</h3>
+              <form id="promoCodeForm" class="editor-panel compact-editor">
+                <input type="hidden" id="promoCodeId">
+                <label>Code<input id="promoCodeValue" required maxlength="40" placeholder="WELCOME10"></label>
+                <label>Discount type<select id="promoDiscountType"><option value="RUPEES">Fixed amount</option><option value="PERCENT">Percentage</option></select></label>
+                <label>Discount value<input id="promoDiscountValue" type="number" min="0.01" step="0.01" required></label>
+                <label>Maximum discount (optional)<input id="promoDiscountCap" type="number" min="0" step="0.01"></label>
+                <label>Minimum order (optional)<input id="promoMinOrder" type="number" min="0" step="0.01"></label>
+                <label>Valid from<input id="promoValidFrom" type="date"></label>
+                <label>Valid to<input id="promoValidTo" type="date"></label>
+                <label class="check-row"><input id="promoActive" type="checkbox" checked> Active</label>
+                <div><button type="submit">Save promocode</button><button type="button" class="secondary-btn" id="promoCodeReset">Clear</button></div>
+              </form>
+              <div class="table-panel"><table><thead><tr><th>Code</th><th>Discount</th><th>Minimum</th><th>Validity</th><th>Status</th><th></th></tr></thead><tbody id="promoCodesTable"></tbody></table></div>
+            </div>
           </article>
 
           <article>

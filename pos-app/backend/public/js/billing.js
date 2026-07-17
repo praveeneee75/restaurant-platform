@@ -43,7 +43,15 @@ async function showSubmittedOrder(orderId) {
   billingDetail.innerHTML = `<header><div><h2>${esc(d.order.order_reference || `Order ${d.order.id}`)}</h2><p>${esc(d.order.table_no || d.order.order_type)} · ${esc(d.customer?.name || 'No customer')}</p></div><a class="primary-btn" href="/pos-live.html?restaurantId=${encodeURIComponent(restaurantId)}">Open POS</a></header><div class="bill-lines">${items.map(i => `<div><span>${esc(i.name)} × ${i.quantity}</span><strong>${money(i.price * i.quantity)}</strong></div>`).join('') || '<p>No submitted items</p>'}</div><div class="bill-total"><span>Submitted total</span><strong>${money(submittedTotal)}</strong></div><div class="billing-payment"><h3>Payment</h3><p class="billing-hint">Only KOT-submitted items are shown here. Save additional items in POS and submit a new KOT before billing them.</p><select id="billingPaymentMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></select><input id="billingPaymentAmount" type="number" step="0.01" value="${submittedTotal.toFixed(2)}"><button id="settleBilling" class="primary-btn" data-settle-order="${d.order.id}">Settle and create invoice</button></div>`;
   const adjustments = document.createElement('section');
   adjustments.className = 'billing-adjustments';
-  adjustments.innerHTML = '<h3>Discounts and rewards</h3><div class="billing-adjustment-grid"><input id="billingPromoCode" maxlength="40" placeholder="Promocode"><button type="button" class="secondary-btn" id="applyBillingPromo">Apply promocode</button><input id="billingCashDiscount" type="number" min="0" step="0.01" value="0" placeholder="Cash discount"><button type="button" class="secondary-btn" id="applyBillingCashDiscount">Apply cash discount</button><input id="billingRedeemPoints" type="number" min="0" step="1" value="0" placeholder="Redeem points"></div><p class="billing-hint">Discounts and points are validated before settlement.</p><p id="billingAdjustmentStatus"></p>';
+  adjustments.innerHTML = '<h3>Discounts and rewards</h3>'
+    + '<div class="billing-adjustment-grid">'
+    + '<label for="billingPromoCode">Promocode <span class="field-help">Optional</span></label>'
+    + '<div class="billing-adjustment-row"><input id="billingPromoCode" type="text" maxlength="40" autocomplete="off" placeholder="Enter promocode"><button type="button" class="secondary-btn" id="applyBillingPromo">Apply promocode</button></div>'
+    + '<label for="billingCashDiscount">Cash discount amount <span class="field-help">INR</span></label>'
+    + '<div class="billing-adjustment-row"><input id="billingCashDiscount" type="number" min="0" step="0.01" value="0" inputmode="decimal" autocomplete="off" placeholder="Enter amount"><button type="button" class="secondary-btn" id="applyBillingCashDiscount">Apply cash discount</button></div>'
+    + '<label for="billingRedeemPoints">Reward points to redeem <span class="field-help">Whole points</span></label>'
+    + '<div class="billing-adjustment-row"><input id="billingRedeemPoints" type="number" min="0" step="1" value="0" inputmode="numeric" autocomplete="off" placeholder="Enter points"><button type="button" class="secondary-btn" id="applyBillingRedeemPoints">Apply reward points</button></div>'
+    + '</div><p class="billing-hint">Enter only the adjustment you want to use. Each adjustment is checked again when the bill is settled.</p><p id="billingAdjustmentStatus" role="status" aria-live="polite"></p>';
   billingDetail.querySelector('.billing-payment')?.before(adjustments);
   document.getElementById('applyBillingPromo')?.addEventListener('click', async () => {
     const status = document.getElementById('billingAdjustmentStatus');
@@ -68,6 +76,15 @@ async function showSubmittedOrder(orderId) {
       document.getElementById('billingPaymentAmount').value = Number(result.netPayable).toFixed(2);
       status.textContent = `Cash discount applied: ${money(result.discountAmount)}.`;
     } catch (error) { status.textContent = error.message; }
+  });
+  document.getElementById('applyBillingRedeemPoints')?.addEventListener('click', () => {
+    const status = document.getElementById('billingAdjustmentStatus');
+    const input = document.getElementById('billingRedeemPoints');
+    const value = Number(input.value || 0);
+    const balance = Number(d.customer?.loyaltyBalance ?? d.customer?.loyalty_balance ?? 0);
+    if (!Number.isInteger(value) || value < 0) { status.textContent = 'Reward points must be a whole number.'; return; }
+    if (value > balance) { status.textContent = `Only ${balance} reward points are available.`; return; }
+    status.textContent = value ? `${value} reward point${value === 1 ? '' : 's'} selected. Apply settlement to confirm.` : 'No reward points selected.';
   });
 }
 showOrder = showSubmittedOrder;

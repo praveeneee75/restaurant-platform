@@ -53,6 +53,9 @@ const state = {
   ,reviewBaselineQuantities: {}
   ,parcelTableId: null
 };
+const qrApprovalPanel = document.getElementById("qrApprovalPanel");
+const qrApprovalList = document.getElementById("qrApprovalList");
+const qrNotificationCount = document.getElementById("qrNotificationCount");
 let tableSelectionRequest = 0;
 
 const amount = (value) => Number(value || 0).toFixed(2);
@@ -113,6 +116,7 @@ function applyRoleAndModeUI() {
   document.querySelectorAll('[data-role-nav="availability"]').forEach((el) => { el.hidden = !["OWNER", "MANAGER_1", "MANAGER_2", "CASHIER", "CAPTAIN"].includes(role); });
   document.querySelectorAll('[data-role-nav="kds"]').forEach((el) => { el.hidden = role !== "OWNER" && role !== "MANAGER_2" && role !== "KITCHEN"; });
   document.querySelectorAll('[data-role-nav="availability"]').forEach((el) => { el.hidden = !["CAPTAIN", "CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role); });
+  document.querySelectorAll('[data-role-nav="qr-notifications"]').forEach((el) => { el.hidden = !["CAPTAIN", "CASHIER", "WAITER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role); });
   if (moveTableBtn) moveTableBtn.hidden = !canMove;
   if (settleOrder) settleOrder.hidden = !canSettle;
   if (settlementType) settlementType.hidden = role !== "MANAGER_1";
@@ -229,6 +233,7 @@ async function refreshLiveState({ updateCart = false } = {}) {
   renderCategories();
   if (state.selectedCategoryId) renderItems(state.selectedCategoryId);
   if (updateCart) renderCart();
+  await refreshQrApprovals();
 }
 
 async function loadOpenOrdersForTable(tableId, selectedOrderId = null) {
@@ -313,6 +318,37 @@ function renderTables() {
     </button>
   `).join("");
 }
+
+async function refreshQrApprovals() {
+  if (!['OWNER', 'MANAGER_1', 'MANAGER_2', 'CAPTAIN', 'WAITER', 'CASHIER'].includes(role)) return;
+  const data = await fetch(`/qr/orders/pending?restaurantId=${encodeURIComponent(restaurantId)}`).then((res) => res.json()).catch(() => ({ orders: [] }));
+  const orders = data.orders || [];
+  qrApprovalPanel.hidden = orders.length === 0;
+  qrNotificationCount.textContent = String(orders.length);
+  qrNotificationCount.hidden = orders.length === 0;
+  qrApprovalList.innerHTML = orders.map((order) => `
+    <article class="qr-approval-card">
+      <strong>${esc(order.table_no)} · ${esc(order.customer_name)}</strong>
+      <span>${esc(order.customer_phone)} · ${money(order.total_amount)}</span>
+      <small>${order.items.map((item) => `${esc(item.name)} x${item.quantity}`).join(', ')}</small>
+      <button type="button" data-approve-qr="${order.id}">Approve and send KOT</button>
+    </article>
+  `).join("");
+}
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-approve-qr]");
+  if (!button) return;
+  button.disabled = true;
+  try { const result = await postJson('/qr/orders/approve', { orderId: Number(button.dataset.approveQr) }); alert(result.message); await refreshQrApprovals(); await refreshLiveState(); }
+  catch (error) { button.disabled = false; }
+});
+
+document.getElementById("qrNotifications")?.addEventListener("click", (event) => {
+  if (qrApprovalPanel.hidden) return;
+  event.preventDefault();
+  qrApprovalPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+});
 
 function setSelectedTableStatus(status) {
   if (!state.selectedTable?.id) return;
@@ -453,6 +489,14 @@ async function selectTable(tableId, options = {}) {
   customerPhone.value = "";
   customerName.value = "";
   state.selectedTable = state.tables.find((table) => table.id === tableId);
+  if (isDineIn() && state.selectedTable) {
+    try {
+      const qrSession = await postJson('/qr/session/start', { tableId });
+      alert(`QR table PIN: ${qrSession.pin} (valid for ${qrSession.expiresInMinutes} minutes)`);
+    } catch (error) {
+      // QR ordering is optional; table ordering must remain available if it is disabled.
+    }
+  }
   state.cart = [];
   state.selectedCartKey = null;
   state.orderId = null;

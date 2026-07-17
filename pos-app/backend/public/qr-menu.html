@@ -10,20 +10,26 @@
   <main class="pos-center">
     <header>
       <h1 id="restaurantName">Menu</h1>
-      <p id="tableName"></p>
+    <p id="tableName"></p>
+    <label for="qrTablePin">Table PIN <span aria-hidden="true">*</span></label>
+    <input id="qrTablePin" placeholder="6-digit PIN from waiter" inputmode="numeric" maxlength="6" required>
+    <button id="loadQrMenu">Open menu</button>
     </header>
-    <nav id="qrCategories" class="category-tabs"></nav>
-    <section id="qrItems" class="item-grid"></section>
+    <nav id="qrCategories" class="category-tabs" hidden></nav>
+    <section id="qrItems" class="item-grid" hidden></section>
   </main>
   <aside class="pos-cart">
     <h2>Your Order</h2>
     <div id="qrCartItems"></div>
     <strong id="qrTotal">Total: 0</strong>
-    <input id="qrCustomerName" placeholder="Name optional">
-    <input id="qrCustomerPhone" placeholder="Phone optional">
+    <label for="qrCustomerName">Customer name <span aria-hidden="true">*</span></label>
+    <input id="qrCustomerName" placeholder="Customer name" autocomplete="name" required>
+    <label for="qrCustomerPhone">Mobile number <span aria-hidden="true">*</span></label>
+    <input id="qrCustomerPhone" placeholder="10-digit mobile number" inputmode="numeric" autocomplete="tel" maxlength="10" required>
+    <small>Both details are required so the restaurant can identify this order.</small>
     <button id="placeQrOrder">Place Order</button>
     <p id="qrStatus"></p>
   </aside>
-  <script src="/js/qr-menu.js"></script>
+  <script src="/js/qr-menu.js?v=1.0.76"></script>
 </body>
 </html>

@@ -18,6 +18,7 @@
       <a data-role-nav="kds" href="/kds.html">KDS</a>
       <a data-role-nav="admin" href="/admin.html">Admin</a>
       <a data-role-nav="availability" href="/admin.html?view=items&standalone=1">Availability</a>
+      <a data-role-nav="qr-notifications" id="qrNotifications" href="#qrApprovalPanel">Notifications <span id="qrNotificationCount" class="notification-count" hidden>0</span></a>
       <button data-logout type="button">Logout</button>
     </nav>
   </header>
@@ -28,6 +29,10 @@
         <p id="activeRestaurantName" class="active-restaurant">Loading restaurant...</p>
       </div>
     </header>
+    <section class="qr-approval-panel" id="qrApprovalPanel" hidden>
+      <h3>QR orders waiting for approval</h3>
+      <div id="qrApprovalList"></div>
+    </section>
     <div id="tablesList" class="table-list"></div>
   </aside>
 

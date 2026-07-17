@@ -1,7 +1,7 @@
 const params = new URLSearchParams(window.location.search);
 const restaurantId = params.get("restaurantId");
 const tableId = params.get("tableId");
-const state = { categories: [], items: [], cart: [], currency: "INR", selectedCategoryId: null };
+const state = { categories: [], items: [], cart: [], currency: "INR", selectedCategoryId: null, pin: "", loaded: false };
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 const money = (value) => `${state.currency} ${Number(value || 0).toFixed(2)}`;
@@ -36,7 +36,9 @@ async function loadMenu() {
     qrStatus.textContent = "Invalid QR link";
     return;
   }
-  const data = await fetch(`/qr/menu?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${encodeURIComponent(tableId)}`).then((res) => res.json());
+  state.pin = qrTablePin.value.replace(/\D/g, "").slice(0, 6);
+  if (!/^\d{6}$/.test(state.pin)) { qrStatus.textContent = "Enter the current 6-digit table PIN from the waiter"; return; }
+  const data = await fetch(`/qr/menu?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${encodeURIComponent(tableId)}&pin=${encodeURIComponent(state.pin)}`).then((res) => res.json());
   if (!data.success) {
     qrStatus.textContent = data.message;
     return;
@@ -45,6 +47,9 @@ async function loadMenu() {
   state.items = data.items || [];
   state.currency = data.restaurant?.currency || "INR";
   state.selectedCategoryId = state.categories[0]?.id || null;
+  state.loaded = true;
+  qrCategories.hidden = false;
+  qrItems.hidden = false;
   restaurantName.textContent = data.restaurant?.displayName || "Menu";
   tableName.textContent = data.table?.table_name || "";
   render();
@@ -76,9 +81,18 @@ document.addEventListener("click", async (event) => {
   }
 });
 
+loadQrMenu.addEventListener("click", loadMenu);
+
 placeQrOrder.addEventListener("click", async () => {
+  if (!state.loaded) { qrStatus.textContent = "Open the menu with the current table PIN first"; return; }
   if (state.cart.length === 0) {
     qrStatus.textContent = "Add items first";
+    return;
+  }
+  const customerName = qrCustomerName.value.trim();
+  const customerPhone = qrCustomerPhone.value.replace(/\D/g, "").slice(-10);
+  if (!customerName || !/^\d{10}$/.test(customerPhone)) {
+    qrStatus.textContent = "Enter the customer name and a valid 10-digit mobile number";
     return;
   }
   const res = await fetch("/qr/orders/place", {
@@ -87,8 +101,9 @@ placeQrOrder.addEventListener("click", async () => {
     body: JSON.stringify({
       restaurantId,
       tableId,
-      customerName: qrCustomerName.value,
-      customerPhone: qrCustomerPhone.value,
+      pin: state.pin,
+      customerName,
+      customerPhone,
       items: state.cart.map((item) => ({ itemId: item.id, quantity: item.quantity }))
     })
   });
@@ -97,7 +112,7 @@ placeQrOrder.addEventListener("click", async () => {
     qrStatus.textContent = data.message || "Order failed";
     return;
   }
-  qrStatus.textContent = `Order sent to kitchen. Order #${data.orderId}`;
+  qrStatus.textContent = `Order sent to kitchen. ${data.orderReference || `Order #${data.orderId}`} for ${data.customerName}`;
   state.cart = [];
   render();
 });

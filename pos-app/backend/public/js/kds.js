@@ -20,6 +20,27 @@ function minutesSince(value) {
   return minutes < 1 ? "Just now" : `${minutes} min`;
 }
 
+function parseKdsTime(value) {
+  const raw = String(value || '').trim();
+  const normalized = raw.replace(' ', 'T');
+  return new Date(/[zZ]|[+-]\d\d:\d\d$/.test(normalized) ? normalized : `${normalized}Z`);
+}
+
+function formatStartTime(value) {
+  const date = parseKdsTime(value);
+  return Number.isNaN(date.getTime()) ? 'Unavailable' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function elapsedLabel(value) {
+  const date = parseKdsTime(value);
+  if (Number.isNaN(date.getTime())) return 'Unavailable';
+  const seconds = Math.max(Math.floor((Date.now() - date.getTime()) / 1000), 0);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return hours ? `${hours}h ${String(minutes).padStart(2, '0')}m` : `${minutes}m ${String(secs).padStart(2, '0')}s`;
+}
+
 function beep() {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -87,7 +108,8 @@ function renderCard(order, item) {
     <article class="kds-card">
       <header><strong>#${esc(item.kotReference || `${order.orderId}-${item.kotSequence || 1}`)}</strong><span>${esc(order.tableName || "Parcel")}</span></header>
       <h3>${esc(item.name)}</h3>
-      <p>Qty ${item.quantity} · ${minutesSince(order.createdAt)}</p>
+      <p>Qty ${item.quantity} · Started ${esc(formatStartTime(item.startTime || order.createdAt))}</p>
+      ${item.status === 'PENDING' || item.status === 'PREPARING' ? `<p class="kds-timer" data-start-time="${esc(item.startTime || order.createdAt)}">Pending <strong>${esc(elapsedLabel(item.startTime || order.createdAt))}</strong></p>` : ''}
       ${(item.modifiers || []).map((modifier) => `<small>- ${esc(modifier.name)}</small>`).join("")}
       <div class="kds-actions">${actions}</div>
     </article>
@@ -104,6 +126,7 @@ function renderOrders(orders) {
   kdsPending.innerHTML = buckets.PENDING.join("") || "<p>No new orders</p>";
   kdsPreparing.innerHTML = buckets.PREPARING.join("") || "<p>Nothing preparing</p>";
   kdsReady.innerHTML = buckets.READY.join("") || "<p>Nothing ready</p>";
+  updateTimers();
 
   const pendingIds = new Set(orders.flatMap((order) => order.items.filter((item) => item.status === "PENDING").map((item) => item.orderItemId)));
   const hasNewPending = [...pendingIds].some((id) => !state.lastPendingIds.has(id));
@@ -111,6 +134,12 @@ function renderOrders(orders) {
   state.lastPendingIds = pendingIds;
   state.firstLoad = false;
   kdsStatus.textContent = `${orders.length} open order${orders.length === 1 ? "" : "s"}`;
+}
+
+function updateTimers() {
+  document.querySelectorAll('.kds-timer[data-start-time]').forEach((timer) => {
+    timer.innerHTML = `Pending <strong>${esc(elapsedLabel(timer.dataset.startTime))}</strong>`;
+  });
 }
 
 async function loadOrders() {
@@ -151,6 +180,7 @@ kitchenSelect.addEventListener("change", async () => {
 });
 
 refreshKds.addEventListener("click", loadOrders);
+setInterval(updateTimers, 1000);
 kdsBackBtn.addEventListener("click", goBack);
 
 boot().catch((err) => {
