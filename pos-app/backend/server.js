@@ -5481,10 +5481,14 @@ app.get('/orders/open', (req, res) => {
         name: item.combo_name,
         quantity: item.combo_quantity || 1,
           price: 0,
+          // A combo is submitted only when every component row belongs to a
+          // KOT. A mixed submitted/draft combo must remain visibly pending.
+          kot_id: item.kot_id || null,
           modifiers: []
         });
       }
       const comboLine = comboLines.get(item.combo_id);
+      if (!item.kot_id) comboLine.kot_id = null;
       comboLine.price += Number(item.quantity || 0) * Number(item.price || 0);
       comboLine.modifiers.push({ id: 0, name: `${item.name} x${item.quantity}`, price_delta: 0 });
     });

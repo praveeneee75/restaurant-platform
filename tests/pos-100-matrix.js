@@ -33,6 +33,7 @@ async function main() {
   const bootstrap = await json('GET', `/pos/bootstrap?restaurantId=${restaurantId}&role=OWNER`);
   const tables = bootstrap.tables.filter(table => table.active !== 0);
   const items = bootstrap.items.filter(item => item.active !== 0);
+  const combos = bootstrap.combos || [];
   if (tables.length < 2 || items.length < 3) throw new Error('Matrix needs at least 2 tables and 3 menu items');
   const db = openDatabase(restaurantId);
   const promo = db.prepare("SELECT code FROM promo_codes WHERE active = 1 LIMIT 1").get();
@@ -47,16 +48,25 @@ async function main() {
     const first = items[index % items.length];
     const second = items[(index + 1) % items.length];
     const quantity = (index % 4) + 1;
+    const useCombo = combos.length > 0 && index % 5 === 0;
+    const firstLine = useCombo ? { comboId: combos[index % combos.length].id, quantity: 1 } : { itemId: first.id, quantity, modifiers: [] };
     const saved = await json('POST', '/orders/save', { restaurantId, actor, orderType: 'DINE_IN', tableId: table.id,
-      tableName: table.table_name, items: [{ itemId: first.id, quantity, modifiers: [] }] });
+      tableName: table.table_name, items: [firstLine] });
     created.push(saved.orderId);
     const retrieved = await json('GET', `/orders/open?restaurantId=${restaurantId}&orderId=${saved.orderId}`);
-    if (!retrieved.items.some(item => Number(item.id) === Number(first.id) && Number(item.quantity) === quantity)) throw new Error(`case ${index + 1}: saved item retrieval failed`);
+    if (useCombo) {
+      if (!retrieved.items.some(item => Number(item.comboId || item.combo_id) === Number(combos[index % combos.length].id))) throw new Error(`case ${index + 1}: saved combo retrieval failed`);
+    } else if (!retrieved.items.some(item => Number(item.id) === Number(first.id) && Number(item.quantity) === quantity)) throw new Error(`case ${index + 1}: saved item retrieval failed`);
     await json('POST', '/orders/save', { restaurantId, actor, orderId: saved.orderId, orderType: 'DINE_IN', tableId: table.id,
-      tableName: table.table_name, items: [{ itemId: first.id, quantity, modifiers: [] }, { itemId: second.id, quantity: 1, modifiers: [] }] });
+      tableName: table.table_name, items: [firstLine, { itemId: second.id, quantity: 1, modifiers: [] }] });
     const updated = await json('GET', `/orders/open?restaurantId=${restaurantId}&orderId=${saved.orderId}`);
     if (!updated.items.some(item => Number(item.id) === Number(second.id))) throw new Error(`case ${index + 1}: additional item retrieval failed`);
     await json('POST', '/orders/submit-kot', { restaurantId, actor, orderId: saved.orderId });
+    if (useCombo) {
+      const submitted = await json('GET', `/orders/open?restaurantId=${restaurantId}&orderId=${saved.orderId}`);
+      const comboLine = submitted.items.find(item => Number(item.comboId || item.combo_id) === Number(combos[index % combos.length].id));
+      if (!comboLine || !comboLine.kot_id) throw new Error(`case ${index + 1}: submitted combo was classified as saved`);
+    }
     const live = await json('GET', `/orders/live?restaurantId=${restaurantId}`);
     if (!live.orders.some(order => Number(order.id) === Number(saved.orderId))) throw new Error(`case ${index + 1}: live billing visibility failed`);
     const discount = index % 2 === 0
