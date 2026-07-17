@@ -11,6 +11,8 @@ document.querySelectorAll('[data-role-nav="availability"]').forEach((el) => { el
 document.querySelectorAll('[data-role-nav="kds"]').forEach((el) => { el.hidden = !['OWNER', 'MANAGER_2', 'KITCHEN'].includes(String(sessionUser.role || '').toUpperCase()); });
 document.querySelectorAll('[data-logout]').forEach((button) => button.addEventListener('click', () => { localStorage.clear(); location.href = '/login.html'; }));
 const state = { tables: [], orders: [], selected: null, filter: 'ALL' };
+const privilegedBillingRoles = new Set(['CASHIER', 'MANAGER_1', 'MANAGER_2', 'OWNER']);
+const canSettleAndPrint = privilegedBillingRoles.has(String(sessionUser.role || '').toUpperCase());
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = v => `INR ${Number(v || 0).toFixed(2)}`;
 async function getJson(url) { const r = await fetch(url); const d = await r.json(); if (!r.ok) throw Error(d.message || 'Unable to load billing data'); return d; }
@@ -53,6 +55,17 @@ async function showSubmittedOrder(orderId) {
     + '<div class="billing-adjustment-row"><input id="billingRedeemPoints" type="number" min="0" step="1" value="0" inputmode="numeric" autocomplete="off" placeholder="Enter points"><button type="button" class="secondary-btn" id="applyBillingRedeemPoints">Apply reward points</button></div>'
     + '</div><p class="billing-hint">Enter only the adjustment you want to use. Each adjustment is checked again when the bill is settled.</p><p id="billingAdjustmentStatus" role="status" aria-live="polite"></p>';
   billingDetail.querySelector('.billing-payment')?.before(adjustments);
+  if (canSettleAndPrint) {
+    const payment = billingDetail.querySelector('.billing-payment');
+    const settle = payment?.querySelector('#settleBilling');
+    if (payment && settle && !payment.querySelector('#settlePrintBilling')) {
+      const print = settle.cloneNode(true);
+      print.id = 'settlePrintBilling';
+      print.textContent = 'Settle & Print';
+      print.dataset.printBill = 'true';
+      settle.insertAdjacentElement('afterend', print);
+    }
+  }
   document.getElementById('applyBillingPromo')?.addEventListener('click', async () => {
     const status = document.getElementById('billingAdjustmentStatus');
     const code = document.getElementById('billingPromoCode').value.trim().toUpperCase();

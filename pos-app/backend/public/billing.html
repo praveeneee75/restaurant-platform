@@ -10,12 +10,12 @@
   <header class="app-home-nav">
     <div class="app-home-brand"><strong>K'MASTER</strong> <span>POS</span><small id="billingRestaurantName">Billing workspace</small></div>
     <nav aria-label="POS home sections">
-      <a href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a href="/pos-live.html?mode=PARCEL">POS Parcel</a><a href="/pos-live.html?mode=PARTY">POS Party Order</a><a class="active" href="/billing.html">Billing</a><a data-role-nav="invoices" href="/admin.html?view=invoices&standalone=1#invoices">Invoices</a><a data-role-nav="kds" href="/kds.html">KDS</a><a data-role-nav="availability" href="/admin.html?view=items&standalone=1">Availability</a><a data-role-nav="admin" href="/admin.html">Admin</a><button data-logout type="button">Logout</button>
+      <a href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a href="/pos-live.html?mode=PARCEL">POS Parcel</a><a href="/pos-live.html?mode=PARTY">POS Party Order</a><a class="active" href="/billing.html">Billing</a><a data-role-nav="invoices" href="/admin.html?view=invoices&standalone=1#invoices">Invoices</a><a data-role-nav="kds" href="/kds.html">KDS</a><a data-role-nav="availability" href="/admin.html?view=items&standalone=1">Availability</a><a data-role-nav="live-orders" href="/orders.html">Live Orders</a><a data-role-nav="admin" href="/admin.html">Admin</a><button data-role-nav="notifications" type="button">Notifications</button><button data-logout type="button">Logout</button>
     </nav>
   </header>
   <aside class="billing-sidebar">
     <div class="billing-brand">K'MASTER <span>POS</span></div>
-    <nav aria-label="Billing context"><span class="context-label">Billing overview</span><a href="/orders.html">Reports</a></nav>
+    <nav aria-label="Billing context"><span class="context-label">Billing overview</span></nav>
     <div class="billing-recent"><h3>Recent order details</h3><div class="billing-tabs"><button data-recent-filter="DINE_IN">Dine in</button><button data-recent-filter="TAKEAWAY">Parcel</button><button data-recent-filter="ALL" class="active">All</button></div><div id="recentOrders"></div></div>
   </aside>
   <main class="billing-main">

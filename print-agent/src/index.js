@@ -70,7 +70,7 @@ async function processPrintJobs() {
     try {
       const payload = JSON.parse(job.payload);
 
-      await printKOT(payload);
+      await (String(job.type).toUpperCase() === 'BILL' ? printBill(payload) : printKOT(payload));
 
       db.prepare(`
         UPDATE print_jobs
@@ -104,7 +104,7 @@ async function printKOT(payload) {
 
   const printer = new ThermalPrinter({
     type: PrinterTypes.EPSON,
-    interface: 'tcp://192.168.68.72:9100',
+    interface: printerInterface(payload),
     options: {
       timeout: 5000
     }
@@ -137,6 +137,41 @@ async function printKOT(payload) {
 
   printer.cut();
 
+  await printer.execute();
+}
+
+function printerInterface(payload) {
+  const printer = payload?.printer || {};
+  const connection = String(printer.connection || 'NETWORK').toUpperCase();
+  if (connection === 'USB' && printer.address) return `usb://${printer.address}`;
+  if (connection === 'BLUETOOTH' && printer.address) return `bluetooth://${printer.address}`;
+  if (printer.address) return String(printer.address).includes('://') ? String(printer.address) : `tcp://${printer.address}:9100`;
+  return 'tcp://192.168.68.72:9100';
+}
+
+async function printBill(payload) {
+  if (!payload?.printer) throw new Error('Bill printer is not configured');
+  const printer = new ThermalPrinter({
+    type: PrinterTypes.EPSON,
+    interface: printerInterface(payload),
+    options: { timeout: 5000 }
+  });
+  if (!await printer.isPrinterConnected()) throw new Error('Bill printer not reachable');
+  const profile = payload.restaurantProfile || {};
+  printer.alignCenter();
+  printer.bold(true);
+  printer.println(profile.displayName || profile.legalName || 'RESTAURANT');
+  printer.println('BILL / INVOICE');
+  printer.bold(false);
+  printer.drawLine();
+  printer.alignLeft();
+  printer.println(`Invoice: ${payload.invoiceNo || ''}`);
+  printer.println(`Order: ${payload.orderId || ''}`);
+  (payload.items || []).forEach(item => printer.println(`${item.quantity} x ${item.name}  ${(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}`));
+  printer.drawLine();
+  printer.println(`Payable: ${Number(payload.payable || 0).toFixed(2)}`);
+  printer.println(new Date().toLocaleString());
+  printer.cut();
   await printer.execute();
 }
 

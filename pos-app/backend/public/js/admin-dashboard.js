@@ -531,7 +531,7 @@ async function showInvoiceDetail(invoiceId) {
   refund.innerHTML = '<h4>Refund</h4><p class="invoice-detail-meta">Refund cannot exceed the remaining paid amount.</p><div class="invoice-refund-fields"><input id="refundAmount" type="number" min="0.01" max="' + remainingPaid + '" step="0.01" placeholder="Amount"><select id="refundMode"><option value="CASH">Cash</option><option value="UPI">UPI</option><option value="OWNER_FUND">Owner fund</option></select><input id="refundReason" maxlength="200" placeholder="Reason"></div><button type="button" class="danger-btn" id="refundInvoice">Refund</button><p id="refundStatus"></p>';
   panel.appendChild(refund);
   document.getElementById('printInvoice').onclick = () => printInvoice(invoice, items);
-  document.getElementById('downloadInvoicePdf').onclick = () => printInvoice(invoice, items);
+  document.getElementById('downloadInvoicePdf').onclick = () => downloadInvoicePdf(invoice.id, invoice.invoice_no).catch((error) => alert(error.message));
   const refundButton = document.getElementById('refundInvoice');
   if (refundButton) refundButton.onclick = async () => {
     const amount = Number(document.getElementById('refundAmount').value);
@@ -545,6 +545,24 @@ async function showInvoiceDetail(invoiceId) {
       await showInvoiceDetail(invoice.id); await loadInvoiceList();
     } catch (err) { status.textContent = err.message; }
   };
+}
+
+async function downloadInvoicePdf(invoiceId, invoiceNo) {
+  const response = await fetch(`/orders/invoices/${encodeURIComponent(invoiceId)}/pdf?restaurantId=${encodeURIComponent(restaurantId)}`);
+  if (!response.ok) {
+    let message = 'PDF download failed';
+    try { message = (await response.json()).message || message; } catch (_) { /* non-JSON error */ }
+    throw new Error(message);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${String(invoiceNo || `invoice-${invoiceId}`).replace(/[^a-z0-9._-]/gi, '_')}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function printInvoice(invoice, items) {

@@ -501,9 +501,9 @@ button:hover,
   overflow: hidden;
 }
 
-.app-home-nav { grid-column: 1 / -1; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:12px 18px; background:#fff; border-bottom:1px solid #dbe4ef; position:sticky; top:0; z-index:10; }
+.app-home-nav { grid-column: 1 / -1; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:10px 18px; background:rgba(255,255,255,.96); border-bottom:1px solid #dbe4ef; position:sticky; top:0; z-index:10; box-shadow:0 4px 18px rgba(15,23,42,.05); }
 .app-home-brand { display:flex; align-items:center; gap:4px; color:#123b8f; font-size:17px; white-space:nowrap; }.app-home-brand span { color:#e85d2a; }.app-home-brand small { margin-left:12px; color:var(--muted); font-size:12px; font-weight:600; }
-.app-home-nav nav { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:7px; }.app-home-nav a,.app-home-nav button { min-height:38px; padding:9px 13px; border:1px solid #d6dfeb; border-radius:8px; background:#f7faff; color:#173d86; text-decoration:none; font-weight:750; cursor:pointer; }.app-home-nav a:hover,.app-home-nav a.active,.app-home-nav button:hover { background:#2563eb; border-color:#2563eb; color:#fff; }
+.app-home-nav nav { display:flex; flex-wrap:nowrap; justify-content:flex-end; gap:6px; min-width:0; }.app-home-nav a,.app-home-nav button { min-height:38px; padding:8px 11px; border:1px solid #d6dfeb; border-radius:10px; background:#f7faff; color:#173d86; text-decoration:none; font-weight:750; cursor:pointer; white-space:nowrap; }.app-home-nav a:hover,.app-home-nav a.active,.app-home-nav button:hover { background:#2563eb; border-color:#2563eb; color:#fff; }
 
 .pos-tables,
 .pos-cart {

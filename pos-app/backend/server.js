@@ -5815,6 +5815,51 @@ app.get('/orders/invoices/:id', (req, res) => {
   }
 });
 
+function invoicePdfText(value) {
+  return String(value ?? '').replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)').replace(/[\r\n]+/g, ' ');
+}
+
+function buildInvoicePdf(invoice, items) {
+  const lines = [
+    invoice.invoice_no || `Invoice #${invoice.id}`,
+    `${invoice.customer_name || 'Walk-in customer'} - ${invoice.table_no || invoice.order_type || ''}`,
+    invoice.settled_at || '',
+    '',
+    ...items.map((item) => `${item.name} x ${item.quantity}    ${(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}`),
+    '',
+    `Total: ${Number(invoice.total_amount || 0).toFixed(2)}`
+  ];
+  const stream = ['BT', '/F1 11 Tf', '50 780 Td', ...lines.map((line, index) => `${index ? '0 -18 Td ' : ''}(${invoicePdfText(line)}) Tj`), 'ET'].join('\n');
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+    `<< /Length ${Buffer.byteLength(stream, 'ascii')} >>\nstream\n${stream}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((object, index) => { offsets[index + 1] = Buffer.byteLength(pdf, 'ascii'); pdf += `${index + 1} 0 obj\n${object}\nendobj\n`; });
+  const xref = Buffer.byteLength(pdf, 'ascii');
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.slice(1).map((offset) => `${String(offset).padStart(10, '0')} 00000 n `).join('\n')}\ntrailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return Buffer.from(pdf, 'ascii');
+}
+
+app.get('/orders/invoices/:id/pdf', (req, res) => {
+  const restaurantId = req.query.restaurantId;
+  const invoiceId = Number(req.params.id);
+  if (!restaurantId || !isPositiveId(invoiceId)) return res.status(400).json({ success: false, message: 'restaurantId and invoice id are required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const invoice = db.prepare(`SELECT o.*, c.name AS customer_name FROM orders o LEFT JOIN customers c ON c.id = o.customer_id WHERE o.id = ? AND o.status = 'PAID'`).get(invoiceId);
+    if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+    const items = db.prepare(`SELECT i.name, oi.quantity, oi.price FROM order_items oi LEFT JOIN items i ON i.id = oi.item_id WHERE oi.order_id = ? ORDER BY oi.id`).all(invoiceId);
+    const pdf = buildInvoicePdf(invoice, items);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${String(invoice.invoice_no || `invoice-${invoiceId}`).replace(/[^a-z0-9._-]/gi, '_')}.pdf"`, 'Content-Length': pdf.length });
+    res.send(pdf);
+  } catch (err) { sendError(res, err); } finally { db.close(); }
+});
+
 app.get('/orders/open-list', (req, res) => {
   const { restaurantId, tableId } = req.query;
   if (!restaurantId || !isPositiveId(tableId)) return res.status(400).json({ success: false, message: 'restaurantId and tableId are required' });
@@ -6215,7 +6260,7 @@ app.post('/orders/cancel', (req, res) => {
 });
 
 app.post('/orders/settle', (req, res) => {
-  const { restaurantId, actor, orderId, customerId, redeemPoints, payments, isInvoice = true } = req.body;
+  const { restaurantId, actor, orderId, customerId, redeemPoints, payments, isInvoice = true, printBill = false } = req.body;
   if (!restaurantId || !orderId || !Array.isArray(payments) || !canSell(actor?.role)) {
     return res.status(400).json({ success: false, message: 'Order, payments and sales permission are required' });
   }
@@ -6321,12 +6366,15 @@ app.post('/orders/settle', (req, res) => {
       if (DELIVERY_ORDER_TYPES.includes(order.order_type)) {
         writeOrderStatusHistory(db, actor, orderId, 'PAID', 'ORDER', 'Bill settled');
       }
+      const billPrinter = db.prepare("SELECT id, name, connection, address FROM printers WHERE type = 'BILL' AND active = 1 ORDER BY id LIMIT 1").get();
       db.prepare(`
         INSERT INTO print_jobs (type, ref_id, kitchen_id, printer_id, payload, status)
-        VALUES ('BILL', ?, NULL, 1, ?, 'PENDING')
-      `).run(orderId, JSON.stringify({
+        VALUES ('BILL', ?, NULL, ?, ?, 'PENDING')
+      `).run(orderId, billPrinter?.id || 0, JSON.stringify({
         orderId,
         invoiceNo,
+        items: db.prepare(`SELECT i.name, oi.quantity, oi.price FROM order_items oi JOIN items i ON i.id = oi.item_id WHERE oi.order_id = ? AND oi.kot_id IS NOT NULL ORDER BY oi.id`).all(orderId),
+        printer: billPrinter ? { name: billPrinter.name, connection: billPrinter.connection, address: billPrinter.address } : null,
         restaurantProfile: {
           displayName: getConfigValue(db, 'restaurant_display_name', ''),
           legalName: getConfigValue(db, 'legal_name', ''),
@@ -6374,10 +6422,10 @@ app.post('/orders/settle', (req, res) => {
       if (Number(order.is_invoice) === 0) {
         writeCompliance(db, 'NON_INVOICE_ORDER', 'MEDIUM', `Non-invoice order settled #${orderId}`, 'ORDER', orderId);
       }
-      return { invoiceNo, paid, payable, redeemedPoints: redeem, loyaltyDiscount, serviceCharge, roundOff };
+      return { invoiceNo, paid, payable, redeemedPoints: redeem, loyaltyDiscount, serviceCharge, roundOff, printQueued: Boolean(billPrinter) };
     })();
 
-    res.json({ success: true, invoiceNo: settled.invoiceNo, paidAmount: settled.paid, payable: settled.payable, redeemedPoints: settled.redeemedPoints, loyaltyDiscount: settled.loyaltyDiscount, serviceCharge: settled.serviceCharge, roundOff: settled.roundOff });
+    res.json({ success: true, invoiceNo: settled.invoiceNo, paidAmount: settled.paid, payable: settled.payable, redeemedPoints: settled.redeemedPoints, loyaltyDiscount: settled.loyaltyDiscount, serviceCharge: settled.serviceCharge, roundOff: settled.roundOff, printRequested: Boolean(printBill), printQueued: Boolean(settled.printQueued), printMessage: settled.printQueued ? 'Bill sent to the configured BILL printer' : 'Printer is not configured. Invoice was created. Configure an active printer with type BILL in Admin > Printers, then retry printing.' });
   } catch (err) {
     sendError(res, err);
   } finally {

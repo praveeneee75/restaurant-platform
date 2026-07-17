@@ -66,6 +66,7 @@ const itemSearch = document.getElementById("itemSearch");
 const posToast = document.getElementById("posToast");
 const availabilityBtn = document.getElementById("availabilityBtn");
 const settlementType = document.getElementById("settlementType");
+const settlePrintOrder = document.getElementById("settlePrintOrder");
 let posToastTimer;
 const displayItemCode = (item) => String(item.item_code || String(item.id).padStart(4, "0")).replace(/^ITM[-\s]*/i, "");
 
@@ -110,15 +111,18 @@ function applyRoleAndModeUI() {
   const canBilling = ["CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role);
   const canMove = ["CAPTAIN", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role) && posMode === "DINE_IN";
   const canSettle = ["CAPTAIN", "CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role);
+  const canSettleAndPrint = ["CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role);
   document.querySelectorAll('[data-role-nav="billing"]').forEach((el) => { el.hidden = !canBilling; });
   document.querySelectorAll('[data-role-nav="invoices"]').forEach((el) => { el.hidden = !canBilling; });
   document.querySelectorAll('[data-role-nav="admin"]').forEach((el) => { el.hidden = !["OWNER", "MANAGER_1", "MANAGER_2"].includes(role); });
   document.querySelectorAll('[data-role-nav="availability"]').forEach((el) => { el.hidden = !["OWNER", "MANAGER_1", "MANAGER_2", "CASHIER", "CAPTAIN"].includes(role); });
   document.querySelectorAll('[data-role-nav="kds"]').forEach((el) => { el.hidden = role !== "OWNER" && role !== "MANAGER_2" && role !== "KITCHEN"; });
   document.querySelectorAll('[data-role-nav="availability"]').forEach((el) => { el.hidden = !["CAPTAIN", "CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role); });
+  document.querySelectorAll('[data-role-nav="live-orders"]').forEach((el) => { el.hidden = !["CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role); });
   document.querySelectorAll('[data-role-nav="qr-notifications"]').forEach((el) => { el.hidden = !["CAPTAIN", "CASHIER", "WAITER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role); });
   if (moveTableBtn) moveTableBtn.hidden = !canMove;
   if (settleOrder) settleOrder.hidden = !canSettle;
+  if (settlePrintOrder) settlePrintOrder.hidden = !canSettleAndPrint;
   if (settlementType) settlementType.hidden = role !== "MANAGER_1";
   if (posMode !== "DINE_IN") document.body.classList.add("pos-non-dine-in");
 }
@@ -750,7 +754,7 @@ async function submitCurrentKot() {
   alert(data.message || "KOT submitted");
 }
 
-async function settleCurrentOrder() {
+async function settleCurrentOrder(printBill = false) {
   const settledTableId = state.selectedTable?.id || null;
   const wasSubmittedAndEdited = state.kotSubmitted && state.dirty;
   // Reconcile the visible cart with the server before billing, even when the
@@ -777,8 +781,8 @@ async function settleCurrentOrder() {
   if (Number(cardAmount.value) > 0) payments.push({ method: "CARD", amount: Number(cardAmount.value) });
   if (Number(upiAmount.value) > 0) payments.push({ method: "UPI", amount: Number(upiAmount.value) });
   const isInvoice = settlementType?.value !== "NON_INVOICE";
-  const data = await postJson("/orders/settle", { orderId: state.orderId, customerId: state.customer?.id || null, redeemPoints: Math.floor(redeemPointsValue()), payments, isInvoice });
-  alert(isInvoice ? `Invoice ${data.invoiceNo}` : `Order settled without invoice. Reference ${data.invoiceNo}`);
+  const data = await postJson("/orders/settle", { orderId: state.orderId, customerId: state.customer?.id || null, redeemPoints: Math.floor(redeemPointsValue()), payments, isInvoice, printBill });
+  alert(isInvoice ? `${printBill ? `${data.printMessage} Invoice ${data.invoiceNo}` : `Invoice ${data.invoiceNo}`}` : `Order settled without invoice. Reference ${data.invoiceNo}`);
   state.cart = [];
   state.selectedCartKey = null;
   state.orderId = null;
@@ -1002,6 +1006,7 @@ createCustomer.addEventListener("click", createCustomerFromBilling);
 saveOrder.addEventListener("click", () => saveCurrentOrder());
 submitKot.addEventListener("click", submitCurrentKot);
 settleOrder.addEventListener("click", settleCurrentOrder);
+settlePrintOrder?.addEventListener("click", () => settleCurrentOrder(true));
 moveTableBtn.addEventListener("click", async () => {
   if (!isDineIn() || !state.selectedTable) return alert("Select a dine-in table first");
   const destinations = state.tables

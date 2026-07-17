@@ -5,6 +5,7 @@ if (restaurantId) localStorage.setItem("restaurantId", restaurantId);
 const user = JSON.parse(localStorage.getItem("user") || '{"role":"OWNER","name":"Owner"}');
 const actor = { id: user.id || null, name: user.name || user.username || user.role || "Owner", role: user.role || "OWNER" };
 const state = { orders: [], partners: [], report: null };
+let editingOrdersForm = false;
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 const money = (value) => Number(value || 0).toFixed(2);
@@ -159,6 +160,7 @@ partnerForm.addEventListener("submit", async (event) => {
 document.addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button) return;
+  if (button.dataset.cancelOrder || button.dataset.updateStatus || button.dataset.assignPartner || button.dataset.reopenOrder || button.dataset.updateTracking) button.disabled = true;
   try {
     const id = button.dataset.updateStatus || button.dataset.assignPartner || button.dataset.cancelOrder || button.dataset.reopenOrder || button.dataset.editPartner || button.dataset.deletePartner;
     if (button.dataset.editPartner) {
@@ -218,6 +220,8 @@ document.addEventListener("click", async (event) => {
   } catch (err) {
     ordersStatus.textContent = err.message;
     alert(err.message);
+  } finally {
+    button.disabled = false;
   }
 });
 
@@ -230,4 +234,10 @@ statusFilter.addEventListener("change", renderOrders);
 loadOrders().catch((err) => {
   ordersStatus.textContent = err.message;
 });
-setInterval(() => loadOrders().catch(() => undefined), 5000);
+document.addEventListener("focusin", (event) => {
+  editingOrdersForm = Boolean(event.target.closest("input, select, textarea"));
+});
+document.addEventListener("focusout", (event) => {
+  if (event.target.closest("input, select, textarea")) editingOrdersForm = false;
+});
+setInterval(() => { if (!editingOrdersForm) loadOrders().catch(() => undefined); }, 5000);

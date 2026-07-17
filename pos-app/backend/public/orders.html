@@ -7,22 +7,45 @@
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body class="orders-shell">
+  <header class="app-home-nav">
+    <div class="app-home-brand"><strong>K'MASTER</strong> <span>POS</span><small>Live Orders</small></div>
+    <nav aria-label="POS home sections"><a href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a href="/pos-live.html?mode=PARCEL">POS Parcel</a><a href="/pos-live.html?mode=PARTY">POS Party Order</a><a href="/billing.html">Billing</a><a href="/admin.html?view=invoices&standalone=1#invoices">Invoices</a><a href="/kds.html">KDS</a><a href="/admin.html?view=items&standalone=1">Availability</a><a class="active" href="/orders.html">Live Orders</a><a href="/admin.html">Admin</a><button type="button">Notifications</button><button data-logout type="button">Logout</button></nav>
+  </header>
   <header class="orders-topbar">
     <div>
       <h1>Live Orders</h1>
       <p id="ordersStatus">Loading orders...</p>
     </div>
     <div class="toolbar">
-      <a class="secondary-btn" href="/billing.html">Billing</a>
-      <a class="secondary-btn" href="/pos-live.html">Back to POS</a>
-      <a class="secondary-btn" href="/admin.html">Admin</a>
       <button id="refreshOrders" type="button">Refresh</button>
     </div>
   </header>
 
   <main class="orders-main">
+    <section class="table-panel orders-summary-section">
+      <h2>Order Type Summary</h2>
+      <div class="orders-report-grid" id="ordersReport"></div>
+    </section>
+
+    <section class="table-panel">
+      <h2>Open Orders</h2>
+      <div class="toolbar">
+        <select id="orderTypeFilter">
+          <option value="">All order types</option>
+          <option value="DINE_IN">Dine In</option>
+          <option value="TAKEAWAY">Takeaway</option>
+          <option value="DELIVERY">Delivery</option>
+          <option value="PARCEL">Parcel</option>
+          <option value="PHONE_ORDER">Phone Order</option>
+          <option value="ONLINE_ORDER">Online Order</option>
+        </select>
+        <select id="statusFilter"><option value="">All statuses</option><option value="OPEN">Open</option><option value="PREPARING">Preparing</option><option value="READY">Ready</option><option value="SERVED">Served</option><option value="PAID">Paid</option></select>
+      </div>
+      <div class="orders-list" id="ordersList"></div>
+    </section>
+
     <section class="editor-panel">
-      <h2>Delivery Partners</h2>
+      <h2>Delivery Partner Configuration</h2>
       <form class="partner-row" id="partnerForm">
         <input type="hidden" id="partnerId">
         <input id="partnerName" placeholder="Partner name" required>
@@ -49,33 +72,6 @@
       <div id="partnersList"></div>
     </section>
 
-    <section class="table-panel">
-      <div class="toolbar">
-        <select id="orderTypeFilter">
-          <option value="">All order types</option>
-          <option value="DINE_IN">Dine In</option>
-          <option value="TAKEAWAY">Takeaway</option>
-          <option value="DELIVERY">Delivery</option>
-          <option value="PARCEL">Parcel</option>
-          <option value="PHONE_ORDER">Phone Order</option>
-          <option value="ONLINE_ORDER">Online Order</option>
-        </select>
-        <select id="statusFilter">
-          <option value="">All statuses</option>
-          <option value="OPEN">Open</option>
-          <option value="PREPARING">Preparing</option>
-          <option value="READY">Ready</option>
-          <option value="SERVED">Served</option>
-          <option value="PAID">Paid</option>
-        </select>
-      </div>
-      <div class="orders-list" id="ordersList"></div>
-    </section>
-
-    <section class="table-panel">
-      <h2>Order Type Summary</h2>
-      <div class="orders-report-grid" id="ordersReport"></div>
-    </section>
   </main>
 
   <script src="/js/orders.js"></script>
