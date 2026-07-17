@@ -1,5 +1,7 @@
 const path = require('node:path');
-const db = require(path.join(process.cwd(), 'node_modules', 'better-sqlite3'));
+// Resolve from the repository POS directory, not the caller's current directory.
+// This keeps the probe reliable when launched from a desktop shortcut or another shell.
+const db = require(path.join(__dirname, '..', 'pos-app', 'node_modules', 'better-sqlite3'));
 const probe = new db(':memory:');
 probe.prepare('SELECT 1').get();
 probe.close();
