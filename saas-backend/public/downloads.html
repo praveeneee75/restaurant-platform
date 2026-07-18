@@ -1,27 +1,36 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
   <title>K'Master POS Downloads</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/css/app.css?v=kmaster-ui">
+  <link rel="stylesheet" href="/css/app.css?v=20260718-owner-downloads-nav">
 </head>
-<body class="auth-page">
-  <nav class="download-nav">
-    <button id="downloadBackButton" type="button">Back</button>
-    <a id="downloadHomeButton" href="/owner-dashboard.html">Home</a>
-  </nav>
-  <h2>K'Master POS Downloads</h2>
-  <section id="desktop-app">
+<body class="download-page">
+  <header class="download-header">
+    <div class="download-header-inner">
+      <div>
+        <p class="eyebrow">Owner portal</p>
+        <h1>K'Master POS Downloads</h1>
+      </div>
+      <nav class="download-nav" aria-label="Page navigation">
+        <button id="downloadBackButton" type="button">&larr; Back</button>
+        <a id="downloadHomeButton" href="/owner-dashboard.html">Home</a>
+      </nav>
+    </div>
+  </header>
+  <main class="download-content">
+    <section id="desktop-app" class="download-desktop-panel">
     <h3>Install Offline POS</h3>
     <p id="downloadStatus">Checking available installers...</p>
     <div id="installerPanel" class="installer-grid"></div>
-  </section>
-  <section id="mobile-app">
+    </section>
+    <section id="mobile-app">
     <h3>Mobile App</h3>
     <p>Android and iOS download links will appear here when their store releases are published.</p>
     <p>Restaurant owners can return to this page from the owner portal without needing a direct installer address.</p>
-  </section>
-  <section>
+    </section>
+    <section>
     <h3>Owner Steps</h3>
     <ol class="steps-list">
       <li>Choose the installer for your computer.</li>
@@ -34,7 +43,8 @@
       <p>Use this only if support asks for it.</p>
       <a id="sourcePackageLink" href="/updates/download/pos-app.zip">Download source package</a>
     </details>
-  </section>
+    </section>
+  </main>
   <script src="/js/downloads.js?v=20260710-owner-downloads"></script>
 </body>
 </html>

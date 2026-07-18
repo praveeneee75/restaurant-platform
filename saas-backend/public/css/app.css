@@ -571,7 +571,117 @@ th {
 .download-nav {
   display: flex;
   gap: 10px;
-  margin: 0 0 14px;
+  align-items: center;
+  justify-self: end;
+  margin: 0;
+}
+
+.download-page {
+  display: block;
+  padding: 0 !important;
+  background:
+    linear-gradient(140deg, rgba(15, 118, 110, 0.08), transparent 42%),
+    linear-gradient(320deg, rgba(217, 119, 6, 0.08), transparent 38%),
+    var(--bg);
+}
+
+.download-header {
+  position: sticky;
+  z-index: 10;
+  top: 0;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.download-header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: min(1180px, calc(100% - 36px));
+  margin: 0 auto;
+  padding: 16px 0;
+}
+
+.download-header h1 {
+  margin: 0;
+  color: #0f172a;
+  font-size: clamp(22px, 3vw, 30px);
+  line-height: 1.15;
+}
+
+.download-header .eyebrow {
+  margin-bottom: 3px;
+}
+
+.download-nav button,
+.download-nav a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  margin: 0;
+  padding: 9px 14px !important;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--text);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.download-nav button:hover,
+.download-nav a:hover {
+  border-color: var(--primary);
+  background: #ecfdf5;
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.download-content {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  width: min(1180px, calc(100% - 36px));
+  margin: 0 auto;
+  padding: 24px 0 40px;
+}
+
+.download-content section {
+  min-width: 0;
+  margin: 0;
+}
+
+.download-desktop-panel {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 760px) {
+  .download-header-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch;
+    width: min(100% - 24px, 1180px);
+    padding: 14px 0;
+  }
+
+  .download-nav {
+    width: 100%;
+    justify-self: stretch;
+  }
+
+  .download-nav button,
+  .download-nav a {
+    flex: 1 1 0;
+    width: auto;
+  }
+
+  .download-content {
+    grid-template-columns: 1fr;
+    width: min(100% - 24px, 1180px);
+    padding: 16px 0 28px;
+  }
 }
 
 .recovery-choice {
