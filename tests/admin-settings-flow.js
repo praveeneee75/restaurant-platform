@@ -176,8 +176,8 @@ function assertSettings(actual, expected, label) {
   const qrPage = await request('GET', `/qr-menu.html?restaurantId=${restaurantId}&tableId=1`);
   if (qrPage.status !== 200 || !String(qrPage.data || '').includes('QR Menu')) throw new Error('QR menu page did not load from the local POS');
   const network = await request('GET', '/network/info');
-  if (!/^https?:\/\//.test(network.data.qrBaseUrl || '') || String(network.data.qrBaseUrl).includes('pos.kmasterpos.com')) {
-    throw new Error(`QR base URL is not customer-reachable: ${network.data.qrBaseUrl}`);
+  if (!/^https:\/\//.test(network.data.publicQrBaseUrl || '') || !String(network.data.publicQrBaseUrl).includes('pos.kmasterpos.com')) {
+    throw new Error(`Public QR base URL is not customer-reachable: ${network.data.publicQrBaseUrl}`);
   }
 
   const reports = await request('GET', `/reports/dashboard?restaurantId=${restaurantId}&role=OWNER&fromDate=2026-01-01&toDate=2026-12-31`);

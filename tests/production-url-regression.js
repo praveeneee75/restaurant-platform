@@ -24,17 +24,22 @@ for (const relative of productionFiles) {
 }
 
 const adminDashboard = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/admin-dashboard.js'), 'utf8');
-if (!adminDashboard.includes("fetchJson('/network/info')") || !adminDashboard.includes('state.network.qrBaseUrl')) {
-  failures.push('QR links do not use the customer-reachable POS network address');
+const adminHtml = fs.readFileSync(path.join(root, 'pos-app/backend/public/admin.html'), 'utf8');
+const styleCss = fs.readFileSync(path.join(root, 'pos-app/backend/public/css/style.css'), 'utf8');
+if (!adminDashboard.includes("fetchJson('/network/info')") || !adminDashboard.includes('state.network.publicQrBaseUrl')) {
+  failures.push('QR links do not use the configured public QR address');
 }
-if (adminDashboard.includes('https://pos.kmasterpos.com')) {
-  failures.push('QR links still use the unavailable cloud POS hostname');
+if (!adminDashboard.includes('https://pos.kmasterpos.com')) {
+  failures.push('QR links do not have the production public hostname fallback');
 }
 if (!adminDashboard.includes("https://kmasterpos.com/order.html")) {
   failures.push('Online ordering link does not have the production public base URL');
 }
 if (adminDashboard.includes('onlineStorefrontLink.href = `/online-order.html')) {
   failures.push('Online ordering link still inherits the local POS origin');
+}
+if (!adminHtml.includes('class="qr-links-table"') || !styleCss.includes('.table-panel .qr-links-table td:first-child') || !styleCss.includes('table-layout: auto')) {
+  failures.push('QR link table does not use content-aware column sizing');
 }
 
 if (failures.length) {

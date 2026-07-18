@@ -8,6 +8,26 @@ const WHITELABEL_LICENSE_KEY = 'WLTEST-2026-KMASTER';
 
 const router = express.Router();
 
+function restaurantProfile(row) {
+  return {
+    restaurant_display_name: row.restaurant_name,
+    legal_name: row.legal_name || '',
+    gstin: row.gstin || '',
+    fssai_license_no: row.fssai_license_no || '',
+    state_code: row.state_code || '',
+    address_line_1: row.address_line_1 || '',
+    address_line_2: row.address_line_2 || '',
+    city: row.city || '',
+    state: row.state || '',
+    country: row.country || '',
+    phone: row.phone || '',
+    email: row.email || '',
+    currency: row.currency || '',
+    timezone: row.timezone || '',
+    logo_path: row.logo_path || ''
+  };
+}
+
 router.post('/validate', async (req, res) => {
   const { restaurantId, licenseKey } = req.body;
   const normalizedRestaurantId = String(restaurantId || '').trim().toUpperCase();
@@ -49,7 +69,9 @@ router.post('/validate', async (req, res) => {
     const result = await pool.query(
       `
       SELECT l.status, l.expires_at, l.sync_token,
-             t.id AS tenant_id, t.name AS restaurant_name,
+             t.id AS tenant_id, t.name AS restaurant_name, t.legal_name, t.gstin,
+             t.fssai_license_no, t.state_code, t.address_line_1, t.address_line_2,
+             t.city, t.state, t.country, t.phone, t.email, t.currency, t.timezone, t.logo_path,
              p.code AS package_code, p.name AS package_name
       FROM licenses l
       JOIN tenants t ON t.id = l.tenant_id
@@ -102,6 +124,7 @@ router.post('/validate', async (req, res) => {
     res.json({
       valid: true,
       restaurantName: license.restaurant_name,
+      restaurantProfile: restaurantProfile(license),
       expiresAt: license.expires_at,
       syncToken: license.sync_token,
       packageCode: license.package_code || null,

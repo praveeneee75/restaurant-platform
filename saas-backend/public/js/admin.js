@@ -834,11 +834,30 @@ async function savePartnerBranding() {
 
 async function createPartnerRestaurant() {
   try {
+    const profileInputs = [partnerRestaurantName, partnerRestaurantLegalName, partnerRestaurantGstin, partnerRestaurantFssai,
+      partnerRestaurantStateCode, partnerRestaurantAddress1, partnerRestaurantAddress2, partnerRestaurantCity,
+      partnerRestaurantState, partnerRestaurantCountry, partnerRestaurantPhone, partnerRestaurantEmail,
+      partnerRestaurantCurrency, partnerRestaurantTimezone];
+    if (profileInputs.some((input) => !input.value.trim())) throw new Error("All restaurant profile fields are required. Logo is optional.");
     const data = await api("/partners/restaurants/create", {
       method: "POST",
       body: JSON.stringify({
         partnerId: selectedPartnerId(),
         name: partnerRestaurantName.value.trim(),
+        legalName: partnerRestaurantLegalName.value.trim(),
+        gstin: partnerRestaurantGstin.value.trim().toUpperCase(),
+        fssaiLicenseNo: partnerRestaurantFssai.value.trim(),
+        stateCode: partnerRestaurantStateCode.value.trim(),
+        addressLine1: partnerRestaurantAddress1.value.trim(),
+        addressLine2: partnerRestaurantAddress2.value.trim(),
+        city: partnerRestaurantCity.value.trim(),
+        state: partnerRestaurantState.value.trim(),
+        country: partnerRestaurantCountry.value.trim(),
+        phone: partnerRestaurantPhone.value.trim(),
+        email: partnerRestaurantEmail.value.trim(),
+        currency: partnerRestaurantCurrency.value.trim().toUpperCase(),
+        timezone: partnerRestaurantTimezone.value.trim(),
+        logoPath: partnerRestaurantLogoPath.value.trim(),
         expiryDate: partnerRestaurantExpiry.value,
         planCode: partnerRestaurantPlan.value,
         paymentAmount: partnerRestaurantPayment.value || 0
@@ -1067,20 +1086,38 @@ function updateCreateReview() {
 
 async function createRestaurant() {
   try {
-    if (!restaurantName.value.trim() || !restaurantContact.value.trim() || !restaurantOwnerEmail.value.trim() || !restaurantOwnerPhone.value.trim()) {
+    if (!restaurantName.value.trim() || !restaurantLegalName.value.trim() || !restaurantGstin.value.trim() || !restaurantFssai.value.trim() || !restaurantContact.value.trim() || !restaurantOwnerEmail.value.trim() || !restaurantOwnerPhone.value.trim()) {
       showCreateStep(1);
-      createMsg.innerText = "Restaurant name, contact name, email and mobile number are required.";
+      createMsg.innerText = "All restaurant identity and owner contact fields are required.";
+      return;
+    }
+    const locationInputs = [restaurantStateCode, restaurantAddress1, restaurantAddress2, restaurantCity, restaurantState, restaurantCountry, restaurantPhone, restaurantEmail, restaurantCurrency, restaurantTimezone];
+    if (locationInputs.some((input) => !input.value.trim())) {
+      showCreateStep(2);
+      createMsg.innerText = "All restaurant profile fields are required. Logo is optional.";
       return;
     }
     const data = await api("/tenants/create", {
       method: "POST",
       body: JSON.stringify({
         name: restaurantName.value.trim(),
+        legalName: restaurantLegalName.value.trim(),
+        gstin: restaurantGstin.value.trim().toUpperCase(),
+        fssaiLicenseNo: restaurantFssai.value.trim(),
+        stateCode: restaurantStateCode.value.trim(),
+        addressLine1: restaurantAddress1.value.trim(),
+        addressLine2: restaurantAddress2.value.trim(),
+        city: restaurantCity.value.trim(),
+        state: restaurantState.value.trim(),
         ownerName: restaurantContact.value.trim(),
         ownerEmail: restaurantOwnerEmail.value.trim(),
         ownerPhone: restaurantOwnerPhone.value.trim(),
         country: restaurantCountry.value.trim(),
+        phone: restaurantPhone.value.trim(),
+        email: restaurantEmail.value.trim(),
         currency: restaurantCurrency.value,
+        timezone: restaurantTimezone.value.trim(),
+        logoPath: restaurantLogoPath.value.trim(),
         expiryDate: expiryDate.value,
         planCode: createPlan.value,
         startsAt: createStartDate.value,

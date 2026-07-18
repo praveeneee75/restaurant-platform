@@ -314,9 +314,8 @@ function renderAdmin() {
   }).join("");
   tablesTable.innerHTML = tables.map((t) => `<tr><td>${esc(t.table_name)}</td><td>${esc(t.status)}</td><td>${actions("table", t.id)}</td></tr>`).join("");
   qrLinksTable.innerHTML = tables.map((t) => {
-    const configuredBase = String(window.KMASTER_QR_PUBLIC_URL || '').replace(/\/$/, '');
-    const baseUrl = configuredBase || state.network.qrBaseUrl || location.origin;
-    const url = `${baseUrl}/qr-menu.html?v=1.0.88&restaurantId=${encodeURIComponent(restaurantId)}&tableId=${t.id}`;
+    const baseUrl = String(state.network.publicQrBaseUrl || 'https://pos.kmasterpos.com').replace(/\/$/, '');
+    const url = `${baseUrl}/qr-menu.html?v=1.0.89&restaurantId=${encodeURIComponent(restaurantId)}&tableId=${t.id}`;
     return `<tr><td>${esc(t.table_name)}</td><td><a href="${url}" target="_blank">${esc(url)}</a></td></tr>`;
   }).join("");
 }

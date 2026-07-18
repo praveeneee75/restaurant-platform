@@ -280,8 +280,18 @@ router.get('/branding/public', async (req, res) => {
 });
 
 router.post('/restaurants/create', authenticateEither, requirePartnerAdmin, async (req, res) => {
-  const { partnerId, name, country, currency, expiryDate, planCode, paymentAmount } = req.body || {};
-  if (!name) return res.status(400).json({ success: false, message: 'Restaurant name required' });
+  const { partnerId, name, legalName, gstin, fssaiLicenseNo, stateCode, addressLine1, addressLine2,
+    city, state, country, phone, email, currency, timezone, logoPath, expiryDate, planCode, paymentAmount } = req.body || {};
+  const profile = { name, legalName, gstin, fssaiLicenseNo, stateCode, addressLine1, addressLine2, city, state, country, phone, email, currency, timezone };
+  const missing = Object.entries(profile).filter(([, value]) => !String(value || '').trim()).map(([key]) => key);
+  if (missing.length) return res.status(400).json({ success: false, message: `All restaurant profile fields are required: ${missing.join(', ')}` });
+  const normalizedGstin = String(gstin).trim().toUpperCase();
+  const normalizedFssai = String(fssaiLicenseNo).replace(/\D/g, '');
+  if (!/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(normalizedGstin)) return res.status(400).json({ success: false, message: 'Enter a valid 15-character GSTIN' });
+  if (!/^\d{14}$/.test(normalizedFssai)) return res.status(400).json({ success: false, message: 'FSSAI licence / registration number must contain 14 digits' });
+  if (!/^\d{2}$/.test(String(stateCode).trim())) return res.status(400).json({ success: false, message: 'State code must contain 2 digits' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return res.status(400).json({ success: false, message: 'Enter a valid restaurant email address' });
+  if (!/^\+?[\d ()-]{8,20}$/.test(String(phone).trim())) return res.status(400).json({ success: false, message: 'Enter a valid restaurant phone number' });
   const client = await pool.connect();
   try {
     await ensurePartnerScope(req, partnerId);
@@ -293,9 +303,13 @@ router.post('/restaurants/create', authenticateEither, requirePartnerAdmin, asyn
     const licenseKey = uuidv4();
     const syncToken = uuidv4();
     await client.query(
-      `INSERT INTO tenants (id, restaurant_code, name, country, currency)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [tenantId, restaurantCode, name, country || null, currency || null]
+      `INSERT INTO tenants (id, restaurant_code, name, legal_name, gstin, fssai_license_no, state_code,
+       address_line_1, address_line_2, city, state, country, phone, email, currency, timezone, logo_path)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+      [tenantId, restaurantCode, String(name).trim(), String(legalName).trim(), normalizedGstin, normalizedFssai,
+       String(stateCode).trim(), String(addressLine1).trim(), String(addressLine2).trim(), String(city).trim(),
+       String(state).trim(), String(country).trim(), String(phone).trim(), String(email).trim().toLowerCase(),
+       String(currency).trim().toUpperCase(), String(timezone).trim(), String(logoPath || '').trim() || null]
     );
     await client.query(
       `INSERT INTO licenses (tenant_id, license_key, sync_token, expires_at, status)

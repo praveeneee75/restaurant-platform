@@ -24,13 +24,27 @@ async function enablePlanModules(client, tenantId, planId) {
 
 router.post('/create', authenticate, async (req, res) => {
   const {
-    name, ownerName, ownerEmail, ownerPhone, country, currency, expiryDate,
+    name, legalName, gstin, fssaiLicenseNo, stateCode, addressLine1, addressLine2,
+    city, state, country, phone, email, currency, timezone, logoPath,
+    ownerName, ownerEmail, ownerPhone, expiryDate,
     planCode, startsAt, paymentAmount, paymentMode, referenceNo
   } = req.body;
 
-  if (!name || !ownerName || !ownerEmail || !ownerPhone) {
-    return res.status(400).json({ success: false, message: 'Restaurant name, contact name, email and mobile number are required' });
+  const requiredProfile = {
+    name, legalName, gstin, fssaiLicenseNo, stateCode, addressLine1, addressLine2,
+    city, state, country, phone, email, currency, timezone
+  };
+  const missingProfile = Object.entries(requiredProfile).filter(([, value]) => !String(value || '').trim()).map(([key]) => key);
+  if (missingProfile.length || !ownerName || !ownerEmail || !ownerPhone) {
+    return res.status(400).json({ success: false, message: `All restaurant profile and owner contact fields are required${missingProfile.length ? `: ${missingProfile.join(', ')}` : ''}` });
   }
+  const normalizedGstin = String(gstin).trim().toUpperCase();
+  if (!/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(normalizedGstin)) return res.status(400).json({ success: false, message: 'Enter a valid 15-character GSTIN' });
+  const normalizedFssai = String(fssaiLicenseNo).replace(/\D/g, '');
+  if (!/^\d{14}$/.test(normalizedFssai)) return res.status(400).json({ success: false, message: 'FSSAI licence / registration number must contain 14 digits' });
+  if (!/^\d{2}$/.test(String(stateCode).trim())) return res.status(400).json({ success: false, message: 'State code must contain 2 digits' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return res.status(400).json({ success: false, message: 'Enter a valid restaurant email address' });
+  if (!/^\+?[\d ()-]{8,20}$/.test(String(phone).trim())) return res.status(400).json({ success: false, message: 'Enter a valid restaurant phone number' });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(ownerEmail).trim())) {
     return res.status(400).json({ success: false, message: 'Enter a valid owner email address' });
   }
@@ -50,9 +64,16 @@ router.post('/create', authenticate, async (req, res) => {
 
     await client.query('BEGIN');
     await client.query(
-      `INSERT INTO tenants (id, restaurant_code, name, country, currency, contact_name, contact_email, contact_phone)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [tenantId, restaurantCode, name, country || null, currency || null, ownerName.trim(), ownerEmail.trim().toLowerCase(), normalizedPhone]
+      `INSERT INTO tenants (
+         id, restaurant_code, name, legal_name, gstin, fssai_license_no, state_code,
+         address_line_1, address_line_2, city, state, country, phone, email, currency,
+         timezone, logo_path, contact_name, contact_email, contact_phone
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+      [tenantId, restaurantCode, String(name).trim(), String(legalName).trim(), normalizedGstin, normalizedFssai,
+        String(stateCode).trim(), String(addressLine1).trim(), String(addressLine2).trim(), String(city).trim(),
+        String(state).trim(), String(country).trim(), String(phone).trim(), String(email).trim().toLowerCase(),
+        String(currency).trim().toUpperCase(), String(timezone).trim(), String(logoPath || '').trim() || null,
+        ownerName.trim(), ownerEmail.trim().toLowerCase(), normalizedPhone]
     );
     const license = await client.query(
       `INSERT INTO licenses (tenant_id, license_key, sync_token, expires_at, status)

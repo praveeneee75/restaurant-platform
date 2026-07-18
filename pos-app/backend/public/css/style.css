@@ -1048,6 +1048,28 @@ button:hover,
   pointer-events: none;
 }
 
+.qr-links-panel { overflow-x: hidden; }
+.table-panel .qr-links-table {
+  min-width: 0;
+  table-layout: auto;
+}
+.table-panel .qr-links-table th:first-child,
+.table-panel .qr-links-table td:first-child {
+  width: 1%;
+  min-width: max-content;
+  white-space: nowrap;
+}
+.table-panel .qr-links-table th:last-child,
+.table-panel .qr-links-table td:last-child {
+  width: auto;
+  white-space: normal;
+}
+.qr-links-table td:last-child a {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .field-invalid,
 .field-invalid:focus {
   border-color: #dc2626;

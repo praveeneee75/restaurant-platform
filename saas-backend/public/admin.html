@@ -93,15 +93,27 @@
         <button id="createStep3Tab" type="button" onclick="showCreateStep(3)">3. License</button>
       </div>
       <div class="wizard-panel active" id="createStep1">
-        <label>Restaurant name<input id="restaurantName" placeholder="Restaurant or branch name"></label>
+        <label>Display name<input id="restaurantName" required placeholder="Restaurant or branch name"></label>
+        <label>Legal name<input id="restaurantLegalName" required placeholder="Registered business name"></label>
+        <label>GSTIN<input id="restaurantGstin" required maxlength="15" placeholder="33ABCDE1234F1Z5"></label>
+        <label>FSSAI licence / registration no.<input id="restaurantFssai" required inputmode="numeric" maxlength="14" placeholder="14-digit number"></label>
         <label>Contact name<input id="restaurantContact" autocomplete="name" placeholder="Owner or manager name"></label>
         <label>Notification email<input id="restaurantOwnerEmail" type="email" autocomplete="email" placeholder="owner@restaurant.com"></label>
         <label>Mobile number<input id="restaurantOwnerPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+91 98765 43210"></label>
         <div class="wizard-actions"><button type="button" onclick="showCreateStep(2)">Next</button></div>
       </div>
       <div class="wizard-panel" id="createStep2">
-        <label>Country<input id="restaurantCountry" placeholder="India" value="India"></label>
+        <label>State code<input id="restaurantStateCode" required inputmode="numeric" maxlength="2" value="33"></label>
+        <label>Address line 1<input id="restaurantAddress1" required placeholder="Street address"></label>
+        <label>Address line 2<input id="restaurantAddress2" required placeholder="Area / landmark"></label>
+        <label>City<input id="restaurantCity" required></label>
+        <label>State<input id="restaurantState" required value="Tamil Nadu"></label>
+        <label>Country<input id="restaurantCountry" required placeholder="India" value="India"></label>
+        <label>Restaurant phone<input id="restaurantPhone" required type="tel" autocomplete="tel"></label>
+        <label>Restaurant email<input id="restaurantEmail" required type="email" autocomplete="email"></label>
         <label>Currency<select id="restaurantCurrency"><option value="INR">INR</option><option value="USD">USD</option><option value="AUD">AUD</option></select></label>
+        <label>Timezone<input id="restaurantTimezone" required value="Asia/Kolkata"></label>
+        <label>Logo path (optional)<input id="restaurantLogoPath" placeholder="Optional"></label>
         <div class="wizard-actions"><button type="button" onclick="showCreateStep(1)">Back</button><button type="button" onclick="showCreateStep(3)">Next</button></div>
       </div>
       <div class="wizard-panel" id="createStep3">
@@ -353,7 +365,21 @@
     <section class="saas-view" id="view-partner-restaurants" data-title="Partner Restaurants" data-hint="Create restaurants under the selected partner and review their POS health.">
       <div class="section-heading"><h2>Partner Restaurants</h2><p>Create partner-managed customers with an initial package.</p></div>
       <div class="form-grid">
-        <input id="partnerRestaurantName" placeholder="Restaurant name">
+        <input id="partnerRestaurantName" required placeholder="Display name">
+        <input id="partnerRestaurantLegalName" required placeholder="Legal name">
+        <input id="partnerRestaurantGstin" required maxlength="15" placeholder="GSTIN">
+        <input id="partnerRestaurantFssai" required maxlength="14" inputmode="numeric" placeholder="FSSAI 14-digit number">
+        <input id="partnerRestaurantStateCode" required maxlength="2" inputmode="numeric" placeholder="State code">
+        <input id="partnerRestaurantAddress1" required placeholder="Address line 1">
+        <input id="partnerRestaurantAddress2" required placeholder="Address line 2">
+        <input id="partnerRestaurantCity" required placeholder="City">
+        <input id="partnerRestaurantState" required placeholder="State">
+        <input id="partnerRestaurantCountry" required value="India" placeholder="Country">
+        <input id="partnerRestaurantPhone" required type="tel" placeholder="Restaurant phone">
+        <input id="partnerRestaurantEmail" required type="email" placeholder="Restaurant email">
+        <input id="partnerRestaurantCurrency" required value="INR" placeholder="Currency">
+        <input id="partnerRestaurantTimezone" required value="Asia/Kolkata" placeholder="Timezone">
+        <input id="partnerRestaurantLogoPath" placeholder="Logo path (optional)">
         <input id="partnerRestaurantExpiry" type="date">
         <select id="partnerRestaurantPlan"></select>
         <input id="partnerRestaurantPayment" type="number" min="0" step="0.01" placeholder="Initial payment">

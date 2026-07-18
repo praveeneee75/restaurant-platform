@@ -1005,6 +1005,20 @@ function localIpAddresses() {
   return (physical.length ? physical : candidates).map(({ address }) => address);
 }
 
+function applyCloudRestaurantProfile(db, licenseData) {
+  const profile = licenseData?.restaurantProfile;
+  if (!profile || typeof profile !== 'object') return;
+  const allowed = [
+    'restaurant_display_name', 'legal_name', 'gstin', 'fssai_license_no', 'state_code',
+    'address_line_1', 'address_line_2', 'city', 'state', 'country', 'phone', 'email',
+    'currency', 'timezone', 'logo_path'
+  ];
+  const values = Object.fromEntries(allowed.map((key) => [key, String(profile[key] || '')]));
+  // An omitted SaaS logo must not erase a locally configured image path.
+  if (!values.logo_path) delete values.logo_path;
+  setConfigValues(db, values);
+}
+
 function mobilePosBaseUrl() {
   const configured = String(process.env.KMASTER_MOBILE_POS_URL || process.env.MOBILE_POS_URL || '').trim().replace(/\/$/, '');
   if (/^https?:\/\//i.test(configured)) return configured;
@@ -1160,6 +1174,8 @@ app.post('/desktop/license/refresh', async (req, res) => {
       });
     }
 
+    applyCloudRestaurantProfile(db, response.data);
+
     db.prepare(`
       UPDATE license_status
       SET last_checked = datetime('now'),
@@ -1254,6 +1270,7 @@ db.prepare(`
 if (response.data.syncToken) {
   setConfigValues(db, { cloud_sync_token: response.data.syncToken });
 }
+applyCloudRestaurantProfile(db, response.data);
 setConfigValues(db, {
   restaurant_display_name: response.data.restaurantName || getConfigValue(db, 'restaurant_display_name', 'Restaurant POS'),
   license_package_code: response.data.packageCode || '',
@@ -6040,6 +6057,7 @@ app.get('/network/info', (req, res) => {
   const port = process.env.PORT || 3000;
   const ips = localIpAddresses();
   const qrBaseUrl = mobilePosBaseUrl();
+  const publicQrBaseUrl = String(process.env.KMASTER_QR_PUBLIC_URL || 'https://pos.kmasterpos.com').trim().replace(/\/$/, '');
   res.json({
     success: true,
     hostname: os.hostname(),
@@ -6047,6 +6065,7 @@ app.get('/network/info', (req, res) => {
     posUrls: ips.map((ip) => `http://${ip}:${port}/login.html`),
     waiterUrls: ips.map((ip) => `http://${ip}:${port}/waiter.html`),
     qrBaseUrl,
+    publicQrBaseUrl,
     qrUrls: ips.map((ip) => `http://${ip}:${port}/qr-menu.html`),
     port: Number(port),
     activeRestaurantId: getSingleRestaurantId(),

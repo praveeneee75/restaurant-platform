@@ -22,6 +22,18 @@ async function migrate() {
   await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_name TEXT');
   await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_email TEXT');
   await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_phone TEXT');
+  await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS legal_name TEXT');
+  await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS gstin TEXT');
+  await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS fssai_license_no TEXT');
+  await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS state_code TEXT');
+  await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS address_line_1 TEXT');
+  await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS address_line_2 TEXT');
+  await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS city TEXT');
+  await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS state TEXT');
+  await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS phone TEXT');
+  await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS email TEXT');
+  await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS timezone TEXT');
+  await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS logo_path TEXT');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS licenses (
