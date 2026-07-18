@@ -8,11 +8,22 @@ const electron = process.platform === 'win32'
 const probe = path.resolve(__dirname, 'electron-native-probe.js');
 const check = spawnSync(electron, [probe], {
   cwd: posDir,
-  encoding: 'utf8'
+  encoding: 'utf8',
+  env: {
+    ...process.env,
+    // CI runners do not provide an interactive Windows desktop. Running the
+    // probe in Electron's Node mode still uses Electron's native-module ABI.
+    ELECTRON_RUN_AS_NODE: '1'
+  }
 });
 
 if (check.status !== 0) {
-  process.stderr.write(check.stderr || 'Electron native-module verification failed.\n');
+  const details = [
+    check.error && check.error.stack,
+    check.stderr,
+    check.stdout
+  ].filter(Boolean).join('\n');
+  process.stderr.write(details || `Electron native-module verification failed (status=${check.status}, signal=${check.signal || 'none'}).\n`);
   process.exit(check.status || 1);
 }
 
