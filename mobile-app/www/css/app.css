@@ -160,8 +160,10 @@ select:focus-visible {
 }
 .dashboard-panel {
   display: grid;
-  gap: 14px;
-  padding: 16px;
+  grid-template-rows: auto 1fr auto;
+  min-height: calc(100dvh - 32px);
+  padding: 0;
+  overflow: hidden;
 }
 .dashboard-panel[hidden] {
   display: none !important;
@@ -200,6 +202,96 @@ select:focus-visible {
   background: #0f172a;
   font-size: 15px;
 }
+.owner-appbar {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px 44px;
+  gap: 8px;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,.96);
+}
+.icon-button,
+.outlet-button {
+  min-height: 44px;
+  padding: 9px 11px;
+  border: 1px solid #d7deea;
+  background: white;
+  color: var(--text);
+  font-weight: 800;
+}
+.outlet-button { justify-content: space-between; overflow: hidden; }
+.outlet-button span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notification-button { position: relative; }
+.notification-button > span {
+  position: absolute;
+  top: -6px;
+  right: -5px;
+  display: grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 11px;
+}
+.owner-content { min-height: 0; padding: 16px; overflow-y: auto; background: #f7f9fc; }
+.owner-title-row { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.owner-title-row h2 { margin: 0; font-size: 23px; }
+.date-control { width: min(155px, 45%); }
+.date-control input { min-height: 42px; padding: 8px; font-size: 14px; }
+.owner-view { display: none; margin-top: 14px; }
+.owner-view.active { display: grid; gap: 14px; }
+.metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.metric-card,
+.insight-card {
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: white;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .04);
+}
+.metric-card { display: grid; gap: 7px; min-width: 0; padding: 16px; }
+.metric-card span { color: var(--muted); font-size: 12px; font-weight: 800; text-transform: uppercase; }
+.metric-card strong { font-size: clamp(20px, 6vw, 29px); overflow-wrap: anywhere; }
+.metric-card small { color: var(--muted); line-height: 1.35; }
+.insight-card { padding: 16px; }
+.insight-card > header { display: flex; align-items: start; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
+.insight-card h3 { margin: 0 0 3px; font-size: 18px; }
+.insight-card p { color: var(--muted); font-size: 13px; }
+.sync-pill { padding: 5px 8px; border-radius: 999px; background: #ecfdf5; color: #047857; font-size: 11px; font-weight: 900; }
+.bar-chart { display: flex; align-items: end; gap: 7px; min-height: 180px; padding: 18px 4px 0; border-bottom: 1px solid var(--border); }
+.chart-column { display: grid; grid-template-rows: 1fr auto; align-items: end; justify-items: center; flex: 1; min-width: 0; height: 165px; gap: 7px; }
+.chart-bar { width: min(24px, 78%); min-height: 3px; border-radius: 8px 8px 2px 2px; background: linear-gradient(180deg, var(--primary), #60a5fa); }
+.chart-column small { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.list-stack { display: grid; }
+.data-row { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 10px; align-items: center; min-height: 55px; padding: 10px 0; border-top: 1px solid #edf1f6; }
+.data-row:first-child { border-top: 0; }
+.data-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--primary); }
+.data-row span { min-width: 0; }
+.data-row span strong,.data-row span small { display: block; }
+.data-row span small { margin-top: 3px; color: var(--muted); }
+.empty-state { padding: 18px 4px; color: var(--muted); text-align: center; }
+.owner-bottom-nav { display: grid; grid-template-columns: repeat(3,1fr); padding: 5px max(6px,env(safe-area-inset-right)) max(5px,env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-left)); border-top: 1px solid var(--border); background: white; }
+.owner-bottom-nav button { display: grid; gap: 2px; min-height: 54px; padding: 5px; border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; }
+.owner-bottom-nav button span { font-size: 19px; }
+.owner-bottom-nav button.active { color: var(--primary); box-shadow: inset 0 3px 0 var(--primary); }
+.settings-actions { display: flex; gap: 10px; }
+.danger-button { background: #fee2e2; color: #b91c1c; }
+.owner-drawer { position: fixed; inset: 0; z-index: 30; display: grid; grid-template-columns: min(86vw,340px) 1fr; }
+.owner-drawer[hidden] { display: none !important; }
+.drawer-backdrop { grid-column: 2; grid-row: 1; width: 100%; height: 100%; border-radius: 0; background: rgba(15,23,42,.55); }
+.drawer-panel { grid-column: 1; grid-row: 1; display: grid; align-content: start; gap: 5px; padding: max(18px,env(safe-area-inset-top)) 12px 18px; background: white; box-shadow: 15px 0 40px rgba(15,23,42,.18); overflow-y: auto; }
+.drawer-panel header { display: flex; align-items: center; gap: 12px; padding: 6px 8px 20px; }
+.drawer-panel header div:last-child { min-width: 0; }
+.drawer-panel header strong,.drawer-panel header small { display: block; overflow-wrap: anywhere; }
+.drawer-panel header small { margin-top: 4px; color: var(--muted); }
+.mini-logo { width: 42px; height: 42px; border-radius: 10px; }
+.drawer-panel button { justify-content: flex-start; min-height: 46px; background: transparent; color: var(--text); text-align: left; }
+.drawer-panel button:hover { background: #eff6ff; color: var(--primary); }
+.drawer-panel hr { width: 100%; border: 0; border-top: 1px solid var(--border); }
+.drawer-panel .drawer-logout { color: #b91c1c; }
 .webview-panel {
   position: fixed;
   inset: 0;
@@ -314,15 +406,12 @@ iframe {
     width: 52px;
     height: 52px;
   }
-  .dashboard-header {
-    align-items: stretch;
-    flex-direction: column;
-  }
+  .dashboard-panel { min-height: calc(100dvh - 24px); }
   .secondary-button {
     width: 100%;
   }
-  .role-grid {
-    grid-template-columns: 1fr;
-    padding: 0;
-  }
+  .role-grid { grid-template-columns: repeat(2,minmax(0,1fr)); padding: 0; }
+  .owner-content { padding: 12px; }
+  .owner-title-row { align-items: stretch; flex-direction: column; }
+  .date-control { width: 100%; }
 }

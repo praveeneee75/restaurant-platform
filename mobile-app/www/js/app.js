@@ -26,7 +26,8 @@ const DEV_POS_URL = cleanBase(window.DEV_POS_URL || localStorage.getItem("devPos
 const state = {
   restaurants: [],
   restaurant: null,
-  user: JSON.parse(localStorage.getItem("user") || "null")
+  user: JSON.parse(localStorage.getItem("user") || "null"),
+  ownerData: null
 };
 const native = window.KMasterNative || { isNative: false };
 const BIOMETRIC_KEY = "kmaster-biometric-login";
@@ -99,8 +100,94 @@ function showLoginView(message) {
 function showDashboardView(message) {
   loginView.hidden = true;
   dashboardView.hidden = false;
-  dashboardTitle.textContent = state.restaurant?.name || localStorage.getItem("restaurantName") || "Mobile Dashboard";
+  dashboardTitle.textContent = "Business overview";
   dashboardStatus.textContent = message || `Signed in as ${state.user?.role || "user"}.`;
+  ownerOutletName.textContent = state.restaurant?.name || localStorage.getItem("restaurantName") || "Restaurant";
+  drawerRestaurantName.textContent = ownerOutletName.textContent;
+  drawerUserName.textContent = state.user?.name || state.user?.username || state.user?.role || "User";
+  const ownerAllowed = ["OWNER", "MANAGER", "MANAGER_2"].includes(String(state.user?.role || "").toUpperCase());
+  showOwnerTab(ownerAllowed ? "sales" : "more");
+  if (ownerAllowed) refreshOwnerDashboard().catch((error) => { dashboardStatus.textContent = error.message; });
+}
+
+function currency(value) {
+  const code = state.restaurant?.currency || localStorage.getItem("currency") || "INR";
+  try { return new Intl.NumberFormat("en-IN", { style: "currency", currency: code, maximumFractionDigits: 2 }).format(Number(value || 0)); }
+  catch (_) { return `${code} ${Number(value || 0).toFixed(2)}`; }
+}
+
+function today() { return new Date().toISOString().slice(0, 10); }
+
+function showOwnerTab(tab) {
+  document.querySelectorAll("[data-owner-view]").forEach((view) => view.classList.toggle("active", view.dataset.ownerView === tab));
+  document.querySelectorAll("[data-owner-tab]").forEach((button) => button.classList.toggle("active", button.dataset.ownerTab === tab));
+  ownerDrawer.hidden = true;
+}
+
+function dataRows(rows, emptyMessage) {
+  return rows.length ? rows.join("") : `<p class="empty-state">${esc(emptyMessage)}</p>`;
+}
+
+function renderOwnerDashboard(payload) {
+  const { dashboard, advanced, live, pendingQr, date } = payload;
+  const daily = dashboard.dailySales || [];
+  const paidOrders = daily.reduce((sum, row) => sum + Number(row.orders || 0), 0);
+  const sales = Number(advanced.profitAndLoss?.sales || dashboard.taxSummary?.taxableSales || 0);
+  const discounts = Number(advanced.profitAndLoss?.discounts || 0);
+  const refunds = Number(advanced.profitAndLoss?.refunds || 0);
+  const allOrders = (dashboard.orderSummary || []).reduce((sum, row) => sum + Number(row.count || 0), 0);
+  ownerTotalSales.textContent = currency(sales);
+  ownerNetSales.textContent = currency(Math.max(sales - discounts - refunds, 0));
+  ownerAverageOrder.textContent = currency(paidOrders ? sales / paidOrders : 0);
+  ownerTaxCollected.textContent = currency(dashboard.taxSummary?.tax || 0);
+  ownerPaidOrders.textContent = `${paidOrders} paid order${paidOrders === 1 ? "" : "s"}`;
+  ownerAllOrders.textContent = `${allOrders} total order${allOrders === 1 ? "" : "s"}`;
+
+  const hourly = advanced.hourlySales || [];
+  const maxSales = Math.max(...hourly.map((row) => Number(row.sales || 0)), 1);
+  ownerSalesChart.innerHTML = dataRows(hourly.map((row) => `<div class="chart-column" title="${esc(row.hour)}:00 · ${esc(currency(row.sales))}"><div class="chart-bar" style="height:${Math.max(3, Number(row.sales || 0) / maxSales * 125)}px"></div><small>${esc(row.hour)}h</small></div>`), "No paid sales for this date");
+
+  ownerPaymentSummary.innerHTML = dataRows((advanced.paymentSummary || []).map((row, index) => `<div class="data-row"><i class="data-dot" style="background:${["#2563eb","#10b981","#f59e0b","#8b5cf6"][index % 4]}"></i><span><strong>${esc(row.payment_mode || "Other")}</strong><small>${row.payments || 0} payment(s)</small></span><b>${esc(currency(row.total))}</b></div>`), "No settled payments");
+  ownerTopItems.innerHTML = dataRows((dashboard.topSellingItems || []).slice(0, 8).map((row) => `<div class="data-row"><i class="data-dot"></i><span><strong>${esc(row.name)}</strong><small>${row.quantity || 0} sold</small></span><b>${esc(currency(row.total))}</b></div>`), "No item sales");
+
+  const running = live.orders || [];
+  const runningValue = running.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
+  ownerRunningOrders.textContent = String(running.length);
+  ownerRunningAmount.textContent = `${currency(runningValue)} value`;
+  ownerPendingOrders.textContent = String((pendingQr.orders || []).length);
+  const grouped = running.reduce((map, order) => {
+    const key = String(order.order_type || "OTHER").replaceAll("_", " ");
+    map[key] ||= { count: 0, total: 0 }; map[key].count += 1; map[key].total += Number(order.total_amount || 0); return map;
+  }, {});
+  ownerOrderOperations.innerHTML = dataRows(Object.entries(grouped).map(([name, value]) => `<div class="data-row"><i class="data-dot"></i><span><strong>${esc(name)}</strong><small>${value.count} running order(s)</small></span><b>${esc(currency(value.total))}</b></div>`), "No running orders");
+
+  const profit = advanced.profitAndLoss || {};
+  ownerLeakage.innerHTML = dataRows([
+    ["Discounts", profit.discounts], ["Refunds", profit.refunds], ["Expenses", profit.expenses]
+  ].map(([name, value], index) => `<div class="data-row"><i class="data-dot" style="background:${["#f59e0b","#ef4444","#8b5cf6"][index]}"></i><span><strong>${name}</strong><small>${date}</small></span><b>${esc(currency(value))}</b></div>`), "No leakage data");
+  ownerExpenses.innerHTML = dataRows((profit.byCategory || []).map((row, index) => `<div class="data-row"><i class="data-dot" style="background:${["#2563eb","#f97316","#22c55e","#38bdf8"][index % 4]}"></i><span><strong>${esc(row.category || "Other")}</strong><small>Expense category</small></span><b>${esc(currency(row.total))}</b></div>`), "No expenses for this date");
+  ownerNotificationCount.textContent = String((pendingQr.orders || []).length);
+  ownerSyncStatus.textContent = "Synced now";
+  dashboardStatus.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+async function refreshOwnerDashboard() {
+  const restaurant = state.restaurant || selectedRestaurant();
+  const posBase = restaurantPosUrl(restaurant);
+  const restaurantId = restaurant?.restaurantId || localStorage.getItem("restaurantId");
+  if (!posBase || !restaurantId) throw new Error("Connect to the restaurant POS to load the owner dashboard.");
+  const date = ownerBusinessDate.value || today();
+  ownerBusinessDate.value = date;
+  dashboardStatus.textContent = "Refreshing business data...";
+  const params = `restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(state.user?.role || "OWNER")}&fromDate=${date}&toDate=${date}`;
+  const [dashboard, advanced, live, pendingQr] = await Promise.all([
+    fetchJson(`${posBase}/reports/dashboard?${params}`),
+    fetchJson(`${posBase}/reports/advanced?${params}`),
+    fetchJson(`${posBase}/orders/live?restaurantId=${encodeURIComponent(restaurantId)}`),
+    fetchJson(`${posBase}/qr/orders/pending?restaurantId=${encodeURIComponent(restaurantId)}`).catch(() => ({ orders: [] }))
+  ]);
+  state.ownerData = { dashboard, advanced, live, pendingQr, date };
+  renderOwnerDashboard(state.ownerData);
 }
 
 function rememberRestaurant(restaurant) {
@@ -265,11 +352,19 @@ async function loadRestaurants() {
       currency: restaurant.currency || "INR"
     })).filter((restaurant) => restaurant.restaurantId);
     renderRestaurantOptions();
-    state.restaurant = null;
-    restaurantSelect.value = "";
-    activeRestaurantName.textContent = "No restaurant selected";
-    brandStatus.textContent = "Select your restaurant and sign in.";
-    loginStatus.textContent = state.restaurants.length ? "Login with your POS username and PIN." : "No restaurant has active mobile access.";
+    const rememberedId = localStorage.getItem("restaurantId");
+    const remembered = state.user && state.restaurants.find((restaurant) => restaurant.restaurantId === rememberedId);
+    if (remembered) {
+      await useRestaurant(remembered);
+      showRoleGrid(state.user.role);
+      showDashboardView(`Signed in as ${state.user.role}.`);
+    } else {
+      state.restaurant = null;
+      restaurantSelect.value = "";
+      activeRestaurantName.textContent = "No restaurant selected";
+      brandStatus.textContent = "Select your restaurant and sign in.";
+      loginStatus.textContent = state.restaurants.length ? "Login with your POS username and PIN." : "No restaurant has active mobile access.";
+    }
   } catch (err) {
     const fallback = savedRestaurant();
     if (!fallback) {
@@ -447,10 +542,8 @@ logoutButton.addEventListener("click", () => {
   showLoginView("Logged out. Login with your POS username and PIN.");
 });
 
-document.querySelector(".role-grid").addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-role]");
-  if (!button) return;
-  const role = button.dataset.role;
+async function openRoleWorkspace(role, button) {
+  ownerDrawer.hidden = true;
   const restaurant = state.restaurant || selectedRestaurant();
   const restId = restaurant?.restaurantId || localStorage.getItem("restaurantId");
   const posBase = restaurantPosUrl(restaurant);
@@ -483,7 +576,26 @@ document.querySelector(".role-grid").addEventListener("click", async (event) => 
   } finally {
     button.disabled = false;
   }
+}
+
+document.addEventListener("click", (event) => {
+  const roleButton = event.target.closest("[data-role]");
+  if (roleButton) openRoleWorkspace(roleButton.dataset.role, roleButton);
 });
+
+document.querySelectorAll("[data-owner-tab]").forEach((button) => button.addEventListener("click", () => showOwnerTab(button.dataset.ownerTab)));
+document.querySelectorAll("[data-drawer-tab]").forEach((button) => button.addEventListener("click", () => showOwnerTab(button.dataset.drawerTab)));
+ownerMenuButton.addEventListener("click", () => { ownerDrawer.hidden = false; });
+closeOwnerDrawer.addEventListener("click", () => { ownerDrawer.hidden = true; });
+ownerRefreshButton.addEventListener("click", () => refreshOwnerDashboard().catch((error) => { dashboardStatus.textContent = error.message; }));
+ownerBusinessDate.addEventListener("change", () => refreshOwnerDashboard().catch((error) => { dashboardStatus.textContent = error.message; }));
+ownerOutletButton.addEventListener("click", () => alert(state.restaurant?.name || "Current restaurant"));
+ownerNotificationButton.addEventListener("click", () => {
+  const count = Number(ownerNotificationCount.textContent || 0);
+  alert(count ? `${count} QR order${count === 1 ? "" : "s"} waiting for approval.` : "No new notifications.");
+});
+drawerSettingsButton.addEventListener("click", async () => { ownerDrawer.hidden = true; await refreshBiometricControls(); settingsDialog.showModal(); });
+drawerLogoutButton.addEventListener("click", () => { ownerDrawer.hidden = true; logoutButton.click(); });
 
 closeFrame.addEventListener("click", () => {
   appFrame.src = "about:blank";
@@ -491,6 +603,7 @@ closeFrame.addEventListener("click", () => {
 });
 
 showRoleGrid(state.user?.role || "");
+ownerBusinessDate.value = today();
 loadRestaurants();
 refreshBiometricControls();
 if (state.user) {
