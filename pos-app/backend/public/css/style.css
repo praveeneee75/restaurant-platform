@@ -468,6 +468,7 @@ button:hover,
 
 .table-panel table {
   width: 100%;
+  min-width: 720px;
   margin: 0;
   border-collapse: collapse;
   table-layout: fixed;
@@ -512,9 +513,9 @@ button:hover,
   overflow: hidden;
 }
 
-.app-home-nav { grid-column: 1 / -1; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:10px 18px; background:rgba(255,255,255,.96); border-bottom:1px solid #dbe4ef; position:sticky; top:0; z-index:10; box-shadow:0 4px 18px rgba(15,23,42,.05); }
-.app-home-brand { display:flex; align-items:center; gap:4px; color:#123b8f; font-size:17px; white-space:nowrap; }.app-home-brand span { color:#e85d2a; }.app-home-brand small { margin-left:12px; color:var(--muted); font-size:12px; font-weight:600; }
-.app-home-nav nav { display:flex; flex-wrap:nowrap; justify-content:flex-end; gap:6px; min-width:0; }.app-home-nav a,.app-home-nav button { min-height:38px; padding:8px 11px; border:1px solid #d6dfeb; border-radius:10px; background:#f7faff; color:#173d86; text-decoration:none; font-weight:750; cursor:pointer; white-space:nowrap; }.app-home-nav a:hover,.app-home-nav a.active,.app-home-nav button:hover { background:#2563eb; border-color:#2563eb; color:#fff; }
+.app-home-nav { grid-column: 1 / -1; display:flex; align-items:center; gap:clamp(8px,1vw,14px); min-width:0; padding:10px clamp(10px,1.2vw,18px); background:rgba(255,255,255,.96); border-bottom:1px solid #dbe4ef; position:sticky; top:0; z-index:10; box-shadow:0 4px 18px rgba(15,23,42,.05); }
+.app-home-brand { display:flex; flex:0 0 auto; align-items:center; gap:4px; max-width:min(30vw,390px); overflow:hidden; color:#123b8f; font-size:clamp(14px,1.05vw,17px); white-space:nowrap; }.app-home-brand span { color:#e85d2a; }.app-home-brand small { min-width:0; margin-left:clamp(6px,.8vw,12px); overflow:hidden; color:var(--muted); font-size:clamp(10px,.75vw,12px); font-weight:600; text-overflow:ellipsis; }
+.app-home-nav nav { display:flex; flex:1 1 auto; flex-wrap:nowrap; justify-content:flex-start; gap:clamp(4px,.45vw,6px); min-width:0; overflow-x:auto; overflow-y:hidden; padding:1px 0 3px; scrollbar-width:thin; overscroll-behavior-inline:contain; }.app-home-nav a,.app-home-nav button { flex:0 0 auto; min-height:38px; padding:clamp(7px,.55vw,8px) clamp(9px,.7vw,11px); border:1px solid #d6dfeb; border-radius:10px; background:#f7faff; color:#173d86; font-size:clamp(12px,.9vw,16px); text-decoration:none; font-weight:750; cursor:pointer; white-space:nowrap; }.app-home-nav a:hover,.app-home-nav a.active,.app-home-nav button:hover { background:#2563eb; border-color:#2563eb; color:#fff; }
 
 .pos-tables,
 .pos-cart {
@@ -659,7 +660,7 @@ button:hover,
 .invoice-detail-line { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .invoice-detail-line small { display: block; color: #8a5a00; }
 .invoice-detail-total { display: flex; justify-content: space-between; font-size: 18px; font-weight: 800; }
-.table-panel table { width: 100%; table-layout: fixed; }.table-panel td, .table-panel th { vertical-align: middle; }.table-panel td:last-child, .table-panel th:last-child { width: 130px; }
+.table-panel table { width: 100%; table-layout: fixed; }.table-panel td, .table-panel th { vertical-align: middle; }.table-panel td:last-child, .table-panel th:last-child { width: 184px; }.table-panel td:last-child { white-space: nowrap; }.table-panel td:last-child > .action-cell { display: inline-flex; flex-wrap: nowrap; }.table-panel td:last-child > button, .table-panel .action-cell > button { flex: 0 0 auto; min-height: 36px; padding: 8px 11px; white-space: nowrap; }
 .billing-open-bill { display: grid; grid-template-columns: minmax(58px, .7fr) minmax(0, 1.3fr); gap: 10px; align-items: center; }.billing-open-bill strong, .billing-open-bill span { display: block; min-width: 0; overflow-wrap: anywhere; }.billing-open-bill strong { font-size: 14px; line-height: 1.15; white-space: normal; }.billing-open-bill span { color: #dbeafe; margin-top: 0; line-height: 1.25; }.billing-open-bill span b, .billing-open-bill span em { display: block; }.billing-open-bill span b { font-weight: 700; }.billing-open-bill span em { margin-top: 4px; color: #fff; font-style: normal; font-weight: 800; }
 @media (max-width: 1000px) { .invoice-workspace { grid-template-columns: 1fr; }.invoice-workspace .invoice-detail { position: static; max-height: none; } } @media (max-width: 700px) { .invoice-filters { grid-template-columns: 1fr; } .table-panel { overflow-x: hidden; } .table-panel table { min-width: 0; } .table-panel th, .table-panel td { padding: 9px 7px; } .invoice-detail header { flex-direction: column; } }
 .cart-line.saved { background: #dcfce7 !important; border-left: 5px solid #16a34a !important; }
@@ -686,7 +687,7 @@ button:hover,
 }
 
 @media (max-width: 850px) {
-  .app-home-nav { flex-direction: row; align-items: center; overflow: hidden; padding: 8px 10px; }
+  .app-home-nav { flex-direction: row; align-items: center; padding: 8px 10px; }
   .app-home-brand { flex: 0 0 auto; max-width: 42vw; overflow: hidden; text-overflow: ellipsis; }
   .app-home-brand small { display: none; }
   .app-home-nav nav { flex: 1 1 auto; justify-content: flex-start; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
@@ -1550,10 +1551,60 @@ button:hover,
     height: auto;
   }
 
+  .admin-shell {
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
   .admin-sidebar,
   .pos-tables,
   .pos-cart {
     min-height: auto;
+  }
+
+  .admin-sidebar {
+    position: static;
+    max-height: none;
+    padding: 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .admin-sidebar .brand-block {
+    margin-bottom: 8px;
+  }
+
+  .admin-nav {
+    display: flex;
+    gap: 10px;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .admin-nav .nav-group {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px 0 0;
+    border-top: 0;
+    border-right: 1px solid var(--border);
+  }
+
+  .admin-nav .nav-group:last-child {
+    padding-right: 0;
+    border-right: 0;
+  }
+
+  .admin-nav .nav-group-title {
+    margin: 0 4px 0 0;
+    white-space: nowrap;
+  }
+
+  .admin-nav .nav-btn,
+  .admin-nav .nav-link {
+    width: auto;
+    min-height: 38px;
+    white-space: nowrap;
   }
 
   .report-grid {
@@ -1617,7 +1668,7 @@ button:hover,
     position: static;
     max-height: none;
     min-height: auto;
-    padding: 14px;
+    padding: 10px;
   }
 
   .brand-block {
@@ -1625,23 +1676,26 @@ button:hover,
   }
 
   .admin-nav {
-    gap: 10px;
-  }
-
-  .nav-group {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
     gap: 8px;
   }
 
+  .nav-group {
+    display: flex;
+    gap: 6px;
+  }
+
   .nav-group-title {
-    grid-column: 1 / -1;
+    grid-column: auto;
   }
 
   .nav-btn,
   .nav-link {
-    min-height: 42px;
-    padding: 10px;
+    width: auto;
+    min-height: 38px;
+    padding: 8px 10px;
     background: rgba(255, 255, 255, 0.07);
+    white-space: nowrap;
   }
 
   .admin-main,

@@ -57,7 +57,7 @@ async function fetchJson(url) {
 }
 
 function actions(type, id) {
-  return `<button class="mini-btn" data-edit-${type}="${id}" type="button">Edit</button><button class="danger-btn" data-delete-${type}="${id}" type="button">Delete</button>`;
+  return `<span class="action-cell"><button class="mini-btn" data-edit-${type}="${id}" type="button">Edit</button><button class="danger-btn" data-delete-${type}="${id}" type="button">Delete</button></span>`;
 }
 
 function formatDateTime(value) {
