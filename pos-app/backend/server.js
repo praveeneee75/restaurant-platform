@@ -2935,10 +2935,11 @@ app.get('/print-jobs/pending', (req, res) => {
 
   try {
     const jobs = db.prepare(`
-      SELECT *
-      FROM print_jobs
-      WHERE status = 'PENDING'
-      ORDER BY created_at
+      SELECT pj.*, p.name AS printer_name, p.connection AS printer_connection, p.address AS printer_address
+      FROM print_jobs pj
+      LEFT JOIN printers p ON p.id = pj.printer_id AND p.active = 1
+      WHERE pj.status = 'PENDING'
+      ORDER BY pj.created_at
       LIMIT 10
     `).all();
 
@@ -4995,7 +4996,7 @@ function createKotJobs(db, orderId) {
   // One KOT submission may create tickets for several kitchens; they share one suborder number.
   const suborderNo = Number(db.prepare('SELECT COUNT(*) AS total FROM kots WHERE order_id = ?').get(orderId)?.total || 0) + 1;
   Object.values(grouped).forEach((group) => {
-    const kot = db.prepare('INSERT INTO kots (order_id, kitchen_id) VALUES (?, ?)').run(orderId, group.kitchenId);
+    const kot = db.prepare('INSERT INTO kots (order_id, kitchen_id, suborder_no) VALUES (?, ?, ?)').run(orderId, group.kitchenId, suborderNo);
     group.items.forEach((item) => db.prepare('UPDATE order_items SET kot_id = ? WHERE id = ?').run(kot.lastInsertRowid, item.order_item_id));
     db.prepare(`
       INSERT INTO print_jobs (type, ref_id, kitchen_id, printer_id, payload, status)
@@ -5789,6 +5790,14 @@ app.get('/orders/invoices/:id', (req, res) => {
       WHERE o.id = ? AND o.status = 'PAID'
     `).get(invoiceId);
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+    invoice.kot_references = db.prepare(`
+      SELECT GROUP_CONCAT(kot_ref, ', ') AS kot_refs
+      FROM (
+        SELECT DISTINCT COALESCE(o.order_reference, CAST(o.id AS TEXT)) || '-' || COALESCE(k.suborder_no, k.id) AS kot_ref
+        FROM kots k JOIN orders o ON o.id = k.order_id
+        WHERE k.order_id = ? ORDER BY COALESCE(k.suborder_no, k.id)
+      )
+    `).get(invoiceId)?.kot_refs || '';
     const rawItems = db.prepare(`
       SELECT oi.id AS order_item_id, oi.item_id, oi.combo_id, oi.combo_name, oi.combo_quantity,
              i.name, oi.quantity, oi.price, oi.notes
@@ -6405,11 +6414,22 @@ app.post('/orders/settle', (req, res) => {
         writeOrderStatusHistory(db, actor, orderId, 'PAID', 'ORDER', 'Bill settled');
       }
       const billPrinter = db.prepare("SELECT id, name, connection, address FROM printers WHERE type = 'BILL' AND active = 1 ORDER BY id LIMIT 1").get();
-      db.prepare(`
+      let printQueued = false;
+      if (printBill && billPrinter) {
+        const kotReferences = db.prepare(`
+          SELECT GROUP_CONCAT(kot_ref, ', ') AS kot_refs
+          FROM (
+            SELECT DISTINCT COALESCE(o.order_reference, CAST(o.id AS TEXT)) || '-' || COALESCE(k.suborder_no, k.id) AS kot_ref
+            FROM kots k JOIN orders o ON o.id = k.order_id
+            WHERE k.order_id = ? ORDER BY COALESCE(k.suborder_no, k.id)
+          )
+        `).get(orderId)?.kot_refs || '';
+        db.prepare(`
         INSERT INTO print_jobs (type, ref_id, kitchen_id, printer_id, payload, status)
         VALUES ('BILL', ?, NULL, ?, ?, 'PENDING')
-      `).run(orderId, billPrinter?.id || 0, JSON.stringify({
+      `).run(orderId, billPrinter.id, JSON.stringify({
         orderId,
+        orderReference: order.order_reference || String(orderId),
         invoiceNo,
         items: db.prepare(`SELECT i.name, oi.quantity, oi.price FROM order_items oi JOIN items i ON i.id = oi.item_id WHERE oi.order_id = ? AND oi.kot_id IS NOT NULL ORDER BY oi.id`).all(orderId),
         printer: billPrinter ? { name: billPrinter.name, connection: billPrinter.connection, address: billPrinter.address } : null,
@@ -6446,8 +6466,11 @@ app.post('/orders/settle', (req, res) => {
         payable,
         taxName: getConfigValue(db, 'tax_name', 'GST'),
         taxRate: getNumberConfig(db, 'tax_rate', 0),
-        paymentMode: payments?.[0]?.method || payments?.[0]?.paymentMethod || 'CASH'
+        paymentMode: payments?.[0]?.method || payments?.[0]?.paymentMethod || 'CASH',
+        kotReferences
       }));
+        printQueued = true;
+      }
       const billSnapshot = {
         orderId,
         invoiceNo,
@@ -6471,7 +6494,7 @@ app.post('/orders/settle', (req, res) => {
       if (Number(order.is_invoice) === 0) {
         writeCompliance(db, 'NON_INVOICE_ORDER', 'MEDIUM', `Non-invoice order settled #${orderId}`, 'ORDER', orderId);
       }
-      return { invoiceNo, paid, payable, redeemedPoints: redeem, loyaltyDiscount, serviceCharge, roundOff, printQueued: Boolean(billPrinter) };
+      return { invoiceNo, paid, payable, redeemedPoints: redeem, loyaltyDiscount, serviceCharge, roundOff, printQueued };
     })();
 
     res.json({ success: true, invoiceNo: settled.invoiceNo, paidAmount: settled.paid, payable: settled.payable, redeemedPoints: settled.redeemedPoints, loyaltyDiscount: settled.loyaltyDiscount, serviceCharge: settled.serviceCharge, roundOff: settled.roundOff, printRequested: Boolean(printBill), printQueued: Boolean(settled.printQueued), printMessage: settled.printQueued ? 'Bill sent to the configured BILL printer' : 'Printer is not configured. Invoice was created. Configure an active printer with type BILL in Admin > Printers, then retry printing.' });

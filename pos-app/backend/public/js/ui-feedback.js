@@ -26,4 +26,16 @@
   // editable focus to Chromium. Keep messages inside the renderer instead.
   window.appAlert = showAppMessage;
   window.alert = showAppMessage;
+
+  const restaurantId = localStorage.getItem('restaurantId');
+  if (restaurantId && window.posDesktop?.startPrintWorker) window.posDesktop.startPrintWorker(restaurantId).catch(() => {});
+
+  const nav = document.querySelector('.app-home-nav');
+  if (nav && !nav.querySelector('.zoom-help')) {
+    const help = document.createElement('span');
+    help.className = 'zoom-help';
+    help.title = 'Use Ctrl and + to zoom in, Ctrl and - to zoom out, or Ctrl and 0 to reset';
+    help.textContent = 'Zoom: Ctrl + / Ctrl − / Ctrl 0';
+    nav.appendChild(help);
+  }
 }());

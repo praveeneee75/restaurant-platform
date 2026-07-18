@@ -208,6 +208,8 @@ function ensureRestaurantSchema(db) {
     );
   `);
 
+  addColumn(db, 'kots', 'suborder_no INTEGER');
+
   addColumn(db, 'audit_logs', 'actor_user_id INTEGER');
   addColumn(db, 'audit_logs', 'actor_role TEXT');
   addColumn(db, 'audit_logs', 'details TEXT');

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, screen, shell } = require('electron');
 const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
@@ -25,6 +25,9 @@ if (!hasLock) {
 
 let mainWindow;
 let licenseTimer;
+let printWorkerTimer;
+let activePrintRestaurantId = '';
+let printWorkerBusy = false;
 let backendStarted = false;
 const desktopIconPath = path.join(__dirname, '..', 'build', 'icon.png');
 const preloadPath = path.join(__dirname, 'preload.js');
@@ -152,6 +155,67 @@ function backendRequest(method, route, body) {
   });
 }
 
+function printEsc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+}
+
+function thermalPrintHtml(job) {
+  const payload = typeof job.payload === 'string' ? JSON.parse(job.payload || '{}') : (job.payload || {});
+  if (job.type === 'KOT') {
+    const orderType = String(payload.orderType || 'DINE_IN').toUpperCase();
+    const orderLabel = orderType === 'DINE_IN' ? 'Dine In' : orderType === 'PARCEL' || orderType === 'TAKEAWAY' ? 'Parcel' : orderType.replaceAll('_', ' ');
+    const rows = (payload.items || []).map((item) => `<tr><td>${printEsc(item.name || item.combo_name || 'Item')}</td><td>${printEsc(item.notes || '--')}</td><td>${printEsc(item.quantity || 0)}</td></tr>`).join('');
+    return `<!doctype html><html><head><style>@page{size:80mm auto;margin:2mm}*{box-sizing:border-box}body{width:76mm;margin:0;color:#000;font:15px 'Arial Narrow',Arial,sans-serif}.head{text-align:center}.head h1{font-size:22px;margin:0}.head p{margin:2px 0;font-size:17px}.mode{font-size:21px!important;font-weight:800}.table{font-size:23px!important;font-weight:900}.rule{border-top:2px dashed #000;margin:6px 0}table{width:100%;border-collapse:collapse;table-layout:fixed}th{font-size:16px;border-bottom:1px solid #000;padding:3px 2px}td{padding:4px 2px;vertical-align:top;font-size:17px}th:first-child,td:first-child{width:52%;text-align:left;font-weight:800}th:nth-child(2),td:nth-child(2){width:32%;text-align:center}th:last-child,td:last-child{width:16%;text-align:right;font-weight:800}.footer{text-align:center;border-top:2px dashed #000;margin-top:5px;padding-top:4px}</style></head><body><div class="head">${payload.headerText ? `<p>${printEsc(payload.headerText)}</p>` : ''}<h1>KOT</h1><p>${printEsc(new Date(job.created_at || Date.now()).toLocaleString('en-IN'))}</p><p>KOT - ${printEsc(payload.kotReference || payload.kotId || job.ref_id)}</p><p class="mode">${printEsc(orderLabel)}</p>${orderType === 'DINE_IN' ? `<p class="table">Table No: ${printEsc(payload.tableName || '--')}</p>` : ''}</div><div class="rule"></div><table><thead><tr><th>Item</th><th>Special Note</th><th>Qty.</th></tr></thead><tbody>${rows}</tbody></table>${payload.footerText ? `<div class="footer">${printEsc(payload.footerText)}</div>` : ''}</body></html>`;
+  }
+  const profile = payload.restaurantProfile || {};
+  const rows = (payload.items || []).map((item, index) => `<tr><td>${index + 1}</td><td>${printEsc(item.name)}</td><td>${printEsc(item.quantity)}</td><td>${Number(item.price || 0).toFixed(2)}</td><td>${(Number(item.quantity || 0) * Number(item.price || 0)).toFixed(2)}</td></tr>`).join('');
+  return `<!doctype html><html><head><style>@page{size:80mm auto;margin:2mm}*{box-sizing:border-box}body{width:76mm;margin:0;color:#000;font:10px Arial,sans-serif;text-align:center}h1{font-size:15px;margin:0 0 2px}.profile p{margin:1px 0}.compliance{font-weight:700}.title{font-size:13px;font-weight:800;border-top:1px solid #000;border-bottom:1px solid #000;margin:5px 0;padding:3px}.meta{display:grid;grid-template-columns:27mm 1fr;text-align:left;border-bottom:1px dashed #000;padding-bottom:4px}.meta b{text-align:left}table{width:100%;border-collapse:collapse;margin-top:4px}th,td{border:1px solid #555;padding:3px 2px}td:nth-child(2){text-align:left}.total{display:flex;justify-content:space-between;border:1px solid #555;border-top:0;padding:5px;font-size:13px;font-weight:800}.thanks{border-top:1px dashed #000;margin-top:6px;padding-top:5px;font-weight:800}</style></head><body><section class="profile"><h1>${printEsc(profile.displayName || profile.legalName || 'Restaurant')}</h1>${profile.legalName && profile.legalName !== profile.displayName ? `<p>${printEsc(profile.legalName)}</p>` : ''}<p>${printEsc([profile.addressLine1, profile.addressLine2, profile.city, profile.state].filter(Boolean).join(', '))}</p><p>${printEsc(profile.phone || '')}</p>${profile.gstin ? `<p class="compliance">GSTIN: ${printEsc(profile.gstin)}</p>` : ''}${profile.fssaiLicenseNo ? `<p class="compliance">FSSAI: ${printEsc(profile.fssaiLicenseNo)}</p>` : ''}</section><div class="title">${profile.gstin ? 'TAX INVOICE' : 'BILL / RECEIPT'}</div><div class="meta"><span>Invoice No.</span><b>${printEsc(payload.invoiceNo)}</b><span>Date / Time</span><b>${printEsc(payload.settledAt || '')}</b><span>Order / Table</span><b>${printEsc(`${payload.orderReference || payload.orderId} / ${payload.tableNumber || payload.orderType || ''}`)}</b>${payload.kotReferences ? `<span>KOT No(s).</span><b>${printEsc(payload.kotReferences)}</b>` : ''}<span>Customer</span><b>${printEsc(payload.customerName || 'Walk-in customer')}</b><span>Payment</span><b>${printEsc(payload.paymentMode || '')}</b></div><table><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table><div class="total"><span>GRAND TOTAL</span><span>${printEsc(profile.currency || 'INR')} ${Number(payload.payable || 0).toFixed(2)}</span></div><div class="thanks">THANK YOU. VISIT AGAIN.</div></body></html>`;
+}
+
+async function printToConfiguredPrinter(job) {
+  const html = thermalPrintHtml(job);
+  const win = await printableWindow(html);
+  try {
+    const printers = await win.webContents.getPrintersAsync();
+    const address = String(job.printer_address || '').trim().toLowerCase();
+    const configuredName = String(job.printer_name || '').trim().toLowerCase();
+    const printer = printers.find((item) => String(item.name).toLowerCase() === address)
+      || printers.find((item) => String(item.displayName || '').toLowerCase() === address)
+      || printers.find((item) => String(item.name).toLowerCase() === configuredName)
+      || printers.find((item) => item.isDefault);
+    if (!printer) throw new Error('Configured printer was not found in Windows. Search printers again in Admin > Printers.');
+    await new Promise((resolve, reject) => win.webContents.print({ silent: true, deviceName: printer.name, printBackground: true, margins: { marginType: 'none' } }, (success, reason) => success ? resolve() : reject(new Error(reason || 'Printer rejected the job'))));
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
+}
+
+async function processPrintJobs() {
+  if (!activePrintRestaurantId || printWorkerBusy || !backendStarted) return;
+  printWorkerBusy = true;
+  try {
+    const result = await backendRequest('GET', `/print-jobs/pending?restaurantId=${encodeURIComponent(activePrintRestaurantId)}`);
+    for (const job of result.jobs || []) {
+      try {
+        await printToConfiguredPrinter(job);
+        await backendRequest('POST', '/print-jobs/update', { restaurantId: activePrintRestaurantId, jobId: job.id, status: 'PRINTED' });
+      } catch (error) {
+        await backendRequest('POST', '/print-jobs/update', { restaurantId: activePrintRestaurantId, jobId: job.id, status: 'FAILED', error: String(error.message || error) });
+      }
+    }
+  } finally {
+    printWorkerBusy = false;
+  }
+}
+
+ipcMain.handle('pos:start-print-worker', async (_event, restaurantId) => {
+  activePrintRestaurantId = String(restaurantId || '').trim();
+  clearInterval(printWorkerTimer);
+  printWorkerTimer = setInterval(() => processPrintJobs().catch(() => {}), 1500);
+  await processPrintJobs();
+  return { success: true };
+});
+
 async function publishRuntimeState(entitlement, reason) {
   await backendRequest('POST', '/desktop/license/state', {
     status: entitlement && !isExpired(entitlement) ? 'ACTIVE' : 'EXPIRED',
@@ -248,9 +312,11 @@ function waitForServer(port, timeoutMs = 15000) {
 }
 
 async function createWindow() {
+  const workArea = screen.getPrimaryDisplay().workAreaSize;
+  const initialZoom = workArea.width < 1500 || workArea.height < 900 ? 0.8 : 0.9;
   const win = new BrowserWindow({
-    width: 1280,
-    height: 820,
+    width: Math.min(1600, workArea.width),
+    height: Math.min(1000, workArea.height),
     minWidth: 1024,
     minHeight: 700,
     title: "K'Master POS",
@@ -263,6 +329,8 @@ async function createWindow() {
     }
   });
   mainWindow = win;
+  win.maximize();
+  win.webContents.setZoomFactor(initialZoom);
 
   try {
     const health = await waitForServer(process.env.PORT);
@@ -315,6 +383,7 @@ app.on('second-instance', () => {
 
 app.on('window-all-closed', () => {
   clearInterval(licenseTimer);
+  clearInterval(printWorkerTimer);
   app.quit();
 });
 

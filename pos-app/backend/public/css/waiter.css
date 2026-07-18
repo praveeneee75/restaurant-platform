@@ -98,6 +98,8 @@ button {
   flex-wrap: wrap;
 }
 .qty-controls button { min-width: 38px; padding: 8px; }
+.item-note { color:#9a3412; font-weight:700; }
+.qty-controls button:disabled { opacity:.45; cursor:not-allowed; }
 .actions {
   display: grid;
   grid-template-columns: 1fr;

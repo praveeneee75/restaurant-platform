@@ -129,11 +129,12 @@ function renderItems() {
 function renderCart() {
   waiterCart.innerHTML = state.cart.map((item) => `
     <div class="cart-row ${state.selectedCartKey === item.id ? "selected" : ""}" data-cart-line="${item.id}" role="button" tabindex="0" aria-label="Edit ${esc(item.name)}">
-      <div><strong>${esc(item.name)}</strong><br><small>${money(item.price)} x ${item.quantity}</small></div>
+      <div><strong>${esc(item.name)}</strong><br><small>${money(item.price)} x ${item.quantity}</small>${item.notes ? `<br><small class="item-note">Special note: ${esc(item.notes)}</small>` : ''}${item.sentToKitchen ? '<br><small>Sent to kitchen</small>' : ''}</div>
       <div class="qty-controls">
-        <button data-dec="${item.id}">-</button>
+        <button data-dec="${item.id}" ${item.sentToKitchen ? 'disabled' : ''}>-</button>
         <span>${item.quantity}</span>
-        <button data-inc="${item.id}">+</button>
+        <button data-inc="${item.id}" ${item.sentToKitchen ? 'disabled' : ''}>+</button>
+        <button data-note-item="${item.id}" ${item.sentToKitchen ? 'disabled' : ''}>Note</button>
       </div>
     </div>
   `).join("") || "<p>No items selected.</p>";
@@ -160,7 +161,7 @@ async function selectTable(tableId) {
   const open = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${encodeURIComponent(table.id)}`).then((res) => res.json());
   state.orderId = open.order?.id || null;
   state.latestUpdatedAt = open.order?.updated_at || null;
-  state.cart = (open.items || []).map((item) => ({ id: item.id, name: item.name, price: item.price, quantity: item.quantity, modifiers: [] }));
+  state.cart = (open.items || []).map((item) => ({ id: item.id, orderItemId: item.order_item_id || null, name: item.name, price: item.price, quantity: item.quantity, notes: item.notes || '', sentToKitchen: Boolean(item.kot_id), modifiers: [] }));
   renderAll();
 }
 
@@ -169,7 +170,7 @@ function addItem(itemId) {
   if (!item) return;
   const existing = state.cart.find((row) => Number(row.id) === Number(itemId));
   if (existing) existing.quantity += 1;
-  else state.cart.push({ id: item.id, name: item.name, price: item.price, quantity: 1, modifiers: [] });
+  else state.cart.push({ id: item.id, name: item.name, price: item.price, quantity: 1, notes: '', sentToKitchen: false, modifiers: [] });
   state.selectedCartKey = Number(item.id);
   renderCart();
 }
@@ -185,7 +186,7 @@ async function saveOrder() {
     orderType: "DINE_IN",
     lockId: state.lock.id,
     latestUpdatedAt: state.latestUpdatedAt,
-    items: state.cart.map((item) => ({ id: item.id, quantity: item.quantity, modifiers: [] }))
+    items: state.cart.map((item) => ({ id: item.id, orderItemId: item.orderItemId || null, quantity: item.quantity, notes: item.notes || '', modifiers: [] }))
   });
   state.orderId = saved.orderId;
   const open = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${encodeURIComponent(state.selectedTable.id)}`).then((res) => res.json());
@@ -240,6 +241,14 @@ document.addEventListener("click", async (event) => {
       renderItems();
     }
     if (target.dataset.addItem) addItem(target.dataset.addItem);
+    if (target.dataset.noteItem) {
+      const item = state.cart.find((row) => Number(row.id) === Number(target.dataset.noteItem));
+      if (item && !item.sentToKitchen) {
+        const note = prompt(`Special note for ${item.name}`, item.notes || '');
+        if (note !== null) item.notes = note.trim();
+      }
+      renderCart();
+    }
     if (target.dataset.inc) {
       const item = state.cart.find((row) => Number(row.id) === Number(target.dataset.inc));
       if (item) item.quantity += 1;
