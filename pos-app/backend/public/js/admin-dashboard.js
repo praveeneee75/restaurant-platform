@@ -15,9 +15,7 @@ if (standaloneAdminView) document.body.classList.add("standalone-admin-view");
 document.querySelectorAll("[data-logout]").forEach((button) => button.addEventListener("click", () => { localStorage.clear(); window.location.href = "/login.html"; }));
 const activeAdminNavLabel = requestedAdminView === "invoices" ? "Invoices" : requestedAdminView === "items" ? "Availability" : "Admin";
 document.querySelectorAll(".app-home-nav a").forEach((link) => link.classList.toggle("active", link.textContent.trim() === activeAdminNavLabel));
-const state = { admin: {}, inventory: {}, modifiers: {}, backups: {}, settings: {}, permissions: {}, devices: {}, reservations: [], expenseCategories: [], latestUpdate: null, commercial: {}, invoices: [] };
-const notificationButton = document.getElementById('notificationButton');
-const notificationCount = document.getElementById('notificationCount');
+const state = { admin: {}, network: {}, inventory: {}, modifiers: {}, backups: {}, settings: {}, permissions: {}, devices: {}, reservations: [], expenseCategories: [], latestUpdate: null, commercial: {}, invoices: [] };
 const settingQrRequireTablePin = document.getElementById('settingQrRequireTablePin');
 const settingQrSessionMinutes = document.getElementById('settingQrSessionMinutes');
 const promoCodesTable = document.getElementById('promoCodesTable');
@@ -195,16 +193,6 @@ async function loadUpdates() {
   updateLogsPanel.innerHTML = (logs.logs || []).map((log) => `<p><strong>${esc(log.status)}</strong> ${esc(log.current_version || "")} -> ${esc(log.target_version || "")}<br><small>${esc(log.message || "")} ${esc(log.created_at || "")}</small></p>`).join("") || "<p>No update logs yet.</p>";
   const latest = await fetchJson(`/updates/check?restaurantId=${encodeURIComponent(restaurantId)}`).catch(() => ({ updateAvailable: false }));
   state.latestUpdate = latest;
-  const messages = [];
-  if (latest.updateAvailable) messages.push(`New POS update available: ${latest.latestVersion}${latest.releaseNotes ? `\n${latest.releaseNotes}` : ''}`);
-  const activation = await fetchJson('/activation/status').catch(() => ({}));
-  if (activation.expiresAt) {
-    const days = Math.ceil((new Date(activation.expiresAt).getTime() - Date.now()) / 86400000);
-    if (days <= 30) messages.push(days < 0 ? 'POS license has expired.' : `POS license expires in ${days} day(s).`);
-  }
-  notificationCount.textContent = String(messages.length);
-  notificationButton.title = messages.join(' | ') || 'No new notifications';
-  notificationButton.onclick = () => alert(messages.length ? `Notifications\n\n${messages.join('\n\n')}` : 'No new notifications');
 }
 
 async function loadCommercial() {
@@ -280,6 +268,8 @@ async function loadAll() {
   adminStatus.textContent = "Loading workspace...";
   await loadPermissions();
   await loadAdmin();
+  state.network = await fetchJson('/network/info').catch(() => ({}));
+  renderAdmin();
   if (standaloneAdminView && requestedAdminView) {
     await loadUpdates().catch(() => undefined);
     if (requestedAdminView === "invoices") await loadInvoiceList().catch(() => undefined);
@@ -325,9 +315,8 @@ function renderAdmin() {
   tablesTable.innerHTML = tables.map((t) => `<tr><td>${esc(t.table_name)}</td><td>${esc(t.status)}</td><td>${actions("table", t.id)}</td></tr>`).join("");
   qrLinksTable.innerHTML = tables.map((t) => {
     const configuredBase = String(window.KMASTER_QR_PUBLIC_URL || '').replace(/\/$/, '');
-    const localHost = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(location.hostname);
-    const baseUrl = configuredBase || (localHost ? 'https://pos.kmasterpos.com' : location.origin);
-    const url = `${baseUrl}/qr-menu.html?v=1.0.76&restaurantId=${encodeURIComponent(restaurantId)}&tableId=${t.id}`;
+    const baseUrl = configuredBase || state.network.qrBaseUrl || location.origin;
+    const url = `${baseUrl}/qr-menu.html?v=1.0.86&restaurantId=${encodeURIComponent(restaurantId)}&tableId=${t.id}`;
     return `<tr><td>${esc(t.table_name)}</td><td><a href="${url}" target="_blank">${esc(url)}</a></td></tr>`;
   }).join("");
 }
@@ -959,6 +948,19 @@ function collectSettings() {
   };
 }
 
+const SETTINGS_KEYS_BY_SECTION = {
+  profile: ["restaurant_display_name", "legal_name", "gstin", "fssai_license_no", "state_code", "address_line_1", "address_line_2", "city", "state", "country", "phone", "email", "currency", "timezone", "logo_path"],
+  pos: ["default_order_type", "allow_non_invoice_orders", "allow_discount", "allow_manual_price_override", "allow_refund", "allow_order_cancel", "require_manager_pin_for_discount", "require_manager_pin_for_refund", "require_manager_pin_for_void", "require_clock_in_before_order"],
+  billing: ["invoice_prefix", "invoice_reset_frequency", "show_tax_on_bill", "tax_name", "tax_rate", "sac_code", "show_qr_on_bill", "qr_require_table_pin", "qr_session_minutes", "upi_id", "service_charge_enabled", "service_charge_percent", "round_off_enabled"],
+  kot: ["auto_print_kot", "print_kot_on_save", "print_kot_on_submit", "allow_kot_reprint", "kot_header_text", "kot_footer_text"],
+  online: ["mobile_app_enabled", "online_order_enabled", "online_storefront_slug", "online_theme", "online_primary_color", "online_accent_color", "online_logo_path", "online_payment_methods", "online_require_otp", "online_allow_loyalty_credit", "online_delivery_enabled", "online_takeaway_enabled", "online_min_order_amount"]
+};
+
+function collectSettingsSection(section) {
+  const allSettings = collectSettings();
+  return Object.fromEntries((SETTINGS_KEYS_BY_SECTION[section] || []).map((key) => [key, allSettings[key]]));
+}
+
 function showSettingsSection(section = "profile") {
   const titles = {
     profile: "Restaurant Profile",
@@ -969,7 +971,9 @@ function showSettingsSection(section = "profile") {
     online: "Online Ordering"
   };
   document.querySelectorAll("[data-settings-panel]").forEach((panel) => {
-    panel.hidden = panel.dataset.settingsPanel !== section;
+    const active = panel.dataset.settingsPanel === section;
+    panel.hidden = !active;
+    panel.querySelectorAll("input, select, textarea, button").forEach((control) => { control.disabled = !active; });
   });
   const title = document.getElementById("settingsSectionTitle");
   if (title) title.textContent = titles[section] || "Restaurant Settings";
@@ -1124,13 +1128,13 @@ settingsForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
     settingsStatus.textContent = "Saving settings...";
-    state.settings = await postJson("/settings/update", { updatedByRole: actor.role, settings: collectSettings() });
+    const activeSection = document.querySelector("[data-settings-panel]:not([hidden])")?.dataset.settingsPanel || "profile";
+    state.settings = await postJson("/settings/update", { updatedByRole: actor.role, settings: collectSettingsSection(activeSection) });
     renderSettings();
     await loadBackup();
-    settingsStatus.textContent = "Settings saved";
-    alert("Settings saved");
+    settingsStatus.textContent = `${document.getElementById("settingsSectionTitle")?.textContent || "Settings"} saved successfully`;
   } catch (err) {
-    settingsStatus.textContent = err.message;
+    settingsStatus.textContent = `Save failed: ${err.message}`;
     alert(err.message);
   }
 });
@@ -1316,11 +1320,18 @@ document.addEventListener("click", async (event) => {
 });
 
 loadReports.addEventListener("click", async () => {
-  const data = await fetchJson(`/reports/dashboard?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`);
-  dailySales.innerHTML = (data.dailySales || []).map((row) => `<p>${esc(row.day)}: ${money(row.total)}</p>`).join("");
-  topItems.innerHTML = (data.topItems || []).map((row) => `<p>${esc(row.name)}: ${row.quantity}</p>`).join("");
-  orderSummary.innerHTML = (data.orderSummary || []).map((row) => `<p>${esc(row.status)} / ${esc(row.payment_status)}: ${row.count}</p>`).join("");
-  taxSummary.innerHTML = `<p>${money(data.taxSummary?.tax || 0)}</p>`;
+  try {
+    reportStatus.textContent = "Loading reports...";
+    const data = await fetchJson(`/reports/dashboard?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`);
+    dailySales.innerHTML = (data.dailySales || []).map((row) => `<p><strong>${esc(row.day)}</strong>: ${money(row.total)} · ${row.orders} order(s)</p>`).join("") || "<p>No paid sales for the selected period.</p>";
+    topItems.innerHTML = (data.topSellingItems || []).map((row) => `<p><strong>${esc(row.name)}</strong>: ${row.quantity} · ${money(row.total)}</p>`).join("") || "<p>No paid item sales for the selected period.</p>";
+    orderSummary.innerHTML = (data.orderSummary || []).map((row) => `<p><strong>${esc(row.status)} / ${esc(row.payment_status)}</strong>: ${row.count} · ${money(row.total)}</p>`).join("") || "<p>No orders for the selected period.</p>";
+    taxSummary.innerHTML = `<p>Taxable sales: <strong>${money(data.taxSummary?.taxableSales || 0)}</strong></p><p>Tax collected: <strong>${money(data.taxSummary?.tax || 0)}</strong></p>`;
+    reportStatus.textContent = `Reports loaded for ${reportFrom.value} to ${reportTo.value}`;
+  } catch (err) {
+    reportStatus.textContent = `Unable to load reports: ${err.message}`;
+    dailySales.innerHTML = topItems.innerHTML = orderSummary.innerHTML = taxSummary.innerHTML = `<p>${esc(err.message)}</p>`;
+  }
 });
 
 expenseForm.addEventListener("submit", async (event) => {

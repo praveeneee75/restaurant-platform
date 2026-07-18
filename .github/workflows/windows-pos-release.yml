@@ -52,6 +52,7 @@ jobs:
         run: |
           node --check pos-app/backend/server.js
           node --check pos-app/backend/public/js/admin-dashboard.js
+          node --check pos-app/backend/public/js/nav-notifications.js
           node tests/production-url-regression.js
           node tests/pos-regression.js
 

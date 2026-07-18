@@ -214,7 +214,7 @@ function seedWhitelabelDemoData(db, options = {}) {
     upsertSystemConfig(db, {
       restaurant_display_name: 'KMaster White Label Demo Restaurant',
       legal_name: 'KMaster Demo Foods',
-      gstin: '33DEMO1234F1Z5',
+      gstin: '33ABCDE1234F1Z5',
       fssai_license_no: '12345678901234',
       state_code: '33',
       sac_code: '996331',
@@ -259,6 +259,13 @@ function seedWhitelabelDemoData(db, options = {}) {
       online_min_order_amount: '99',
       enabled_modules: JSON.stringify(DEMO_MODULES)
     }, !alreadySeeded);
+
+    // Correct the original demo-only placeholder without changing a restaurant's own GSTIN.
+    db.prepare(`
+      UPDATE system_config
+      SET value = '33ABCDE1234F1Z5', updated_at = CURRENT_TIMESTAMP
+      WHERE key = 'gstin' AND value = '33DEMO1234F1Z5'
+    `).run();
 
     if (tableExists(db, 'license_status')) {
       db.prepare(`

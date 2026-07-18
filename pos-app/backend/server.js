@@ -996,10 +996,13 @@ function requirePermission(db, role, permissionCode, message = 'Permission denie
 }
 
 function localIpAddresses() {
-  return Object.values(os.networkInterfaces())
-    .flat()
-    .filter((entry) => entry && entry.family === 'IPv4' && !entry.internal)
-    .map((entry) => entry.address);
+  const candidates = Object.entries(os.networkInterfaces()).flatMap(([name, entries]) =>
+    (entries || [])
+      .filter((entry) => entry && entry.family === 'IPv4' && !entry.internal && !entry.address.startsWith('169.254.'))
+      .map((entry) => ({ name, address: entry.address }))
+  );
+  const physical = candidates.filter(({ name }) => !/(virtual|vethernet|wsl|docker|vmware|virtualbox|loopback)/i.test(name));
+  return (physical.length ? physical : candidates).map(({ address }) => address);
 }
 
 function mobilePosBaseUrl() {
@@ -6027,12 +6030,15 @@ app.get('/customer-display/current', (req, res) => {
 app.get('/network/info', (req, res) => {
   const port = process.env.PORT || 3000;
   const ips = localIpAddresses();
+  const qrBaseUrl = mobilePosBaseUrl();
   res.json({
     success: true,
     hostname: os.hostname(),
     localIpAddresses: ips,
     posUrls: ips.map((ip) => `http://${ip}:${port}/login.html`),
     waiterUrls: ips.map((ip) => `http://${ip}:${port}/waiter.html`),
+    qrBaseUrl,
+    qrUrls: ips.map((ip) => `http://${ip}:${port}/qr-menu.html`),
     port: Number(port),
     activeRestaurantId: getSingleRestaurantId(),
     localhost: `http://localhost:${port}/login.html`

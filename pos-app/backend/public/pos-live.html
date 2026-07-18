@@ -19,7 +19,7 @@
       <a data-role-nav="admin" href="/admin.html">Admin</a>
       <a data-role-nav="availability" href="/admin.html?view=items&standalone=1">Availability</a>
       <a data-role-nav="live-orders" href="/orders.html">Live Orders</a>
-      <a data-role-nav="qr-notifications" id="qrNotifications" href="#qrApprovalPanel">Notifications <span id="qrNotificationCount" class="notification-count" hidden>0</span></a>
+      <a data-role-nav="qr-notifications" data-notification-center id="qrNotifications" href="#qrApprovalPanel">Notifications <span id="qrNotificationCount" class="notification-count" data-notification-count>0</span></a>
       <button data-logout type="button">Logout</button>
     </nav>
   </header>
@@ -161,6 +161,7 @@
     </div>
   </div>
 
+  <script src="/js/nav-notifications.js"></script>
   <script src="/js/pos-live.js"></script>
 </body>
 </html>

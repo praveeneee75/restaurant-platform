@@ -32,7 +32,10 @@ function request(method, url, body) {
     }, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, data: JSON.parse(data) }));
+      res.on('end', () => {
+        const contentType = String(res.headers['content-type'] || '');
+        resolve({ status: res.statusCode, data: contentType.includes('application/json') ? JSON.parse(data) : data });
+      });
     });
     req.on('error', reject);
     if (payload) req.write(payload);
@@ -57,6 +60,13 @@ function assertSettings(actual, expected, label) {
 }
 
 (async () => {
+  const legacyDb = openDatabase(restaurantId);
+  legacyDb.prepare("UPDATE system_config SET value = '33DEMO1234F1Z5' WHERE key = 'gstin'").run();
+  seedWhitelabelDemoData(legacyDb, { restaurantId, force: true });
+  const migratedGstin = legacyDb.prepare("SELECT value FROM system_config WHERE key = 'gstin'").get()?.value;
+  legacyDb.close();
+  if (migratedGstin !== '33ABCDE1234F1Z5') throw new Error(`Legacy demo GSTIN was not corrected: ${migratedGstin}`);
+
   const settings = {
     restaurant_display_name: 'Persisted Restaurant Name',
     legal_name: 'Persisted Foods Private Limited',
@@ -163,6 +173,18 @@ function assertSettings(actual, expected, label) {
     throw new Error(`Promo code did not save and reload: ${JSON.stringify(promo)}`);
   }
 
+  const qrPage = await request('GET', `/qr-menu.html?restaurantId=${restaurantId}&tableId=1`);
+  if (qrPage.status !== 200 || !String(qrPage.data || '').includes('QR Menu')) throw new Error('QR menu page did not load from the local POS');
+  const network = await request('GET', '/network/info');
+  if (!/^https?:\/\//.test(network.data.qrBaseUrl || '') || String(network.data.qrBaseUrl).includes('pos.kmasterpos.com')) {
+    throw new Error(`QR base URL is not customer-reachable: ${network.data.qrBaseUrl}`);
+  }
+
+  const reports = await request('GET', `/reports/dashboard?restaurantId=${restaurantId}&role=OWNER&fromDate=2026-01-01&toDate=2026-12-31`);
+  if (reports.status !== 200 || !Array.isArray(reports.data.dailySales) || !Array.isArray(reports.data.topSellingItems) || !Array.isArray(reports.data.orderSummary)) {
+    throw new Error(`Reports dashboard returned an invalid payload: ${JSON.stringify(reports.data)}`);
+  }
+
   const html = fs.readFileSync(path.join(__dirname, '..', 'pos-app', 'backend', 'public', 'admin.html'), 'utf8');
   const requiredUi = [
     'Table Management', 'User Management', 'data-view="staff-cash"', 'data-view="devices"', 'data-view="users"',
@@ -175,6 +197,22 @@ function assertSettings(actual, expected, label) {
   });
   if ((html.match(/data-view="backup"/g) || []).length !== 1) throw new Error('Backup navigation is duplicated');
   if (/<form[^>]*id="promoCodeForm"/i.test(html)) throw new Error('Promo editor is still an invalid nested form');
+  if (!/<form[^>]*id="settingsForm"[^>]*novalidate/i.test(html)) throw new Error('Settings form can still be silently blocked by hidden browser validation');
+
+  const dashboardJs = fs.readFileSync(path.join(__dirname, '..', 'pos-app', 'backend', 'public', 'js', 'admin-dashboard.js'), 'utf8');
+  if (!dashboardJs.includes('collectSettingsSection(activeSection)')) throw new Error('Settings UI does not save the active subsection independently');
+  if (!dashboardJs.includes('control.disabled = !active')) throw new Error('Hidden subsection controls can still block form submission');
+  if (!dashboardJs.includes('data.topSellingItems')) throw new Error('Reports UI does not use the dashboard API top-selling field');
+
+  const css = fs.readFileSync(path.join(__dirname, '..', 'pos-app', 'backend', 'public', 'css', 'style.css'), 'utf8');
+  if (/\.nav-sub-btn\s*\{[^}]*font-size/i.test(css)) throw new Error('Admin subsection font size still differs from normal navigation');
+
+  for (const page of ['admin.html', 'billing.html', 'kds.html', 'orders.html', 'pos-live.html']) {
+    const pageHtml = fs.readFileSync(path.join(__dirname, '..', 'pos-app', 'backend', 'public', page), 'utf8');
+    if (!pageHtml.includes('data-notification-center') || !pageHtml.includes('/js/nav-notifications.js')) {
+      throw new Error(`${page} does not use the shared notification centre`);
+    }
+  }
 
   console.log(JSON.stringify({
     success: true,

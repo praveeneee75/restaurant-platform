@@ -10,7 +10,7 @@
   <header class="app-home-nav">
     <div class="app-home-brand"><strong>K'MASTER</strong> <span>POS</span><small id="billingRestaurantName">Billing workspace</small></div>
     <nav aria-label="POS home sections">
-      <a href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a href="/pos-live.html?mode=PARCEL">POS Parcel</a><a href="/pos-live.html?mode=PARTY">POS Party Order</a><a class="active" href="/billing.html">Billing</a><a data-role-nav="invoices" href="/admin.html?view=invoices&standalone=1#invoices">Invoices</a><a data-role-nav="kds" href="/kds.html">KDS</a><a data-role-nav="availability" href="/admin.html?view=items&standalone=1">Availability</a><a data-role-nav="live-orders" href="/orders.html">Live Orders</a><a data-role-nav="admin" href="/admin.html">Admin</a><button data-role-nav="notifications" type="button">Notifications</button><button data-logout type="button">Logout</button>
+      <a href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a href="/pos-live.html?mode=PARCEL">POS Parcel</a><a href="/pos-live.html?mode=PARTY">POS Party Order</a><a class="active" href="/billing.html">Billing</a><a data-role-nav="invoices" href="/admin.html?view=invoices&standalone=1#invoices">Invoices</a><a data-role-nav="kds" href="/kds.html">KDS</a><a data-role-nav="availability" href="/admin.html?view=items&standalone=1">Availability</a><a data-role-nav="live-orders" href="/orders.html">Live Orders</a><a data-role-nav="admin" href="/admin.html">Admin</a><button data-role-nav="notifications" data-notification-center type="button">Notifications <span data-notification-count>0</span></button><button data-logout type="button">Logout</button>
     </nav>
   </header>
   <aside class="billing-sidebar">
@@ -25,6 +25,7 @@
     <section class="billing-summary-panel"><div><span>Open bills</span><strong id="openBills">0</strong></div><div><span>Paid today</span><strong id="paidToday">0</strong></div><div><span>Today's collection</span><strong id="collectionTotal">INR 0.00</strong></div></section>
   </main>
   <aside class="billing-detail" id="billingDetail"><div class="billing-empty">Select a table or recent order to view the bill.</div></aside>
+  <script src="/js/nav-notifications.js"></script>
   <script src="/js/billing.js"></script>
 </body>
 </html>

@@ -10,7 +10,7 @@
   <header class="app-home-nav">
     <div class="app-home-brand"><strong>K'MASTER</strong> <span>POS</span><small>Administration <b id="headerAppVersion">POS --</b></small></div>
     <nav aria-label="POS home sections">
-      <a href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a href="/pos-live.html?mode=PARCEL">POS Parcel</a><a href="/pos-live.html?mode=PARTY">POS Party Order</a><a href="/billing.html">Billing</a><a href="/admin.html?view=invoices&standalone=1#invoices">Invoices</a><a href="/kds.html">KDS</a><a href="/admin.html?view=items&standalone=1">Availability</a><a href="/orders.html">Live Orders</a><a class="active" href="/admin.html">Admin</a><button id="notificationButton" type="button" title="Notifications">Notifications <span id="notificationCount">0</span></button><button data-logout type="button">Logout</button>
+      <a href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a href="/pos-live.html?mode=PARCEL">POS Parcel</a><a href="/pos-live.html?mode=PARTY">POS Party Order</a><a href="/billing.html">Billing</a><a href="/admin.html?view=invoices&standalone=1#invoices">Invoices</a><a href="/kds.html">KDS</a><a href="/admin.html?view=items&standalone=1">Availability</a><a href="/orders.html">Live Orders</a><a class="active" href="/admin.html">Admin</a><button id="notificationButton" data-notification-center type="button" title="Notifications">Notifications <span id="notificationCount" data-notification-count>0</span></button><button data-logout type="button">Logout</button>
     </nav>
   </header>
   <aside class="admin-sidebar">
@@ -264,9 +264,9 @@
       </div>
 
       <div class="inventory-panel" id="inventory-inventoryReports">
-        <div class="toolbar invoice-filters">
-          <input id="inventoryReportFrom" type="date">
-          <input id="inventoryReportTo" type="date">
+        <div class="toolbar admin-filter-toolbar invoice-filters">
+          <label>From date<input id="inventoryReportFrom" type="date"></label>
+          <label>To date<input id="inventoryReportTo" type="date"></label>
           <button id="loadInventoryReports">Load Inventory Reports</button>
         </div>
         <div class="report-grid">
@@ -292,9 +292,9 @@
         <label>Notes<input id="reservationNotes"></label>
         <button>Save Reservation</button>
       </form>
-      <div class="toolbar">
-        <input id="reservationFrom" type="date">
-        <input id="reservationTo" type="date">
+      <div class="toolbar admin-filter-toolbar">
+        <label>From date<input id="reservationFrom" type="date"></label>
+        <label>To date<input id="reservationTo" type="date"></label>
         <button id="loadReservations" type="button">Load Reservations</button>
       </div>
       <div class="table-panel"><table><thead><tr><th>Customer</th><th>Phone</th><th>Table</th><th>Guests</th><th>Time</th><th>Status</th><th></th></tr></thead><tbody id="reservationsTable"></tbody></table></div>
@@ -368,10 +368,11 @@
     </section>
 
     <section class="admin-view" id="view-reports">
-      <div class="toolbar">
-        <input id="reportFrom" type="date">
-        <input id="reportTo" type="date">
+      <div class="toolbar admin-filter-toolbar">
+        <label>From date<input id="reportFrom" type="date"></label>
+        <label>To date<input id="reportTo" type="date"></label>
         <button id="loadReports">Load Reports</button>
+        <p id="reportStatus" class="form-hint" role="status" aria-live="polite"></p>
       </div>
       <div class="report-grid">
         <article><h3>Daily Sales</h3><div id="dailySales"></div></article>
@@ -395,9 +396,8 @@
     </section>
 
     <section class="admin-view" id="view-settings">
-      <form class="editor-panel" id="settingsForm">
+      <form class="editor-panel" id="settingsForm" novalidate>
         <h2 id="settingsSectionTitle">Restaurant Profile</h2>
-        <p id="settingsStatus"></p>
 
         <div class="dashboard-grid">
           <article class="settings-section" data-settings-panel="profile">
@@ -528,6 +528,7 @@
         <div class="toolbar" id="settingsActions">
           <button>Save Settings</button>
           <button id="resetSettingsDefaults" class="secondary-btn" type="button">Reset Defaults</button>
+          <p id="settingsStatus" class="settings-save-status" role="status" aria-live="polite">Settings loaded</p>
         </div>
       </form>
     </section>
@@ -543,10 +544,10 @@
       </form>
       <div class="editor-panel">
         <h2>Staff Attendance & Cash Register Reports</h2>
-        <div class="toolbar">
-          <input id="staffCashFrom" type="date">
-          <input id="staffCashTo" type="date">
-          <input id="staffCashUserId" type="number" min="1" placeholder="User ID">
+        <div class="toolbar admin-filter-toolbar">
+          <label>From date<input id="staffCashFrom" type="date"></label>
+          <label>To date<input id="staffCashTo" type="date"></label>
+          <label>User ID<input id="staffCashUserId" type="number" min="1" placeholder="Optional"></label>
           <button id="loadStaffCashReports" type="button">Load Reports</button>
         </div>
         <p id="staffCashStatus"></p>
@@ -659,9 +660,9 @@
     <section class="admin-view" id="view-audit">
       <div class="editor-panel">
         <h2>Audit & Compliance</h2>
-        <div class="toolbar">
-          <input id="auditFromDate" type="date">
-          <input id="auditToDate" type="date">
+        <div class="toolbar admin-filter-toolbar">
+          <label>From date<input id="auditFromDate" type="date"></label>
+          <label>To date<input id="auditToDate" type="date"></label>
           <input id="auditUser" placeholder="User or role">
           <input id="auditAction" placeholder="Action">
           <input id="auditEntityType" placeholder="Entity type">
@@ -738,6 +739,7 @@
     </section>
   </main>
 
+  <script src="/js/nav-notifications.js"></script>
   <script src="/js/admin-dashboard.js"></script>
 </body>
 </html>

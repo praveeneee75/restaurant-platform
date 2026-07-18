@@ -9,7 +9,7 @@
 <body class="orders-shell">
   <header class="app-home-nav">
     <div class="app-home-brand"><strong>K'MASTER</strong> <span>POS</span><small>Live Orders</small></div>
-    <nav aria-label="POS home sections"><a href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a href="/pos-live.html?mode=PARCEL">POS Parcel</a><a href="/pos-live.html?mode=PARTY">POS Party Order</a><a href="/billing.html">Billing</a><a href="/admin.html?view=invoices&standalone=1#invoices">Invoices</a><a href="/kds.html">KDS</a><a href="/admin.html?view=items&standalone=1">Availability</a><a class="active" href="/orders.html">Live Orders</a><a href="/admin.html">Admin</a><button type="button">Notifications</button><button data-logout type="button">Logout</button></nav>
+    <nav aria-label="POS home sections"><a href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a href="/pos-live.html?mode=PARCEL">POS Parcel</a><a href="/pos-live.html?mode=PARTY">POS Party Order</a><a href="/billing.html">Billing</a><a href="/admin.html?view=invoices&standalone=1#invoices">Invoices</a><a href="/kds.html">KDS</a><a href="/admin.html?view=items&standalone=1">Availability</a><a class="active" href="/orders.html">Live Orders</a><a href="/admin.html">Admin</a><button data-notification-center type="button">Notifications <span data-notification-count>0</span></button><button data-logout type="button">Logout</button></nav>
   </header>
   <header class="orders-topbar">
     <div>
@@ -74,6 +74,7 @@
 
   </main>
 
+  <script src="/js/nav-notifications.js"></script>
   <script src="/js/orders.js"></script>
 </body>
 </html>

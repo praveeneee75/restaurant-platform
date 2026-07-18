@@ -341,8 +341,6 @@ async function refreshQrApprovals() {
   const data = await fetch(`/qr/orders/pending?restaurantId=${encodeURIComponent(restaurantId)}`).then((res) => res.json()).catch(() => ({ orders: [] }));
   const orders = data.orders || [];
   qrApprovalPanel.hidden = orders.length === 0;
-  qrNotificationCount.textContent = String(orders.length);
-  qrNotificationCount.hidden = orders.length === 0;
   qrApprovalList.innerHTML = orders.map((order) => `
     <article class="qr-approval-card">
       <strong>${esc(order.table_no)} · ${esc(order.customer_name)}</strong>
@@ -351,6 +349,7 @@ async function refreshQrApprovals() {
       <button type="button" data-approve-qr="${order.id}">Approve and send KOT</button>
     </article>
   `).join("");
+  window.dispatchEvent(new CustomEvent('pos:notifications-changed'));
 }
 
 document.addEventListener("click", async (event) => {
