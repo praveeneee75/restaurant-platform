@@ -23,7 +23,17 @@ try {
   if ($file.Length -lt 10MB) {
     throw "Installer is unexpectedly small ($($file.Length) bytes): $artifact"
   }
-  $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash
+  $stream = [System.IO.File]::OpenRead($artifact)
+  try {
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+      $hash = [System.BitConverter]::ToString($sha256.ComputeHash($stream)).Replace('-', '')
+    } finally {
+      $sha256.Dispose()
+    }
+  } finally {
+    $stream.Dispose()
+  }
   Write-Host "Installer: $($file.FullName)"
   Write-Host "Size: $($file.Length) bytes"
   Write-Host "SHA256: $hash"
