@@ -566,11 +566,24 @@ async function downloadInvoicePdf(invoiceId, invoiceNo) {
 }
 
 function printInvoice(invoice, items) {
-  const rows = items.map(item => `<tr><td>${esc(item.name)}</td><td>${item.quantity}</td><td>${money(Number(item.price || 0) * Number(item.quantity || 0))}</td></tr>`).join('');
-  const html = `<html><head><title>${esc(invoice.invoice_no || 'Invoice')}</title><style>body{font:14px Arial;padding:32px}table{width:100%;border-collapse:collapse}th,td{padding:9px;text-align:left;border-bottom:1px solid #ddd}h1{margin-bottom:6px}.total{margin-top:20px;font-size:18px;font-weight:bold;text-align:right}</style></head><body><h1>${esc(invoice.invoice_no || `Invoice #${invoice.id}`)}</h1><p>${esc(invoice.customer_name || 'Walk-in customer')} · ${esc(invoice.table_no || invoice.order_type || '')}<br>${esc(invoice.settled_at || '')}</p><table><thead><tr><th>Item</th><th>Qty</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table><p class="total">Total: ${money(invoice.total_amount)}</p></body></html>`;
-  const printWindow = window.open(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`, '_blank', 'width=760,height=900');
-  if (!printWindow) return;
-  printWindow.onload = () => printWindow.print();
+  const profile = state.settings || {};
+  const currency = profile.currency || 'INR';
+  const lineTotal = items.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
+  const taxRate = Number(profile.tax_rate || 0);
+  const tax = taxRate > 0 ? lineTotal * taxRate / (100 + taxRate) : 0;
+  const subtotal = Math.max(lineTotal - tax, 0);
+  const halfTax = tax / 2;
+  const rows = items.map(item => `<tr><td>${esc(item.quantity)} x ${esc(item.name)}</td><td>${money(Number(item.price || 0) * Number(item.quantity || 0))}</td></tr>`).join('');
+  const printWindow = window.open('', '_blank', 'width=420,height=760');
+  if (!printWindow) { alert('Printing was blocked by the browser. Allow pop-ups for this site and try again.'); return; }
+  const html = `<!doctype html><html><head><title>${esc(invoice.invoice_no || 'Invoice')}</title><style>
+    @page{size:80mm auto;margin:3mm}*{box-sizing:border-box}body{width:72mm;margin:0 auto;color:#111;font:11px Arial,sans-serif;line-height:1.25}header{text-align:center}h1{font-size:16px;margin:0 0 3px}h2{font-size:12px;margin:0 0 8px}p{margin:2px 0}.rule{border-top:1px dashed #111;margin:7px 0}.meta{display:grid;grid-template-columns:1fr 1fr;gap:2px 6px}.meta b{font-weight:700}.items{width:100%;border-collapse:collapse;margin-top:6px}.items td{padding:2px 0;vertical-align:top}.items td:last-child{text-align:right;white-space:nowrap}.summary{margin-top:7px}.summary p{display:flex;justify-content:space-between}.grand{font-weight:700;font-size:13px}.thanks{text-align:center;margin-top:12px;font-weight:700}@media print{button{display:none}}
+  </style></head><body><header><h1>${esc(profile.displayName || profile.legalName || 'KMaster POS')}</h1><p>${esc(profile.addressLine1 || '')}</p><p>${esc(profile.addressLine2 || '')}</p><p>${esc(profile.city || '')}</p><p>${profile.phone ? `Contact: ${esc(profile.phone)}` : ''}</p><div class="rule"></div></header>
+  <div class="meta"><span>Date:</span><b>${esc(invoice.settled_at || '')}</b><span>Receipt no:</span><b>${esc(invoice.invoice_no || `#${invoice.id}`)}</b><span>Customer:</span><b>${esc(invoice.customer_name || 'Walk-in customer')}</b><span>Payment:</span><b>${esc(invoice.payment_mode || 'CASH')}</b><span>Table:</span><b>${esc(invoice.table_no || invoice.order_type || '')}</b>${profile.gstin ? `<span>GSTIN:</span><b>${esc(profile.gstin)}</b>` : ''}</div>
+  <div class="rule"></div><table class="items"><tbody>${rows}</tbody></table><div class="rule"></div><div class="summary"><p><span>SUBTOTAL:</span><b>${currency} ${subtotal.toFixed(2)}</b></p>${taxRate > 0 ? `<p><span>CGST (${(taxRate / 2).toFixed(2)}%):</span><b>${currency} ${halfTax.toFixed(2)}</b></p><p><span>SGST (${(taxRate / 2).toFixed(2)}%):</span><b>${currency} ${halfTax.toFixed(2)}</b></p>` : ''}<p class="grand"><span>TOTAL:</span><b>${currency} ${Number(invoice.total_amount || 0).toFixed(2)}</b></p></div><p class="thanks">THANK YOU. VISIT AGAIN.</p></body></html>`;
+  printWindow.document.open(); printWindow.document.write(html); printWindow.document.close();
+  printWindow.focus();
+  printWindow.onload = () => { printWindow.focus(); printWindow.print(); };
 }
 
 function findById(rows, id) {
@@ -839,7 +852,12 @@ function renderSettings() {
   setChecked(settingOnlineDeliveryEnabled, settings.online_delivery_enabled);
   setChecked(settingOnlineTakeawayEnabled, settings.online_takeaway_enabled);
   settingOnlineMinOrderAmount.value = settings.online_min_order_amount || "0";
-  onlineStorefrontLink.href = `/online-order.html?restaurantId=${encodeURIComponent(restaurantId)}`;
+  // Customer ordering must never point at the POS machine's local server.
+  const publicOrderingBase = String(window.KMASTER_ONLINE_ORDER_URL || 'https://kmasterpos.com/order.html').replace(/\/$/, '');
+  const publicOrderingUrl = `${publicOrderingBase}?restaurantId=${encodeURIComponent(restaurantId)}`;
+  onlineStorefrontLink.href = publicOrderingUrl;
+  const quickLink = document.getElementById('onlineStorefrontQuickLink');
+  if (quickLink) quickLink.href = publicOrderingUrl;
   settingsStatus.textContent = "Settings loaded";
 }
 

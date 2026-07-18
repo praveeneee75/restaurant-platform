@@ -5820,14 +5820,26 @@ function invoicePdfText(value) {
 }
 
 function buildInvoicePdf(invoice, items) {
+  const total = Number(invoice.total_amount || 0);
+  const taxRate = Number(invoice.tax_rate || 0);
+  const taxIncluded = taxRate > 0 ? total * taxRate / (100 + taxRate) : 0;
   const lines = [
+    invoice.restaurant_display_name || invoice.legal_name || 'RESTAURANT',
+    invoice.address_line_1 || '',
+    invoice.address_line_2 || '',
+    '',
+    `Date: ${invoice.settled_at || ''}`,
     invoice.invoice_no || `Invoice #${invoice.id}`,
-    `${invoice.customer_name || 'Walk-in customer'} - ${invoice.table_no || invoice.order_type || ''}`,
-    invoice.settled_at || '',
+    `Customer: ${invoice.customer_name || 'Walk-in customer'}`,
+    `Table: ${invoice.table_no || invoice.order_type || ''}`,
     '',
     ...items.map((item) => `${item.name} x ${item.quantity}    ${(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}`),
     '',
-    `Total: ${Number(invoice.total_amount || 0).toFixed(2)}`
+    `SUBTOTAL: ${(total - taxIncluded).toFixed(2)}`,
+    ...(taxRate > 0 ? [`CGST (${(taxRate / 2).toFixed(2)}%): ${(taxIncluded / 2).toFixed(2)}`, `SGST (${(taxRate / 2).toFixed(2)}%): ${(taxIncluded / 2).toFixed(2)}`] : []),
+    `TOTAL: ${total.toFixed(2)}`,
+    '',
+    'THANK YOU. VISIT AGAIN.'
   ];
   const stream = ['BT', '/F1 11 Tf', '50 780 Td', ...lines.map((line, index) => `${index ? '0 -18 Td ' : ''}(${invoicePdfText(line)}) Tj`), 'ET'].join('\n');
   const objects = [
@@ -5853,6 +5865,13 @@ app.get('/orders/invoices/:id/pdf', (req, res) => {
   try {
     const invoice = db.prepare(`SELECT o.*, c.name AS customer_name FROM orders o LEFT JOIN customers c ON c.id = o.customer_id WHERE o.id = ? AND o.status = 'PAID'`).get(invoiceId);
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+    Object.assign(invoice, {
+      restaurant_display_name: getConfigValue(db, 'restaurant_display_name', ''),
+      legal_name: getConfigValue(db, 'legal_name', ''),
+      address_line_1: getConfigValue(db, 'address_line_1', ''),
+      address_line_2: getConfigValue(db, 'address_line_2', ''),
+      tax_rate: getNumberConfig(db, 'tax_rate', 0)
+    });
     const items = db.prepare(`SELECT i.name, oi.quantity, oi.price FROM order_items oi LEFT JOIN items i ON i.id = oi.item_id WHERE oi.order_id = ? ORDER BY oi.id`).all(invoiceId);
     const pdf = buildInvoicePdf(invoice, items);
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${String(invoice.invoice_no || `invoice-${invoiceId}`).replace(/[^a-z0-9._-]/gi, '_')}.pdf"`, 'Content-Length': pdf.length });
@@ -6393,11 +6412,19 @@ app.post('/orders/settle', (req, res) => {
         },
         payments,
         customerId: linkedCustomerId || null,
+        customerName: linkedCustomerId ? db.prepare('SELECT name FROM customers WHERE id = ?').get(linkedCustomerId)?.name || '' : '',
+        customerPhone: linkedCustomerId ? db.prepare('SELECT phone FROM customers WHERE id = ?').get(linkedCustomerId)?.phone || '' : '',
+        tableNumber: order.table_no || '',
+        orderType: order.order_type || 'DINE_IN',
+        settledAt: new Date().toISOString(),
         redeemedPoints: redeem,
         loyaltyDiscount,
         serviceCharge,
         roundOff,
-        payable
+        payable,
+        taxName: getConfigValue(db, 'tax_name', 'GST'),
+        taxRate: getNumberConfig(db, 'tax_rate', 0),
+        paymentMode: payments?.[0]?.method || payments?.[0]?.paymentMethod || 'CASH'
       }));
       const billSnapshot = {
         orderId,

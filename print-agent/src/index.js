@@ -158,21 +158,57 @@ async function printBill(payload) {
   });
   if (!await printer.isPrinterConnected()) throw new Error('Bill printer not reachable');
   const profile = payload.restaurantProfile || {};
+  const items = payload.items || [];
+  const total = Number(payload.payable || 0);
+  const taxRate = Number(payload.taxRate || 0);
+  const includedTax = taxRate > 0 ? total * taxRate / (100 + taxRate) : 0;
+  const cgst = includedTax / 2;
+  const sgst = includedTax / 2;
+  const subtotal = total - includedTax;
   printer.alignCenter();
   printer.bold(true);
   printer.println(profile.displayName || profile.legalName || 'RESTAURANT');
-  printer.println('BILL / INVOICE');
+  printer.bold(false);
+  [profile.addressLine1, profile.addressLine2, profile.city, profile.phone].filter(Boolean).forEach(line => printer.println(String(line)));
+  printer.bold(true);
+  printer.println('TAX INVOICE');
   printer.bold(false);
   printer.drawLine();
   printer.alignLeft();
+  printer.println(`Date: ${formatReceiptDate(payload.settledAt)}`);
   printer.println(`Invoice: ${payload.invoiceNo || ''}`);
   printer.println(`Order: ${payload.orderId || ''}`);
-  (payload.items || []).forEach(item => printer.println(`${item.quantity} x ${item.name}  ${(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}`));
+  printer.println(`Table: ${payload.tableNumber || payload.orderType || ''}`);
+  if (payload.customerName) printer.println(`Customer: ${payload.customerName}`);
+  if (payload.customerPhone) printer.println(`Phone: ${payload.customerPhone}`);
+  printer.println(`Payment: ${String(payload.paymentMode || 'CASH').toLowerCase()}`);
   printer.drawLine();
-  printer.println(`Payable: ${Number(payload.payable || 0).toFixed(2)}`);
-  printer.println(new Date().toLocaleString());
+  items.forEach(item => {
+    const lineTotal = Number(item.price || 0) * Number(item.quantity || 0);
+    printer.println(`${item.quantity} x ${item.name}`);
+    printer.alignRight();
+    printer.println(`${profile.currency || 'INR'} ${lineTotal.toFixed(2)}`);
+    printer.alignLeft();
+  });
+  printer.drawLine();
+  printer.println(`SUBTOTAL: ${profile.currency || 'INR'} ${subtotal.toFixed(2)}`);
+  if (taxRate > 0 && profile.showTaxOnBill !== false) {
+    printer.println(`CGST (${(taxRate / 2).toFixed(2)}%): ${profile.currency || 'INR'} ${cgst.toFixed(2)}`);
+    printer.println(`SGST (${(taxRate / 2).toFixed(2)}%): ${profile.currency || 'INR'} ${sgst.toFixed(2)}`);
+  }
+  printer.bold(true);
+  printer.println(`TOTAL: ${profile.currency || 'INR'} ${total.toFixed(2)}`);
+  printer.bold(false);
+  printer.alignCenter();
+  printer.println('THANK YOU. VISIT AGAIN.');
   printer.cut();
   await printer.execute();
+}
+
+function formatReceiptDate(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' });
 }
 
 function startHealthServer() {
