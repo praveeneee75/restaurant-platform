@@ -71,9 +71,17 @@ const itemNoteEditor = document.getElementById("itemNoteEditor");
 const itemNoteTitle = document.getElementById("itemNoteTitle");
 const itemNoteHelp = document.getElementById("itemNoteHelp");
 const itemNoteInput = document.getElementById("itemNoteInput");
-const saveItemNote = document.getElementById("saveItemNote");
-const clearItemNote = document.getElementById("clearItemNote");
 const editItemOptions = document.getElementById("editItemOptions");
+const selectedItemMinus = document.getElementById("selectedItemMinus");
+const selectedItemPlus = document.getElementById("selectedItemPlus");
+const selectedItemQuantity = document.getElementById("selectedItemQuantity");
+const removeSelectedItem = document.getElementById("removeSelectedItem");
+const posConfirmModal = document.getElementById("posConfirmModal");
+const posConfirmTitle = document.getElementById("posConfirmTitle");
+const posConfirmMessage = document.getElementById("posConfirmMessage");
+const posConfirmInput = document.getElementById("posConfirmInput");
+const cancelPosConfirm = document.getElementById("cancelPosConfirm");
+const acceptPosConfirm = document.getElementById("acceptPosConfirm");
 let posToastTimer;
 const displayItemCode = (item) => String(item.item_code || String(item.id).padStart(4, "0")).replace(/^ITM[-\s]*/i, "");
 
@@ -286,6 +294,56 @@ async function restoreSelectedTableOrder() {
   renderCart();
 }
 
+function askPosConfirmation(message, title = "Confirm action") {
+  return new Promise((resolve) => {
+    posConfirmTitle.textContent = title;
+    posConfirmMessage.textContent = String(message || "");
+    posConfirmInput.hidden = true;
+    posConfirmModal.hidden = false;
+    const finish = (accepted) => {
+      posConfirmModal.hidden = true;
+      acceptPosConfirm.removeEventListener("click", accept);
+      cancelPosConfirm.removeEventListener("click", cancel);
+      resolve(accepted);
+    };
+    const accept = () => finish(true);
+    const cancel = () => finish(false);
+    acceptPosConfirm.addEventListener("click", accept);
+    cancelPosConfirm.addEventListener("click", cancel);
+    cancelPosConfirm.focus();
+  });
+}
+
+function askPosInput(message, title = "Enter details", initialValue = "") {
+  return new Promise((resolve) => {
+    posConfirmTitle.textContent = title;
+    posConfirmMessage.textContent = String(message || "");
+    posConfirmInput.hidden = false;
+    posConfirmInput.value = String(initialValue || "");
+    posConfirmModal.hidden = false;
+    const finish = (accepted) => {
+      const value = accepted ? posConfirmInput.value : null;
+      posConfirmModal.hidden = true;
+      posConfirmInput.hidden = true;
+      acceptPosConfirm.removeEventListener("click", accept);
+      cancelPosConfirm.removeEventListener("click", cancel);
+      posConfirmInput.removeEventListener("keydown", keydown);
+      resolve(value);
+    };
+    const accept = () => finish(true);
+    const cancel = () => finish(false);
+    const keydown = (event) => {
+      if (event.key === "Enter") finish(true);
+      if (event.key === "Escape") finish(false);
+    };
+    acceptPosConfirm.addEventListener("click", accept);
+    cancelPosConfirm.addEventListener("click", cancel);
+    posConfirmInput.addEventListener("keydown", keydown);
+    posConfirmInput.focus();
+    posConfirmInput.select();
+  });
+}
+
 async function reloadCurrentOrderCart() {
   if (!state.orderId) return;
   const selectedOrderItemId = state.cart.find((item) => item.key === state.selectedCartKey)?.orderItemId;
@@ -312,7 +370,7 @@ async function refreshShiftCashStatus() {
 }
 
 async function promptAmount(label) {
-  const value = prompt(label);
+  const value = await askPosInput(label, "Enter amount");
   if (value === null) return null;
   const amountValue = Number(value);
   if (!Number.isFinite(amountValue) || amountValue < 0) {
@@ -442,12 +500,7 @@ function renderCart() {
         ${(item.modifiers || []).map((modifier) => `<small>+ ${esc(modifier.name)}</small>`).join("")}
         ${item.notes ? `<small class="item-note">Note: ${esc(item.notes)}</small>` : ""}
       </div>
-      <div class="qty-controls">
-        <button data-minus="${item.key}" ${item.sentToKitchen ? "disabled" : ""}>-</button>
-        <span>${item.quantity}</span>
-        <button data-plus="${item.key}" ${item.sentToKitchen ? "disabled" : ""}>+</button>
-        <button data-remove="${item.key}" ${item.sentToKitchen ? "disabled" : ""}>Remove</button>
-      </div>
+      <span class="cart-line-quantity">× ${item.quantity}</span>
     </div>
   `).join("");
   renderItemNoteEditor();
@@ -620,13 +673,7 @@ function openEditSelectedItem() {
   if (!menuItem) return alert("Selected item is no longer available");
   const groups = itemGroups(menuItem.id);
   if (groups.length === 0) {
-    const quantity = Number(prompt(`Quantity for ${menuItem.name}`, String(line.quantity)));
-    if (!Number.isInteger(quantity) || quantity < 1) return alert("Enter a whole quantity of 1 or more");
-    line.quantity = quantity;
-    line.savedLocally = false;
-    state.dirty = true;
-    refreshCartAndMenu();
-    return;
+    return alert("This item has no options. Use the quantity controls in the selected-item panel.");
   }
   state.pendingItem = menuItem;
   state.pendingEditKey = line.key;
@@ -739,24 +786,46 @@ function renderItemNoteEditor() {
     itemNoteInput.value = "";
     return;
   }
-  itemNoteTitle.textContent = `Kitchen note · ${line.name}`;
+  itemNoteTitle.textContent = `${line.name} · ${money(line.price)}`;
   itemNoteHelp.textContent = line.sentToKitchen
     ? "Already sent to kitchen. Add a new item to send an additional instruction."
     : "This item-level note prints in the Special Note column on the next KOT.";
   if (document.activeElement !== itemNoteInput) itemNoteInput.value = line.notes || "";
   itemNoteInput.disabled = line.sentToKitchen;
-  saveItemNote.disabled = line.sentToKitchen;
-  clearItemNote.disabled = line.sentToKitchen;
+  selectedItemQuantity.textContent = String(line.quantity);
+  selectedItemMinus.disabled = line.sentToKitchen;
+  selectedItemPlus.disabled = line.sentToKitchen;
+  removeSelectedItem.disabled = line.sentToKitchen;
   editItemOptions.disabled = line.sentToKitchen || Boolean(line.comboId);
 }
 
-function saveSelectedItemNote(value) {
+function updateSelectedItemNote(value) {
   const line = state.cart.find((item) => item.key === state.selectedCartKey);
   if (!line || line.sentToKitchen) return;
-  line.notes = String(value || "").trim().slice(0, 300);
+  line.notes = String(value || "").slice(0, 300);
   line.savedLocally = false;
   state.dirty = true;
-  renderCart();
+}
+
+function removeSelectedCartItem() {
+  const index = state.cart.findIndex((item) => item.key === state.selectedCartKey);
+  const line = state.cart[index];
+  if (!line) return;
+  if (line.sentToKitchen) return alert("This item has already been sent to the kitchen. Cancel it from KDS instead.");
+  state.cart.splice(index, 1);
+  state.selectedCartKey = state.cart[Math.min(index, state.cart.length - 1)]?.key || null;
+  state.dirty = true;
+  refreshCartAndMenu();
+}
+
+function changeSelectedItemQuantity(delta) {
+  const line = state.cart.find((item) => item.key === state.selectedCartKey);
+  if (!line || line.sentToKitchen) return;
+  line.quantity = Number(line.quantity || 0) + Number(delta || 0);
+  if (line.quantity <= 0) return removeSelectedCartItem();
+  line.savedLocally = false;
+  state.dirty = true;
+  refreshCartAndMenu();
 }
 
 async function submitCurrentKot() {
@@ -784,7 +853,7 @@ async function submitCurrentKot() {
     ...(newItems.length ? newItems.map(itemLabel) : ["None"])
   ].join("\n");
   if (!newItems.length) return alert(`${summary}\n\nThere are no unsent items to submit. Add an item or save a new item before sending the KOT.`);
-  if (!confirm(`${summary}\n\nSubmit this KOT?`)) return;
+  if (!await askPosConfirmation(`${summary}\n\nSubmit this KOT?`, "Confirm KOT")) return;
   const saved = await saveCurrentOrder();
   if (!saved) return;
   const data = await postJson("/orders/submit-kot", { orderId: state.orderId });
@@ -939,13 +1008,11 @@ cartItems.addEventListener("click", (event) => {
   renderCart();
 });
 
-saveItemNote.addEventListener("click", () => saveSelectedItemNote(itemNoteInput.value));
-clearItemNote.addEventListener("click", () => {
-  itemNoteInput.value = "";
-  saveSelectedItemNote("");
-  itemNoteInput.focus();
-});
+itemNoteInput.addEventListener("input", () => updateSelectedItemNote(itemNoteInput.value));
 editItemOptions.addEventListener("click", openEditSelectedItem);
+selectedItemMinus.addEventListener("click", () => changeSelectedItemQuantity(-1));
+selectedItemPlus.addEventListener("click", () => changeSelectedItemQuantity(1));
+removeSelectedItem.addEventListener("click", removeSelectedCartItem);
 
 items.addEventListener("click", (event) => {
   const target = event.target.closest("[data-item-plus], [data-item-minus]");
@@ -1062,7 +1129,7 @@ moveTableBtn.addEventListener("click", async () => {
     .map((table) => `${table.table_name} [${table.status || "AVAILABLE"}]`)
     .join("\n");
   if (!destinations) return alert("No destination tables are available");
-  const targetTableName = prompt(`Choose the destination table by entering its name:\n\n${destinations}`);
+  const targetTableName = await askPosInput(`Choose the destination table by entering its name:\n\n${destinations}`, "Move table");
   if (!targetTableName) return;
   const targetName = targetTableName.trim().replace(/\s*\[.*\]$/, "").trim().toLowerCase();
   const targetTable = state.tables.find((table) => table.table_name.toLowerCase() === targetName && Number(table.id) !== Number(state.selectedTable.id));
@@ -1119,7 +1186,7 @@ createSplitCheckBtn.addEventListener("click", async () => {
   const data = await postJson("/orders/split-check", {
     orderId: state.orderId,
     itemKeys: selectedKeys,
-    checkName: prompt("Split check name") || "",
+    checkName: await askPosInput("Enter a name for the new check (optional)", "Split check") || "",
     customerName: splitCustomerName.value.trim(),
     customerPhone: splitCustomerPhone.value.trim()
   });
@@ -1171,7 +1238,7 @@ cashOutBtn.addEventListener("click", async () => {
 });
 */
 cancelOrder.addEventListener("click", async () => {
-  if (!state.orderId || !confirm("Cancel this order?")) return;
+  if (!state.orderId || !await askPosConfirmation("Cancel this order?", "Cancel order")) return;
   await postJson("/orders/cancel", { orderId: state.orderId });
   state.cart = [];
   state.selectedCartKey = null;
@@ -1184,11 +1251,11 @@ cancelOrder.addEventListener("click", async () => {
 });
 
 availabilityBtn?.addEventListener("click", async () => {
-  const code = prompt(`Enter the item code to change availability:\n\n${state.items.map((item) => `${displayItemCode(item)} - ${item.name}`).join("\n")}`);
+  const code = await askPosInput(`Enter the item code to change availability:\n\n${state.items.map((item) => `${displayItemCode(item)} - ${item.name}`).join("\n")}`, "Item availability");
   if (!code) return;
   const item = state.items.find((row) => String(row.item_code || row.id).toLowerCase() === code.trim().toLowerCase() || String(row.id) === code.trim());
   if (!item) return alert("Item code not found");
-  const available = confirm(`${item.name}\n\nOK = Available\nCancel = Unavailable`);
+  const available = await askPosConfirmation(`${item.name}\n\nConfirm to mark available. Cancel to mark unavailable.`, "Item availability");
   await postJson("/pos/item-availability", { id: item.id, active: available });
   alert(`${item.name} is now ${available ? "available" : "unavailable"}`);
   await refreshLiveState();

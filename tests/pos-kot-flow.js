@@ -47,6 +47,7 @@ async function post(url, body) {
   await post('/orders/submit-kot', { orderId: first.orderId });
   const openAfterFirst = await request('GET', `/orders/open?restaurantId=${restaurantId}&orderId=${first.orderId}`);
   const original = openAfterFirst.data.items[0];
+  if (original.notes !== 'No onion') throw new Error('Item special note was not restored when the table order was reopened');
   const afterFirstDb = openDatabase(restaurantId);
   const firstJobs = afterFirstDb.prepare("SELECT id, payload FROM print_jobs WHERE type = 'KOT' AND ref_id = ? ORDER BY id").all(first.orderId);
   afterFirstDb.close();

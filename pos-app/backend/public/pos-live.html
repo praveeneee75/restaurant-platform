@@ -41,16 +41,20 @@
     <div class="category-strip" id="categories"><button data-category="ALL" class="active">All</button></div>
     <label class="item-search"><span>Find an item</span><input id="itemSearch" type="search" placeholder="Search products"></label>
     <div class="item-grid" id="items"></div>
-    <section class="item-note-editor" id="itemNoteEditor" hidden>
+    <section class="selected-item-editor" id="itemNoteEditor" hidden>
       <div>
-        <strong id="itemNoteTitle">Kitchen note</strong>
+        <strong id="itemNoteTitle">Selected item</strong>
         <small id="itemNoteHelp">This note prints against the selected item on the next KOT.</small>
+      </div>
+      <div class="selected-item-quantity" aria-label="Selected item quantity">
+        <button id="selectedItemMinus" type="button" class="secondary-btn" aria-label="Reduce quantity">−</button>
+        <strong id="selectedItemQuantity">1</strong>
+        <button id="selectedItemPlus" type="button" class="secondary-btn" aria-label="Increase quantity">+</button>
       </div>
       <textarea id="itemNoteInput" maxlength="300" rows="2" placeholder="Example: No onion, less spicy, allergy information"></textarea>
       <div class="item-note-actions">
         <button id="editItemOptions" type="button" class="secondary-btn">Edit Options</button>
-        <button id="clearItemNote" type="button" class="secondary-btn">Clear</button>
-        <button id="saveItemNote" type="button">Save Note</button>
+        <button id="removeSelectedItem" type="button" class="danger-btn">Remove Item</button>
       </div>
     </section>
   </main>
@@ -169,6 +173,18 @@
       <div id="splitBillItems" class="modifier-groups"></div>
       <div class="cart-actions">
         <button id="createSplitCheckBtn">Create Split Check</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="posConfirmModal" hidden>
+    <div class="modifier-modal pos-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="posConfirmTitle">
+      <header><h2 id="posConfirmTitle">Confirm action</h2></header>
+      <pre id="posConfirmMessage"></pre>
+      <input id="posConfirmInput" hidden>
+      <div class="cart-actions">
+        <button id="cancelPosConfirm" type="button" class="secondary-btn">Cancel</button>
+        <button id="acceptPosConfirm" type="button">Confirm</button>
       </div>
     </div>
   </div>
