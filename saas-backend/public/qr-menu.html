@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>K'Master QR Menu</title>
+  <link rel="stylesheet" href="/css/app.css?v=qr-public-1">
+</head>
+<body>
+  <main>
+    <section>
+      <h1 id="restaurantName">QR Menu</h1>
+      <p id="tableName"></p>
+      <p id="qrStatus">Loading menu…</p>
+    </section>
+    <section>
+      <h2>Menu</h2>
+      <div id="qrCategories" class="cards"></div>
+      <div id="qrItems" class="cards"></div>
+    </section>
+    <section>
+      <h2>Your order</h2>
+      <div id="qrCartItems"></div>
+      <p><strong id="qrTotal">Total: INR 0.00</strong></p>
+      <input id="qrCustomerName" required placeholder="Customer name">
+      <input id="qrCustomerPhone" required inputmode="tel" placeholder="10-digit mobile number">
+      <textarea id="qrOrderNotes" placeholder="Order notes (optional)"></textarea>
+      <button id="placeQrOrder" type="button">Place Dine-in Order</button>
+    </section>
+  </main>
+  <script src="/js/qr-public.js?v=1.0.90"></script>
+</body>
+</html>

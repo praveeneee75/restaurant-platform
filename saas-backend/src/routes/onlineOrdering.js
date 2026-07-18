@@ -100,9 +100,9 @@ router.get('/storefront/:slug/menu', async (req, res) => {
 });
 
 router.post('/storefront/:slug/orders', async (req, res) => {
-  const { orderType, customerName, customerPhone, customerEmail, deliveryAddress, paymentMode, notes, items } = req.body || {};
+  const { orderType, tableId, customerName, customerPhone, customerEmail, deliveryAddress, paymentMode, notes, items } = req.body || {};
   const selectedType = cleanText(orderType, 20).toUpperCase();
-  if (!['TAKEAWAY', 'DELIVERY'].includes(selectedType) || !cleanText(customerName, 120) || !cleanText(customerPhone, 20) || !Array.isArray(items) || items.length === 0) {
+  if (!['DINE_IN', 'TAKEAWAY', 'DELIVERY'].includes(selectedType) || (selectedType === 'DINE_IN' && !cleanText(tableId, 30)) || !cleanText(customerName, 120) || !cleanText(customerPhone, 20) || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ success: false, message: 'Order type, customer and items are required' });
   }
   const client = await pool.connect();
@@ -144,9 +144,9 @@ router.post('/storefront/:slug/orders', async (req, res) => {
       INSERT INTO online_orders (
         tenant_id, organization_id, storefront_id, order_no, order_type,
         customer_name, customer_phone, customer_email, delivery_address,
-        payment_mode, subtotal, delivery_fee, total_amount, notes
+        payment_mode, subtotal, delivery_fee, total_amount, notes, table_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING *
     `, [
       storefront.rows[0].tenant_id,
@@ -162,7 +162,8 @@ router.post('/storefront/:slug/orders', async (req, res) => {
       subtotal,
       deliveryFee,
       total,
-      cleanText(notes, 500) || null
+      cleanText(notes, 500) || null,
+      cleanText(tableId, 30) || null
     ]);
 
     for (const item of safeItems) {

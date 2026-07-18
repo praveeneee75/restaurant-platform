@@ -55,6 +55,8 @@ jobs:
           node --check pos-app/backend/public/js/nav-notifications.js
           node tests/production-url-regression.js
           node tests/pos-regression.js
+          node tests/saas-onboarding-profile-regression.js
+          node tests/reported-issues-regression.js
 
       - name: Build and validate NSIS installer
         run: npm run release:win

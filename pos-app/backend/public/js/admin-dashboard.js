@@ -315,7 +315,7 @@ function renderAdmin() {
   tablesTable.innerHTML = tables.map((t) => `<tr><td>${esc(t.table_name)}</td><td>${esc(t.status)}</td><td>${actions("table", t.id)}</td></tr>`).join("");
   qrLinksTable.innerHTML = tables.map((t) => {
     const baseUrl = String(state.network.publicQrBaseUrl || 'https://pos.kmasterpos.com').replace(/\/$/, '');
-    const url = `${baseUrl}/qr-menu.html?v=1.0.89&restaurantId=${encodeURIComponent(restaurantId)}&tableId=${t.id}`;
+    const url = `${baseUrl}/qr-menu.html?v=1.0.90&restaurantId=${encodeURIComponent(restaurantId)}&tableId=${t.id}`;
     return `<tr><td>${esc(t.table_name)}</td><td><a href="${url}" target="_blank">${esc(url)}</a></td></tr>`;
   }).join("");
 }

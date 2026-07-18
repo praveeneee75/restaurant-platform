@@ -7,7 +7,9 @@ const productionFiles = [
   'pos-app/backend/public/qr-menu.html',
   'pos-app/backend/public/js/qr-menu.js',
   'deploy/compose.yml',
-  'deploy/.env.example'
+  'deploy/.env.example',
+  'saas-backend/public/qr-menu.html',
+  'saas-backend/public/js/qr-public.js'
 ];
 
 const forbidden = /(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?/i;
@@ -26,6 +28,8 @@ for (const relative of productionFiles) {
 const adminDashboard = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/admin-dashboard.js'), 'utf8');
 const adminHtml = fs.readFileSync(path.join(root, 'pos-app/backend/public/admin.html'), 'utf8');
 const styleCss = fs.readFileSync(path.join(root, 'pos-app/backend/public/css/style.css'), 'utf8');
+const caddy = fs.readFileSync(path.join(root, 'deploy/Caddyfile'), 'utf8');
+const orderJs = fs.readFileSync(path.join(root, 'saas-backend/public/js/order.js'), 'utf8');
 if (!adminDashboard.includes("fetchJson('/network/info')") || !adminDashboard.includes('state.network.publicQrBaseUrl')) {
   failures.push('QR links do not use the configured public QR address');
 }
@@ -40,6 +44,12 @@ if (adminDashboard.includes('onlineStorefrontLink.href = `/online-order.html')) 
 }
 if (!adminHtml.includes('class="qr-links-table"') || !styleCss.includes('.table-panel .qr-links-table td:first-child') || !styleCss.includes('table-layout: auto')) {
   failures.push('QR link table does not use content-aware column sizing');
+}
+if (!caddy.includes('pos.kmasterpos.com') || !fs.existsSync(path.join(root, 'saas-backend/public/qr-menu.html'))) {
+  failures.push('Public POS/QR hostname is not hosted by the SaaS service');
+}
+if (!orderJs.includes('requestedRestaurant') || !orderJs.includes('restaurant_code')) {
+  failures.push('Online order deep link does not select its requested restaurant');
 }
 
 if (failures.length) {

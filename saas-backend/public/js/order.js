@@ -30,6 +30,9 @@ async function loadStorefronts() {
   if (!res.ok || data.success === false) throw new Error(data.message || "Unable to load branches");
   storefronts = data.storefronts || [];
   storefrontSelect.innerHTML = storefronts.map((sf) => `<option value="${sf.slug}">${sf.display_name} (${sf.pos_status})</option>`).join("");
+  const requestedRestaurant = new URLSearchParams(location.search).get("restaurantId");
+  const requested = storefronts.find((sf) => String(sf.restaurant_code).toUpperCase() === String(requestedRestaurant || '').toUpperCase());
+  if (requested) storefrontSelect.value = requested.slug;
   selectedSlug = storefrontSelect.value;
 }
 

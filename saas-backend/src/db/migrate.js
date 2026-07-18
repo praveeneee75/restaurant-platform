@@ -576,6 +576,7 @@ async function migrate() {
       updated_at TIMESTAMPTZ
     )
   `);
+  await pool.query('ALTER TABLE online_orders ADD COLUMN IF NOT EXISTS table_id TEXT');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS online_order_items (
@@ -589,6 +590,34 @@ async function migrate() {
       notes TEXT
     )
   `);
+
+  const demoTenant = await pool.query("SELECT id FROM tenants WHERE restaurant_code = 'RESTOWHITELABEL' LIMIT 1");
+  if (demoTenant.rowCount) {
+    const demoTenantId = demoTenant.rows[0].id;
+    await pool.query(`
+      INSERT INTO online_storefronts (tenant_id, slug, display_name, description, active, delivery_enabled, takeaway_enabled, min_order_amount, delivery_fee, service_area)
+      VALUES ($1, 'kmaster-whitelabel-demo', 'KMaster White Label Demo Restaurant', 'Demo online ordering storefront', true, true, true, 0, 0, 'Chennai')
+      ON CONFLICT(slug) DO UPDATE SET active = true, display_name = EXCLUDED.display_name, updated_at = NOW()
+    `, [demoTenantId]);
+    const demoSnapshot = await pool.query('SELECT 1 FROM online_menu_snapshots WHERE tenant_id = $1 LIMIT 1', [demoTenantId]);
+    if (!demoSnapshot.rowCount) {
+      const demoItems = [
+        ['1', 'Idli Sambar', 55, 1], ['2', 'Masala Dosa', 95, 1], ['3', 'Ghee Pongal', 85, 1],
+        ['4', 'Paneer Tikka', 190, 2], ['5', 'Chicken 65', 180, 2], ['6', 'Veg Biryani', 160, 3],
+        ['7', 'Chicken Biryani', 220, 3], ['8', 'South Indian Veg Meals', 145, 4],
+        ['9', 'Butter Naan', 55, 5], ['10', 'Chapati', 35, 5], ['11', 'Filter Coffee', 35, 6],
+        ['12', 'Fresh Lime Soda', 60, 6], ['13', 'Gulab Jamun', 70, 7]
+      ].map(([id, name, price, category_id]) => ({ id, name, price, category_id, online_description: '' }));
+      await pool.query('INSERT INTO online_menu_snapshots (tenant_id, source, payload) VALUES ($1, $2, $3::jsonb)', [demoTenantId, 'DEMO_SEED', JSON.stringify({
+        restaurant: { displayName: 'KMaster White Label Demo Restaurant', currency: 'INR' },
+        categories: [
+          { id: 1, name: 'Breakfast' }, { id: 2, name: 'Starters' }, { id: 3, name: 'Biryanis' },
+          { id: 4, name: 'Meals' }, { id: 5, name: 'Breads' }, { id: 6, name: 'Beverages' }, { id: 7, name: 'Desserts' }
+        ],
+        items: demoItems
+      })]);
+    }
+  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS support_notes (

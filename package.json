@@ -29,6 +29,7 @@
     "test:admin:regression": "node tests/admin-regression.js",
     "test:billing:regression": "node tests/billing-controls-regression.js",
     "test:production:urls": "node tests/production-url-regression.js",
+    "test:reported-issues": "node tests/reported-issues-regression.js",
     "test:saas": "node tests/saas-smoke.js"
   }
 }

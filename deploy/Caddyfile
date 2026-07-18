@@ -42,6 +42,12 @@ order.kmasterpos.com {
 	import saas_proxy
 }
 
+pos.kmasterpos.com {
+	@root path /
+	redir @root /order.html 302
+	import saas_proxy
+}
+
 downloads.kmasterpos.com {
 	@root path /
 	redir @root /downloads.html 302

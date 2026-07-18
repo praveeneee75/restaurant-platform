@@ -9147,6 +9147,10 @@ function importSaasOnlineOrderLocal(db, restaurantId, actor, saasOrder) {
   const customerPhone = normalisePhone(saasOrder.customer_phone || '');
   const customerName = normaliseText(saasOrder.customer_name || 'Online Customer');
   const deliveryAddress = normaliseText(saasOrder.delivery_address || '');
+  const dineInTable = selectedOrderType === 'DINE_IN' && isPositiveId(saasOrder.table_id)
+    ? db.prepare('SELECT id, table_name FROM tables WHERE id = ? AND active = 1').get(Number(saasOrder.table_id))
+    : null;
+  if (selectedOrderType === 'DINE_IN' && !dineInTable) throw new Error('Dine-in table is unavailable for SaaS order');
   if (selectedOrderType === 'DELIVERY' && !deliveryAddress) throw new Error('Delivery address required for SaaS delivery order');
 
   return db.transaction(() => {
@@ -9159,11 +9163,12 @@ function importSaasOnlineOrderLocal(db, restaurantId, actor, saasOrder) {
     }
 
     const result = db.prepare(`
-      INSERT INTO orders (order_type, table_no, status, total_amount, payment_status, created_by, customer_id, delivery_fee, order_source)
-      VALUES (?, ?, 'OPEN', 0, ?, ?, ?, ?, 'SAAS_ONLINE')
+      INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, created_by, customer_id, delivery_fee, order_source)
+      VALUES (?, ?, ?, 'OPEN', 0, ?, ?, ?, ?, 'SAAS_ONLINE')
     `).run(
       selectedOrderType,
-      `${selectedOrderType.replace(/_/g, ' ')} ${saasOrder.order_no || ''}`.trim(),
+      dineInTable?.id || null,
+      dineInTable?.table_name || `${selectedOrderType.replace(/_/g, ' ')} ${saasOrder.order_no || ''}`.trim(),
       String(saasOrder.payment_status || 'UNPAID').toUpperCase() === 'PAID' ? 'PAID' : 'UNPAID',
       actor?.id || null,
       customerId,
