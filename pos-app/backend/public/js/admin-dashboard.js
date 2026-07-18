@@ -20,8 +20,9 @@ const notificationButton = document.getElementById('notificationButton');
 const notificationCount = document.getElementById('notificationCount');
 const settingQrRequireTablePin = document.getElementById('settingQrRequireTablePin');
 const settingQrSessionMinutes = document.getElementById('settingQrSessionMinutes');
-const promoCodeForm = document.getElementById('promoCodeForm');
 const promoCodesTable = document.getElementById('promoCodesTable');
+const staffCashSettingsForm = document.getElementById('staffCashSettingsForm');
+const staffCashSettingsStatus = document.getElementById('staffCashSettingsStatus');
 const discoverPrinters = document.getElementById('discoverPrinters');
 const printerDiscoveryStatus = document.getElementById('printerDiscoveryStatus');
 const printerDiscoveryResults = document.getElementById('printerDiscoveryResults');
@@ -807,7 +808,10 @@ function applyPermissionGuards() {
     purchaseOrderForm.hidden = true;
     supplierPaymentForm.hidden = true;
   }
-  if (!can("admin.settings.manage")) settingsForm.querySelectorAll("input,select,button").forEach((element) => element.disabled = true);
+  if (!can("admin.settings.manage")) {
+    settingsForm.querySelectorAll("input,select,button").forEach((element) => element.disabled = true);
+    staffCashSettingsForm.querySelectorAll("input,select,button").forEach((element) => element.disabled = true);
+  }
 }
 
 function checkedValue(element) {
@@ -864,10 +868,6 @@ function renderSettings() {
   setChecked(settingAllowKotReprint, settings.allow_kot_reprint);
   settingKotHeaderText.value = settings.kot_header_text || "";
   settingKotFooterText.value = settings.kot_footer_text || "";
-  setChecked(settingBackupEnabled, settings.backup_enabled);
-  settingBackupFolderPath.value = settings.backup_folder_path || "";
-  settingOnedriveFolderPath.value = settings.onedrive_folder_path || "";
-  settingBackupIntervalMinutes.value = settings.backup_interval_minutes || "60";
   setChecked(settingRequireOpenRegisterForCashPayment, settings.require_open_register_for_cash_payment);
   setChecked(settingAllowCashierRegisterClose, settings.allow_cashier_register_close);
   settingCashDiscrepancyThreshold.value = settings.cash_discrepancy_threshold || "0";
@@ -940,10 +940,6 @@ function collectSettings() {
     allow_kot_reprint: checkedValue(settingAllowKotReprint),
     kot_header_text: settingKotHeaderText.value,
     kot_footer_text: settingKotFooterText.value,
-    backup_enabled: checkedValue(settingBackupEnabled),
-    backup_folder_path: settingBackupFolderPath.value,
-    onedrive_folder_path: settingOnedriveFolderPath.value,
-    backup_interval_minutes: settingBackupIntervalMinutes.value,
     require_open_register_for_cash_payment: checkedValue(settingRequireOpenRegisterForCashPayment),
     allow_cashier_register_close: checkedValue(settingAllowCashierRegisterClose),
     cash_discrepancy_threshold: settingCashDiscrepancyThreshold.value,
@@ -963,12 +959,31 @@ function collectSettings() {
   };
 }
 
+function showSettingsSection(section = "profile") {
+  const titles = {
+    profile: "Restaurant Profile",
+    billing: "Billing",
+    promos: "Promo Codes",
+    pos: "POS Behaviour",
+    kot: "Kitchen / KOT",
+    online: "Online Ordering"
+  };
+  document.querySelectorAll("[data-settings-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.settingsPanel !== section;
+  });
+  const title = document.getElementById("settingsSectionTitle");
+  if (title) title.textContent = titles[section] || "Restaurant Settings";
+  const actions = document.getElementById("settingsActions");
+  if (actions) actions.hidden = section === "promos";
+}
+
 document.querySelectorAll(".nav-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".nav-btn").forEach((item) => item.classList.remove("active"));
     document.querySelectorAll(".admin-view").forEach((view) => view.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById(`view-${btn.dataset.view}`).classList.add("active");
+    if (btn.dataset.view === "settings") showSettingsSection(btn.dataset.settingsSection || "profile");
   });
 });
 
@@ -1271,7 +1286,7 @@ document.addEventListener("click", async (event) => {
     if (pick("editPromo")) {
       const promo = (state.promoCodes || []).find((row) => String(row.id) === String(pick("editPromo")));
       if (promo) {
-        promoCodeId.value = promo.id; promoCodeValue.value = promo.code; promoDiscountType.value = promo.discount_type || 'RUPEES'; promoDiscountValue.value = promo.discount_value || 0; promoDiscountCap.value = promo.max_discount_amount || 0; promoMinOrder.value = promo.min_order_amount || 0; promoValidFrom.value = promo.valid_from || ''; promoValidTo.value = promo.valid_to || ''; promoActive.checked = Number(promo.active) === 1; document.querySelector('[data-view="settings"]')?.click();
+        promoCodeId.value = promo.id; promoCodeValue.value = promo.code; promoDiscountType.value = promo.discount_type || 'RUPEES'; promoDiscountValue.value = promo.discount_value || 0; promoDiscountCap.value = promo.max_discount_amount || 0; promoMinOrder.value = promo.min_order_amount || 0; promoValidFrom.value = promo.valid_from || ''; promoValidTo.value = promo.valid_to || ''; promoActive.checked = Number(promo.active) === 1; document.querySelector('[data-view="settings"][data-settings-section="promos"]')?.click();
       }
       return;
     }
@@ -1342,14 +1357,32 @@ exportProfitCsv.addEventListener("click", () => {
   window.location.href = `/reports/profit/export?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`;
 });
 document.getElementById("loadReservations").addEventListener("click", () => loadReservations().catch((err) => alert(err.message)));
-promoCodeForm?.addEventListener("submit", async (event) => {
-  event.preventDefault();
+document.getElementById('savePromoCode')?.addEventListener("click", async () => {
   try {
     await postJson('/admin/promo-codes/save', { id: promoCodeId.value || null, code: promoCodeValue.value, discountType: promoDiscountType.value, discountValue: promoDiscountValue.value, maxDiscountAmount: promoDiscountCap.value || 0, minOrderAmount: promoMinOrder.value || 0, validFrom: promoValidFrom.value || null, validTo: promoValidTo.value || null, active: promoActive.checked });
-    promoCodeForm.reset(); promoActive.checked = true; await loadPromoCodes();
+    promoCodeId.value = ''; promoCodeValue.value = ''; promoDiscountValue.value = ''; promoDiscountCap.value = ''; promoMinOrder.value = ''; promoValidFrom.value = ''; promoValidTo.value = ''; promoActive.checked = true; await loadPromoCodes();
   } catch (err) { alert(err.message); }
 });
-document.getElementById('promoCodeReset')?.addEventListener('click', () => { promoCodeForm.reset(); promoCodeId.value = ''; promoActive.checked = true; });
+
+staffCashSettingsForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    staffCashSettingsStatus.textContent = "Saving settings...";
+    state.settings = await postJson("/settings/update", {
+      updatedByRole: actor.role,
+      settings: {
+        require_open_register_for_cash_payment: checkedValue(settingRequireOpenRegisterForCashPayment),
+        allow_cashier_register_close: checkedValue(settingAllowCashierRegisterClose),
+        cash_discrepancy_threshold: settingCashDiscrepancyThreshold.value || "0"
+      }
+    });
+    renderSettings();
+    staffCashSettingsStatus.textContent = "Staff & cash settings saved";
+  } catch (err) {
+    staffCashSettingsStatus.textContent = err.message;
+  }
+});
+document.getElementById('promoCodeReset')?.addEventListener('click', () => { promoCodeId.value = ''; promoCodeValue.value = ''; promoDiscountValue.value = ''; promoDiscountCap.value = ''; promoMinOrder.value = ''; promoValidFrom.value = ''; promoValidTo.value = ''; promoActive.checked = true; });
 
 loadInventoryReports.addEventListener("click", async () => {
   const data = await fetchJson(`/inventory/reports?restaurantId=${encodeURIComponent(restaurantId)}&from=${inventoryReportFrom.value}&to=${inventoryReportTo.value}`);

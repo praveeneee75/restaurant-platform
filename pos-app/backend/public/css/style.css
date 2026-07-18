@@ -354,6 +354,24 @@ button:hover,
   text-transform: uppercase;
 }
 
+.nav-subtitle {
+  margin: 8px 10px 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.nav-sub-btn {
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.settings-section {
+  width: 100%;
+  grid-column: 1 / -1;
+}
+
 .nav-btn,
 .nav-link {
   display: inline-flex;

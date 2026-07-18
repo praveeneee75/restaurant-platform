@@ -889,6 +889,18 @@ function normaliseSettingsInput(input) {
   if (Object.prototype.hasOwnProperty.call(output, 'currency') && !hasText(output.currency)) throw new Error('Currency is required');
   if (Object.prototype.hasOwnProperty.call(output, 'timezone') && !hasText(output.timezone)) throw new Error('Timezone is required');
   if (Object.prototype.hasOwnProperty.call(output, 'invoice_prefix') && !hasText(output.invoice_prefix)) throw new Error('Invoice prefix is required');
+  if (hasText(output.gstin) && !/^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z0-9]Z[A-Z0-9]$/.test(output.gstin.toUpperCase())) {
+    throw new Error('GSTIN must be a valid 15-character registration number');
+  }
+  if (hasText(output.fssai_license_no) && !/^\d{14}$/.test(output.fssai_license_no)) {
+    throw new Error('FSSAI licence / registration number must contain exactly 14 digits');
+  }
+  if (hasText(output.state_code) && !/^\d{2}$/.test(output.state_code)) {
+    throw new Error('State code must contain exactly 2 digits');
+  }
+  if (hasText(output.sac_code) && !/^\d{6,8}$/.test(output.sac_code)) {
+    throw new Error('SAC code must contain 6 to 8 digits');
+  }
   if (output.backup_enabled === '1' && !hasText(output.backup_folder_path)) throw new Error('Backup folder is required when backup is enabled');
   if (Object.keys(output).length === 0) throw new Error('No valid settings provided');
   return output;
@@ -3627,7 +3639,7 @@ app.post('/admin/promo-codes/save', (req, res) => {
   if (validFrom && validTo && validFrom > validTo) return res.status(400).json({ success: false, message: 'Valid-from date cannot be after valid-to date' });
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, actor?.role, 'settings.manage', 'Promocode management permission required');
+    requirePermission(db, actor?.role, 'admin.settings.manage', 'Promocode management permission required');
     const cleanCode = normaliseText(code).toUpperCase();
     const existing = db.prepare('SELECT id FROM promo_codes WHERE code = ? AND id != ?').get(cleanCode, id || 0);
     if (existing) return res.status(409).json({ success: false, message: 'That promocode already exists' });
@@ -3644,7 +3656,7 @@ app.post('/admin/promo-codes/delete', (req, res) => {
   if (!restaurantId || !isPositiveId(id)) return res.status(400).json({ success: false, message: 'Promocode id required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, actor?.role, 'settings.manage', 'Promocode management permission required');
+    requirePermission(db, actor?.role, 'admin.settings.manage', 'Promocode management permission required');
     db.prepare('UPDATE promo_codes SET active = 0 WHERE id = ?').run(id);
     res.json({ success: true });
   } catch (err) { sendError(res, err); } finally { db.close(); }

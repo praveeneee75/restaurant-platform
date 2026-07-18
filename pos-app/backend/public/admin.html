@@ -22,19 +22,23 @@
       <div class="nav-group">
         <p class="nav-group-title">Menu Setup</p>
         <button class="nav-btn active" data-view="kitchens">Kitchens</button>
-        <button class="nav-btn" data-view="printers">Printers</button>
         <button class="nav-btn" data-view="categories">Categories</button>
         <button class="nav-btn" data-view="items">Menu Items</button>
         <button class="nav-btn" data-view="modifiers">Modifiers & Combos</button>
       </div>
 
       <div class="nav-group">
-        <p class="nav-group-title">Floor & Orders</p>
+        <p class="nav-group-title">Table Management</p>
         <button class="nav-btn" data-view="tables">Tables</button>
         <button class="nav-btn" data-view="reservations">Reservations</button>
         <button class="nav-btn" data-view="qr">QR Links</button>
+      </div>
+
+      <div class="nav-group">
+        <p class="nav-group-title">User Management</p>
         <button class="nav-btn" data-view="staff-cash">Staff & Cash</button>
         <button class="nav-btn" data-view="devices">Devices</button>
+        <button class="nav-btn" data-view="users">Users</button>
       </div>
 
       <div class="nav-group">
@@ -48,10 +52,16 @@
 
       <div class="nav-group">
         <p class="nav-group-title">System</p>
-        <button class="nav-btn" data-view="users">Users</button>
-        <button class="nav-btn" data-view="settings">Settings</button>
+        <button class="nav-btn" data-view="printers">Printers</button>
+        <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="kot">Kitchen / KOT</button>
+        <p class="nav-subtitle">Settings</p>
+        <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="profile">Restaurant Profile</button>
+        <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="billing">Billing</button>
+        <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="promos">Promo Codes</button>
+        <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="pos">POS Behaviour</button>
+        <button class="nav-btn nav-sub-btn" data-view="backup">Backup</button>
+        <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="online">Online Ordering</button>
         <button class="nav-btn" data-view="permissions">Permissions</button>
-        <button class="nav-btn" data-view="backup">Backup</button>
         <button class="nav-btn" data-view="updates">Updates</button>
       </div>
 
@@ -386,11 +396,11 @@
 
     <section class="admin-view" id="view-settings">
       <form class="editor-panel" id="settingsForm">
-        <h2>Restaurant Settings</h2>
+        <h2 id="settingsSectionTitle">Restaurant Profile</h2>
         <p id="settingsStatus"></p>
 
         <div class="dashboard-grid">
-          <article>
+          <article class="settings-section" data-settings-panel="profile">
             <h3>Restaurant Profile</h3>
             <label>Display name<input id="settingRestaurantDisplayName"></label>
             <label>Legal name<input id="settingLegalName"></label>
@@ -409,7 +419,7 @@
             <label>Logo path<input id="settingLogoPath"></label>
           </article>
 
-          <article>
+          <article class="settings-section" data-settings-panel="pos" hidden>
             <h3>POS Behaviour</h3>
             <label>Default order type
               <select id="settingDefaultOrderType">
@@ -432,7 +442,7 @@
             <label class="check-row"><input id="settingRequireClockInBeforeOrder" type="checkbox"> Require clock-in before order</label>
           </article>
 
-          <article>
+          <article class="settings-section" data-settings-panel="billing" hidden>
             <h3>Billing</h3>
             <label>Invoice prefix<input id="settingInvoicePrefix" required></label>
             <label>Invoice reset
@@ -452,9 +462,12 @@
             <label class="check-row"><input id="settingServiceChargeEnabled" type="checkbox"> Enable service charge</label>
             <label>Service charge %<input id="settingServiceChargePercent" type="number" min="0" max="100" step="0.01"></label>
             <label class="check-row"><input id="settingRoundOffEnabled" type="checkbox"> Round off bill</label>
+          </article>
+
+          <article class="settings-section" data-settings-panel="promos" hidden>
             <div class="billing-admin-promos">
               <h3>Promocodes</h3>
-              <form id="promoCodeForm" class="editor-panel compact-editor">
+              <div id="promoCodeForm" class="editor-panel compact-editor">
                 <input type="hidden" id="promoCodeId">
                 <label>Code<input id="promoCodeValue" required maxlength="40" placeholder="WELCOME10"></label>
                 <label>Discount type<select id="promoDiscountType"><option value="RUPEES">Fixed amount</option><option value="PERCENT">Percentage</option></select></label>
@@ -464,13 +477,13 @@
                 <label>Valid from<input id="promoValidFrom" type="date"></label>
                 <label>Valid to<input id="promoValidTo" type="date"></label>
                 <label class="check-row"><input id="promoActive" type="checkbox" checked> Active</label>
-                <div><button type="submit">Save promocode</button><button type="button" class="secondary-btn" id="promoCodeReset">Clear</button></div>
-              </form>
+                <div><button type="button" id="savePromoCode">Save promocode</button><button type="button" class="secondary-btn" id="promoCodeReset">Clear</button></div>
+              </div>
               <div class="table-panel"><table><thead><tr><th>Code</th><th>Discount</th><th>Minimum</th><th>Validity</th><th>Status</th><th></th></tr></thead><tbody id="promoCodesTable"></tbody></table></div>
             </div>
           </article>
 
-          <article>
+          <article class="settings-section" data-settings-panel="kot" hidden>
             <h3>Kitchen / KOT</h3>
             <label class="check-row"><input id="settingAutoPrintKot" type="checkbox"> Auto print KOT</label>
             <label class="check-row"><input id="settingPrintKotOnSave" type="checkbox"> Print KOT on save</label>
@@ -480,18 +493,7 @@
             <label>KOT footer text<input id="settingKotFooterText"></label>
           </article>
 
-          <article>
-            <h3>Backup</h3>
-            <label class="check-row"><input id="settingBackupEnabled" type="checkbox"> Enable automatic backup</label>
-            <label>Backup folder path<input id="settingBackupFolderPath"></label>
-            <label>OneDrive folder path<input id="settingOnedriveFolderPath"></label>
-            <label>Backup interval minutes<input id="settingBackupIntervalMinutes" type="number" min="1" step="1"></label>
-            <label class="check-row"><input id="settingRequireOpenRegisterForCashPayment" type="checkbox"> Require open register for cash payment</label>
-            <label class="check-row"><input id="settingAllowCashierRegisterClose" type="checkbox"> Allow cashier register close without discrepancy</label>
-            <label>Cash discrepancy threshold<input id="settingCashDiscrepancyThreshold" type="number" min="0" step="0.01"></label>
-          </article>
-
-          <article>
+          <article class="settings-section" data-settings-panel="online" hidden>
             <h3>Online Ordering</h3>
             <label class="check-row"><input id="settingMobileAppEnabled" type="checkbox"> Enable premium mobile app</label>
             <label class="check-row"><input id="settingOnlineOrderEnabled" type="checkbox"> Enable premium online ordering</label>
@@ -523,7 +525,7 @@
           </article>
         </div>
 
-        <div class="toolbar">
+        <div class="toolbar" id="settingsActions">
           <button>Save Settings</button>
           <button id="resetSettingsDefaults" class="secondary-btn" type="button">Reset Defaults</button>
         </div>
@@ -531,6 +533,14 @@
     </section>
 
     <section class="admin-view" id="view-staff-cash">
+      <form class="editor-panel" id="staffCashSettingsForm">
+        <h2>Staff & Cash Settings</h2>
+        <label class="check-row"><input id="settingRequireOpenRegisterForCashPayment" type="checkbox"> Require open register for cash payment</label>
+        <label class="check-row"><input id="settingAllowCashierRegisterClose" type="checkbox"> Allow cashier register close without discrepancy</label>
+        <label>Cash discrepancy threshold<input id="settingCashDiscrepancyThreshold" type="number" min="0" step="0.01"></label>
+        <button type="submit">Save Staff & Cash Settings</button>
+        <p id="staffCashSettingsStatus"></p>
+      </form>
       <div class="editor-panel">
         <h2>Staff Attendance & Cash Register Reports</h2>
         <div class="toolbar">

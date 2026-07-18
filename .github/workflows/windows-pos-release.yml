@@ -32,11 +32,12 @@ jobs:
       - name: Install Electron runtime
         run: node node_modules/electron/install.js
 
-      - name: Run order and KOT sequence tests
+      - name: Run stateful POS and admin tests
         working-directory: .
         run: |
           node tests/pos-kot-flow.js
           node tests/pos-100-matrix.js
+          node tests/admin-settings-flow.js
 
       - name: Rebuild native modules for Electron
         run: |

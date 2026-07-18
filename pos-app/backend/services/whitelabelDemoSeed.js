@@ -40,17 +40,25 @@ function insertRow(db, tableName, row, { orIgnore = true } = {}) {
   return db.prepare(sql).run(...values);
 }
 
-function upsertSystemConfig(db, settings) {
+function upsertSystemConfig(db, settings, overwrite = true) {
   if (!tableExists(db, 'system_config')) return;
   const cols = columns(db, 'system_config');
   const hasUpdatedAt = cols.has('updated_at');
-  const sql = hasUpdatedAt
+  const sql = hasUpdatedAt && overwrite
     ? `INSERT INTO system_config (key, value, updated_at)
        VALUES (?, ?, CURRENT_TIMESTAMP)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
-    : `INSERT INTO system_config (key, value)
+    : hasUpdatedAt
+      ? `INSERT INTO system_config (key, value, updated_at)
+         VALUES (?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(key) DO NOTHING`
+      : overwrite
+        ? `INSERT INTO system_config (key, value)
+           VALUES (?, ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+        : `INSERT INTO system_config (key, value)
        VALUES (?, ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value`;
+       ON CONFLICT(key) DO NOTHING`;
   const statement = db.prepare(sql);
   Object.entries(settings).forEach(([key, value]) => statement.run(key, String(value ?? '')));
 }
@@ -201,6 +209,8 @@ function seedWhitelabelDemoData(db, options = {}) {
   }
 
   const result = db.transaction(() => {
+    const alreadySeeded = tableExists(db, 'db_meta')
+      && Boolean(db.prepare("SELECT value FROM db_meta WHERE key = 'whitelabel_demo_seeded_at'").get());
     upsertSystemConfig(db, {
       restaurant_display_name: 'KMaster White Label Demo Restaurant',
       legal_name: 'KMaster Demo Foods',
@@ -248,7 +258,7 @@ function seedWhitelabelDemoData(db, options = {}) {
       online_takeaway_enabled: '1',
       online_min_order_amount: '99',
       enabled_modules: JSON.stringify(DEMO_MODULES)
-    });
+    }, !alreadySeeded);
 
     if (tableExists(db, 'license_status')) {
       db.prepare(`
