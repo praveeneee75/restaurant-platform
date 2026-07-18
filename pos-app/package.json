@@ -20,6 +20,11 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "allowScripts": {
+    "bcrypt@6.0.0": true,
+    "better-sqlite3@12.11.1": true,
+    "electron@42.5.0": true
+  },
   "dependencies": {
     "axios": "^1.13.5",
     "bcrypt": "^6.0.0",
