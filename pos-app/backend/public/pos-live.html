@@ -41,6 +41,18 @@
     <div class="category-strip" id="categories"><button data-category="ALL" class="active">All</button></div>
     <label class="item-search"><span>Find an item</span><input id="itemSearch" type="search" placeholder="Search products"></label>
     <div class="item-grid" id="items"></div>
+    <section class="item-note-editor" id="itemNoteEditor" hidden>
+      <div>
+        <strong id="itemNoteTitle">Kitchen note</strong>
+        <small id="itemNoteHelp">This note prints against the selected item on the next KOT.</small>
+      </div>
+      <textarea id="itemNoteInput" maxlength="300" rows="2" placeholder="Example: No onion, less spicy, allergy information"></textarea>
+      <div class="item-note-actions">
+        <button id="editItemOptions" type="button" class="secondary-btn">Edit Options</button>
+        <button id="clearItemNote" type="button" class="secondary-btn">Clear</button>
+        <button id="saveItemNote" type="button">Save Note</button>
+      </div>
+    </section>
   </main>
 
   <aside class="pos-cart">

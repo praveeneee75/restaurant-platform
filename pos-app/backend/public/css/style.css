@@ -874,7 +874,7 @@ button:hover,
 
 .pos-menu {
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 16px;
   padding: 16px;
   overflow: hidden;
@@ -1046,6 +1046,28 @@ button:hover,
   font-weight: 700;
   text-align: center;
   pointer-events: none;
+}
+
+.item-note-editor {
+  display: grid;
+  grid-template-columns: minmax(170px, .7fr) minmax(260px, 1.5fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #cbd9ec;
+  border-radius: 12px;
+  background: #f7faff;
+  box-shadow: 0 -4px 16px rgba(15, 23, 42, .06);
+}
+.item-note-editor[hidden] { display: none; }
+.item-note-editor strong, .item-note-editor small { display: block; }
+.item-note-editor small { margin-top: 3px; color: #52657d; }
+.item-note-editor textarea { width: 100%; min-width: 0; resize: vertical; }
+.item-note-actions { display: flex; gap: 8px; white-space: nowrap; }
+.item-note-actions button { min-height: 42px; }
+@media (max-width: 1050px) {
+  .item-note-editor { grid-template-columns: 1fr auto; }
+  .item-note-editor > div:first-child { grid-column: 1 / -1; }
 }
 
 .qr-links-panel { overflow-x: hidden; }

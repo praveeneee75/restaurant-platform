@@ -67,6 +67,13 @@ const posToast = document.getElementById("posToast");
 const availabilityBtn = document.getElementById("availabilityBtn");
 const settlementType = document.getElementById("settlementType");
 const settlePrintOrder = document.getElementById("settlePrintOrder");
+const itemNoteEditor = document.getElementById("itemNoteEditor");
+const itemNoteTitle = document.getElementById("itemNoteTitle");
+const itemNoteHelp = document.getElementById("itemNoteHelp");
+const itemNoteInput = document.getElementById("itemNoteInput");
+const saveItemNote = document.getElementById("saveItemNote");
+const clearItemNote = document.getElementById("clearItemNote");
+const editItemOptions = document.getElementById("editItemOptions");
 let posToastTimer;
 const displayItemCode = (item) => String(item.item_code || String(item.id).padStart(4, "0")).replace(/^ITM[-\s]*/i, "");
 
@@ -439,11 +446,11 @@ function renderCart() {
         <button data-minus="${item.key}" ${item.sentToKitchen ? "disabled" : ""}>-</button>
         <span>${item.quantity}</span>
         <button data-plus="${item.key}" ${item.sentToKitchen ? "disabled" : ""}>+</button>
-        <button data-note="${item.key}" ${item.sentToKitchen ? "disabled" : ""}>Note</button>
         <button data-remove="${item.key}" ${item.sentToKitchen ? "disabled" : ""}>Remove</button>
       </div>
     </div>
   `).join("");
+  renderItemNoteEditor();
   total.textContent = `Total: ${money(cartTotal())}`;
   customerSummary.textContent = state.customer ? `${state.customer.name} - ${state.customer.phone} - ${state.customer.loyaltyBalance || 0} pts` : "No customer attached";
   redeemPoints.max = state.customer?.loyaltyBalance || 0;
@@ -725,6 +732,33 @@ async function saveCurrentOrder(force = false) {
   return data;
 }
 
+function renderItemNoteEditor() {
+  const line = state.cart.find((item) => item.key === state.selectedCartKey);
+  itemNoteEditor.hidden = !line;
+  if (!line) {
+    itemNoteInput.value = "";
+    return;
+  }
+  itemNoteTitle.textContent = `Kitchen note · ${line.name}`;
+  itemNoteHelp.textContent = line.sentToKitchen
+    ? "Already sent to kitchen. Add a new item to send an additional instruction."
+    : "This item-level note prints in the Special Note column on the next KOT.";
+  if (document.activeElement !== itemNoteInput) itemNoteInput.value = line.notes || "";
+  itemNoteInput.disabled = line.sentToKitchen;
+  saveItemNote.disabled = line.sentToKitchen;
+  clearItemNote.disabled = line.sentToKitchen;
+  editItemOptions.disabled = line.sentToKitchen || Boolean(line.comboId);
+}
+
+function saveSelectedItemNote(value) {
+  const line = state.cart.find((item) => item.key === state.selectedCartKey);
+  if (!line || line.sentToKitchen) return;
+  line.notes = String(value || "").trim().slice(0, 300);
+  line.savedLocally = false;
+  state.dirty = true;
+  renderCart();
+}
+
 async function submitCurrentKot() {
   const baseline = state.reviewBaselineQuantities || {};
   const submittedItems = state.cart.filter((item) => item.sentToKitchen);
@@ -876,13 +910,6 @@ document.addEventListener("click", async (event) => {
       state.dirty = true;
     }
   }
-  if (target.dataset.note) {
-    const line = state.cart.find((item) => item.key === target.dataset.note);
-    if (line && !line.sentToKitchen) {
-      const note = prompt(`Kitchen note for ${line.name}`, line.notes || "");
-      if (note !== null) { line.notes = note.trim(); line.savedLocally = false; state.dirty = true; renderCart(); }
-    }
-  }
   if (target.dataset.minus) {
     const line = state.cart.find((item) => item.key === target.dataset.minus);
     if (line && !line.sentToKitchen) {
@@ -910,8 +937,15 @@ cartItems.addEventListener("click", (event) => {
   if (event.target.closest("button")) return;
   state.selectedCartKey = line.dataset.cartLine;
   renderCart();
-  openEditSelectedItem();
 });
+
+saveItemNote.addEventListener("click", () => saveSelectedItemNote(itemNoteInput.value));
+clearItemNote.addEventListener("click", () => {
+  itemNoteInput.value = "";
+  saveSelectedItemNote("");
+  itemNoteInput.focus();
+});
+editItemOptions.addEventListener("click", openEditSelectedItem);
 
 items.addEventListener("click", (event) => {
   const target = event.target.closest("[data-item-plus], [data-item-minus]");
