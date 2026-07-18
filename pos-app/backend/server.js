@@ -5784,7 +5784,7 @@ app.get('/orders/invoices/:id', (req, res) => {
       SELECT type, value, value_type, promo_code
       FROM discounts WHERE order_id = ? ORDER BY id
     `).all(invoiceId) : [];
-    const payments = db.prepare('SELECT method, amount, reference_no FROM payments WHERE order_id = ? ORDER BY id').all(invoiceId);
+    const payments = db.prepare('SELECT payment_mode AS method, amount, reference_no FROM payments WHERE order_id = ? ORDER BY id').all(invoiceId);
     const items = [];
     const comboRows = new Map();
     rawItems.forEach((item) => {
