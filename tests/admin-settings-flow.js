@@ -202,7 +202,17 @@ function assertSettings(actual, expected, label) {
   const dashboardJs = fs.readFileSync(path.join(__dirname, '..', 'pos-app', 'backend', 'public', 'js', 'admin-dashboard.js'), 'utf8');
   if (!dashboardJs.includes('collectSettingsSection(activeSection)')) throw new Error('Settings UI does not save the active subsection independently');
   if (!dashboardJs.includes('control.disabled = !active')) throw new Error('Hidden subsection controls can still block form submission');
+  if (!dashboardJs.includes('validateSettingsSection(activeSection)')) throw new Error('Settings sections are not validated without locking the form');
+  if (!dashboardJs.includes('input.addEventListener("input"')) throw new Error('Settings validation errors are not cleared while the user edits');
   if (!dashboardJs.includes('data.topSellingItems')) throw new Error('Reports UI does not use the dashboard API top-selling field');
+
+  const feedbackJs = fs.readFileSync(path.join(__dirname, '..', 'pos-app', 'backend', 'public', 'js', 'ui-feedback.js'), 'utf8');
+  if (!feedbackJs.includes('window.alert = showAppMessage')) throw new Error('Native blocking alerts can still leave Electron inputs without focus');
+
+  for (const page of ['admin.html', 'billing.html', 'kds.html', 'orders.html', 'pos-live.html', 'waiter.html', 'pos.html', 'customer.html', 'online-order.html', 'change-pin.html']) {
+    const pageHtml = fs.readFileSync(path.join(__dirname, '..', 'pos-app', 'backend', 'public', page), 'utf8');
+    if (!pageHtml.includes('/js/ui-feedback.js')) throw new Error(`${page} does not use non-blocking application feedback`);
+  }
 
   const css = fs.readFileSync(path.join(__dirname, '..', 'pos-app', 'backend', 'public', 'css', 'style.css'), 'utf8');
   if (/\.nav-sub-btn\s*\{[^}]*font-size/i.test(css)) throw new Error('Admin subsection font size still differs from normal navigation');

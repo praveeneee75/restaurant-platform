@@ -316,7 +316,7 @@ function renderAdmin() {
   qrLinksTable.innerHTML = tables.map((t) => {
     const configuredBase = String(window.KMASTER_QR_PUBLIC_URL || '').replace(/\/$/, '');
     const baseUrl = configuredBase || state.network.qrBaseUrl || location.origin;
-    const url = `${baseUrl}/qr-menu.html?v=1.0.86&restaurantId=${encodeURIComponent(restaurantId)}&tableId=${t.id}`;
+    const url = `${baseUrl}/qr-menu.html?v=1.0.87&restaurantId=${encodeURIComponent(restaurantId)}&tableId=${t.id}`;
     return `<tr><td>${esc(t.table_name)}</td><td><a href="${url}" target="_blank">${esc(url)}</a></td></tr>`;
   }).join("");
 }
@@ -961,6 +961,41 @@ function collectSettingsSection(section) {
   return Object.fromEntries((SETTINGS_KEYS_BY_SECTION[section] || []).map((key) => [key, allSettings[key]]));
 }
 
+function clearSettingsFieldError(input) {
+  input.removeAttribute("aria-invalid");
+  input.classList.remove("field-invalid");
+}
+
+function validateSettingsSection(section) {
+  if (section !== "profile") return true;
+  const checks = [
+    [settingGstin, (value) => !value || /^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z0-9]Z[A-Z0-9]$/.test(value.toUpperCase()), "GSTIN must be a valid 15-character registration number"],
+    [settingFssaiLicenseNo, (value) => !value || /^\d{14}$/.test(value), "FSSAI licence / registration number must contain exactly 14 digits"],
+    [settingStateCode, (value) => !value || /^\d{2}$/.test(value), "State code must contain exactly 2 digits"]
+  ];
+  for (const [input, isValid, message] of checks) {
+    clearSettingsFieldError(input);
+    if (isValid(input.value.trim())) continue;
+    input.setAttribute("aria-invalid", "true");
+    input.classList.add("field-invalid");
+    settingsStatus.textContent = message;
+    input.focus();
+    input.select();
+    window.appAlert?.(message);
+    return false;
+  }
+  return true;
+}
+
+[settingGstin, settingFssaiLicenseNo, settingStateCode].forEach((input) => {
+  input.addEventListener("input", () => {
+    clearSettingsFieldError(input);
+    if (settingsStatus.textContent.startsWith("Save failed:") || settingsStatus.textContent.includes("must ")) {
+      settingsStatus.textContent = "Editing settings...";
+    }
+  });
+});
+
 function showSettingsSection(section = "profile") {
   const titles = {
     profile: "Restaurant Profile",
@@ -1127,8 +1162,9 @@ comboForm.addEventListener("submit", async (e) => { e.preventDefault(); await po
 settingsForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
-    settingsStatus.textContent = "Saving settings...";
     const activeSection = document.querySelector("[data-settings-panel]:not([hidden])")?.dataset.settingsPanel || "profile";
+    if (!validateSettingsSection(activeSection)) return;
+    settingsStatus.textContent = "Saving settings...";
     state.settings = await postJson("/settings/update", { updatedByRole: actor.role, settings: collectSettingsSection(activeSection) });
     renderSettings();
     await loadBackup();

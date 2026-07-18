@@ -1048,6 +1048,12 @@ button:hover,
   pointer-events: none;
 }
 
+.field-invalid,
+.field-invalid:focus {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, .12);
+}
+
 .modifier-modal {
   width: min(620px, 100%);
   max-height: min(720px, 90vh);
