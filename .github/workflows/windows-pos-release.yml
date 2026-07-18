@@ -1,0 +1,57 @@
+name: Windows POS Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'pos-v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-installer:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: pos-app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use pinned Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: npm
+          cache-dependency-path: pos-app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild native modules for Electron
+        run: |
+          npx electron-rebuild --force --which-module better-sqlite3 --version 42.5.0
+          npx electron-rebuild --force --which-module bcrypt --version 42.5.0
+
+      - name: Verify native modules
+        run: npm run verify:native
+
+      - name: Run regression checks
+        working-directory: .
+        run: |
+          node --check pos-app/backend/server.js
+          node --check pos-app/backend/public/js/admin-dashboard.js
+          node tests/production-url-regression.js
+          node tests/pos-regression.js
+
+      - name: Build and validate NSIS installer
+        run: npm run release:win
+
+      - name: Upload verified installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: kmaster-pos-${{ github.ref_name }}
+          path: pos-app/dist-release-*/KMaster-POS-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 30
