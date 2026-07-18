@@ -2,12 +2,21 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 
-process.env.POS_DATA_DIR = path.join(__dirname, '..', '.codex-pos-kot-test');
+const testDataDir = path.join(__dirname, '..', '.codex-pos-kot-sequence-test');
+fs.rmSync(testDataDir, { recursive: true, force: true });
+process.env.POS_DATA_DIR = testDataDir;
 process.env.PORT = '3403';
 process.env.POS_HEARTBEAT_DISABLED = '1';
-require('../pos-app/backend/server');
 const actor = { id: 1, role: 'OWNER' };
 const restaurantId = 'RESTOWHITELABEL';
+const { setupDatabase } = require('../pos-app/backend/services/dbSetup');
+const { openDatabase } = require('../pos-app/backend/db/database');
+const { seedWhitelabelDemoData } = require('../pos-app/backend/services/whitelabelDemoSeed');
+setupDatabase(restaurantId);
+const seedDb = openDatabase(restaurantId);
+seedWhitelabelDemoData(seedDb, { restaurantId, force: true });
+seedDb.close();
+require('../pos-app/backend/server');
 
 function request(method, url, body) {
   return new Promise((resolve, reject) => {
@@ -38,14 +47,47 @@ async function post(url, body) {
   await post('/orders/submit-kot', { orderId: first.orderId });
   const openAfterFirst = await request('GET', `/orders/open?restaurantId=${restaurantId}&orderId=${first.orderId}`);
   const original = openAfterFirst.data.items[0];
+  const afterFirstDb = openDatabase(restaurantId);
+  const firstJobs = afterFirstDb.prepare("SELECT id, payload FROM print_jobs WHERE type = 'KOT' AND ref_id = ? ORDER BY id").all(first.orderId);
+  afterFirstDb.close();
+  if (firstJobs.length === 0) throw new Error('First KOT did not create a print job');
+
+  // Saving an already-submitted order must never create or resend a KOT.
+  await post('/orders/save', { orderId: first.orderId, orderType: 'DINE_IN', tableId: table.id, tableName: table.table_name, items: [
+    { orderItemId: original.order_item_id, itemId: original.id, quantity: original.quantity, modifiers: [] }
+  ] });
+  const afterUnchangedSaveDb = openDatabase(restaurantId);
+  const unchangedJobCount = afterUnchangedSaveDb.prepare("SELECT COUNT(*) AS total FROM print_jobs WHERE type = 'KOT' AND ref_id = ?").get(first.orderId).total;
+  afterUnchangedSaveDb.close();
+  if (unchangedJobCount !== firstJobs.length) throw new Error('Saving an already-submitted order created another KOT print job');
+
   const second = await post('/orders/save', { orderId: first.orderId, orderType: 'DINE_IN', tableId: table.id, tableName: table.table_name, items: [
     { orderItemId: original.order_item_id, itemId: original.id, quantity: original.quantity, modifiers: [] },
     { itemId: menuItems[1].id, quantity: 1, modifiers: [] }
   ] });
+  const afterDraftSave = await request('GET', `/orders/open?restaurantId=${restaurantId}&orderId=${first.orderId}`);
+  const draft = afterDraftSave.data.items.find((item) => !item.kot_id);
+  if (!draft || Number(draft.id) !== Number(menuItems[1].id)) throw new Error('New saved line was not retained as an unsubmitted draft');
+  const afterDraftSaveDb = openDatabase(restaurantId);
+  const draftSaveJobCount = afterDraftSaveDb.prepare("SELECT COUNT(*) AS total FROM print_jobs WHERE type = 'KOT' AND ref_id = ?").get(first.orderId).total;
+  afterDraftSaveDb.close();
+  if (draftSaveJobCount !== firstJobs.length) throw new Error('Save sent draft lines to KOT before Submit KOT was clicked');
+
   await post('/orders/submit-kot', { orderId: second.orderId });
   const finalOrder = await request('GET', `/orders/open?restaurantId=${restaurantId}&orderId=${first.orderId}`);
   const submitted = finalOrder.data.items.filter((item) => item.kot_id);
   if (submitted.length !== 2) throw new Error(`Expected two submitted lines, got ${submitted.length}`);
-  console.log(JSON.stringify({ success: true, orderId: first.orderId, submittedLines: submitted.length }));
+  const finalDb = openDatabase(restaurantId);
+  const allJobs = finalDb.prepare("SELECT id, payload FROM print_jobs WHERE type = 'KOT' AND ref_id = ? ORDER BY id").all(first.orderId);
+  finalDb.close();
+  const secondSubmissionItems = allJobs.slice(firstJobs.length).flatMap((job) => JSON.parse(job.payload).items || []);
+  if (secondSubmissionItems.length === 0) throw new Error('Second KOT created no printable items');
+  if (secondSubmissionItems.some((item) => Number(item.order_item_id) === Number(original.order_item_id))) {
+    throw new Error('Second KOT resent an item from the first KOT');
+  }
+  if (!secondSubmissionItems.some((item) => Number(item.order_item_id) === Number(draft.order_item_id))) {
+    throw new Error('Second KOT omitted the newly saved draft item');
+  }
+  console.log(JSON.stringify({ success: true, orderId: first.orderId, submittedLines: submitted.length, saveCreatedKot: false, secondKotOnlyNewLines: true }));
   process.exit(0);
 })().catch((error) => { console.error(error.stack || error.message); process.exit(1); });

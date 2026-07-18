@@ -1,5 +1,6 @@
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const crypto = require('crypto');
+const fs = require('fs');
 const http = require('http');
 const net = require('net');
 const path = require('path');
@@ -26,6 +27,50 @@ let mainWindow;
 let licenseTimer;
 let backendStarted = false;
 const desktopIconPath = path.join(__dirname, '..', 'build', 'icon.png');
+const preloadPath = path.join(__dirname, 'preload.js');
+
+function printableWindow(html) {
+  const win = new BrowserWindow({
+    show: false,
+    width: 520,
+    height: 760,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
+  });
+  return win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).then(() => win);
+}
+
+ipcMain.handle('pos:print-html', async (_event, html) => {
+  const win = await printableWindow(String(html || ''));
+  try {
+    await new Promise((resolve, reject) => {
+      win.webContents.print({ silent: false, printBackground: true }, (success, reason) => {
+        if (success) resolve();
+        else reject(new Error(reason || 'Printing was cancelled or failed'));
+      });
+    });
+    return { success: true };
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
+});
+
+ipcMain.handle('pos:save-pdf', async (_event, request = {}) => {
+  const win = await printableWindow(String(request.html || ''));
+  try {
+    const owner = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+    const selected = await dialog.showSaveDialog(owner, {
+      title: 'Save invoice PDF',
+      defaultPath: String(request.fileName || 'invoice.pdf').replace(/[<>:"/\\|?*]/g, '-'),
+      filters: [{ name: 'PDF document', extensions: ['pdf'] }]
+    });
+    if (selected.canceled || !selected.filePath) return { success: false, canceled: true };
+    const pdf = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4' });
+    fs.writeFileSync(selected.filePath, pdf);
+    return { success: true, filePath: selected.filePath };
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
+});
 
 function findAvailablePort() {
   return new Promise((resolve, reject) => {
@@ -213,7 +258,8 @@ async function createWindow() {
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      preload: preloadPath
     }
   });
   mainWindow = win;
@@ -226,7 +272,7 @@ async function createWindow() {
     await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`<h2>K'Master POS could not start</h2><p>${err.message}</p>`)}`);
   }
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
   win.webContents.on('did-navigate', async (_event, url) => {

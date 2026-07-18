@@ -10,6 +10,9 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'pos-app/package.
 const server = fs.readFileSync(path.join(root, 'pos-app/backend/server.js'), 'utf8');
 const login = fs.readFileSync(path.join(root, 'pos-app/backend/public/login.html'), 'utf8');
 const billing = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/billing.js'), 'utf8');
+const adminDashboard = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/admin-dashboard.js'), 'utf8');
+const electronMain = fs.readFileSync(path.join(root, 'pos-app/electron/main.js'), 'utf8');
+const electronPreload = fs.readFileSync(path.join(root, 'pos-app/electron/preload.js'), 'utf8');
 
 assert.match(live, /activeTableId/);
 assert.match(live, /const isPositiveId/);
@@ -49,8 +52,22 @@ assert.match(billing, /open bills/);
 assert.match(live, /const requestId = \+\+tableSelectionRequest/);
 assert.match(live, /Number\(data\.order\?\.id\) !== orderId/);
 assert.match(server, /c\.name AS customer_name/);
+assert.match(live, /await reloadCurrentOrderCart\(\)/);
+assert.match(adminDashboard, /window\.posDesktop\?\.printHtml/);
+assert.match(adminDashboard, /window\.posDesktop\?\.savePdf/);
+assert.match(adminDashboard, /fssai_license_no/);
+assert.match(adminDashboard, /TAX INVOICE/);
+assert.match(adminDashboard, /CGST @/);
+assert.match(adminDashboard, /SGST @/);
+assert.match(adminDashboard, /class="items"/);
+assert.match(electronMain, /ipcMain\.handle\('pos:print-html'/);
+assert.match(electronMain, /webContents\.print\(/);
+assert.match(electronMain, /printToPDF/);
+assert.match(electronMain, /\^https\?:\\\/\\\//);
+assert.match(electronPreload, /contextBridge\.exposeInMainWorld\('posDesktop'/);
+assert.doesNotMatch(electronPreload, /nodeIntegration/);
 
 console.log(JSON.stringify({
   passed: true,
-  cases: ['POS-003', 'POS-004', 'POS-005', 'POS-006', 'POS-009', 'POS-010', 'POS-011', 'POS-013', 'POS-014', 'POS-015', 'POS-016', 'POS-MULTI-CUSTOMER']
+  cases: ['POS-003', 'POS-004', 'POS-005', 'POS-006', 'POS-009', 'POS-010', 'POS-011', 'POS-013', 'POS-014', 'POS-015', 'POS-016', 'POS-KOT-SEQUENCE', 'POS-NATIVE-PRINT', 'POS-MULTI-CUSTOMER']
 }, null, 2));

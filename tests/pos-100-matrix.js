@@ -1,11 +1,21 @@
 const http = require('http');
+const fs = require('fs');
 const path = require('path');
 
+const matrixDataDir = path.join(__dirname, '..', '.codex-pos-100-matrix-test');
+fs.rmSync(matrixDataDir, { recursive: true, force: true });
+process.env.POS_DATA_DIR = matrixDataDir;
 process.env.PORT = process.env.POS_MATRIX_PORT || '3401';
 process.env.POS_HEARTBEAT_DISABLED = '1';
 const restaurantId = process.env.POS_SMOKE_RESTAURANT_ID || 'RESTOWHITELABEL';
 const posRoot = path.join(__dirname, '..', 'pos-app');
 const { openDatabase } = require(path.join(posRoot, 'backend/db/database'));
+const { setupDatabase } = require(path.join(posRoot, 'backend/services/dbSetup'));
+const { seedWhitelabelDemoData } = require(path.join(posRoot, 'backend/services/whitelabelDemoSeed'));
+setupDatabase(restaurantId);
+const matrixSeedDb = openDatabase(restaurantId);
+seedWhitelabelDemoData(matrixSeedDb, { restaurantId, force: true });
+matrixSeedDb.close();
 require(path.join(posRoot, 'backend/server'));
 const actor = { role: 'OWNER', name: '100-case matrix' };
 
@@ -57,16 +67,36 @@ async function main() {
     if (useCombo) {
       if (!retrieved.items.some(item => Number(item.comboId || item.combo_id) === Number(combos[index % combos.length].id))) throw new Error(`case ${index + 1}: saved combo retrieval failed`);
     } else if (!retrieved.items.some(item => Number(item.id) === Number(first.id) && Number(item.quantity) === quantity)) throw new Error(`case ${index + 1}: saved item retrieval failed`);
-    await json('POST', '/orders/save', { restaurantId, actor, orderId: saved.orderId, orderType: 'DINE_IN', tableId: table.id,
-      tableName: table.table_name, items: [firstLine, { itemId: second.id, quantity: 1, modifiers: [] }] });
-    const updated = await json('GET', `/orders/open?restaurantId=${restaurantId}&orderId=${saved.orderId}`);
-    if (!updated.items.some(item => Number(item.id) === Number(second.id))) throw new Error(`case ${index + 1}: additional item retrieval failed`);
     await json('POST', '/orders/submit-kot', { restaurantId, actor, orderId: saved.orderId });
-    if (useCombo) {
-      const submitted = await json('GET', `/orders/open?restaurantId=${restaurantId}&orderId=${saved.orderId}`);
-      const comboLine = submitted.items.find(item => Number(item.comboId || item.combo_id) === Number(combos[index % combos.length].id));
-      if (!comboLine || !comboLine.kot_id) throw new Error(`case ${index + 1}: submitted combo was classified as saved`);
-    }
+    const firstSubmitted = await json('GET', `/orders/open?restaurantId=${restaurantId}&orderId=${saved.orderId}`);
+    const originalLine = firstSubmitted.items.find(item => useCombo
+      ? Number(item.comboId || item.combo_id) === Number(combos[index % combos.length].id)
+      : Number(item.id) === Number(first.id));
+    if (!originalLine?.kot_id || !originalLine.order_item_id) throw new Error(`case ${index + 1}: first KOT did not preserve submitted line identity`);
+    const firstKotDb = openDatabase(restaurantId);
+    const firstPrintJobs = firstKotDb.prepare("SELECT id FROM print_jobs WHERE type = 'KOT' AND ref_id = ? ORDER BY id").all(saved.orderId);
+    firstKotDb.close();
+    if (firstPrintJobs.length === 0) throw new Error(`case ${index + 1}: first KOT print job missing`);
+
+    const originalPayload = useCombo
+      ? { orderItemId: originalLine.order_item_id, comboId: combos[index % combos.length].id, quantity: 1 }
+      : { orderItemId: originalLine.order_item_id, itemId: first.id, quantity, modifiers: [] };
+    await json('POST', '/orders/save', { restaurantId, actor, orderId: saved.orderId, orderType: 'DINE_IN', tableId: table.id,
+      tableName: table.table_name, items: [originalPayload, { itemId: second.id, quantity: 1, modifiers: [] }] });
+    const updated = await json('GET', `/orders/open?restaurantId=${restaurantId}&orderId=${saved.orderId}`);
+    const draftLine = updated.items.find(item => Number(item.id) === Number(second.id) && !item.kot_id);
+    if (!draftLine?.order_item_id) throw new Error(`case ${index + 1}: additional item was not retained as a saved draft`);
+    const afterSaveDb = openDatabase(restaurantId);
+    const afterSavePrintJobs = afterSaveDb.prepare("SELECT id FROM print_jobs WHERE type = 'KOT' AND ref_id = ? ORDER BY id").all(saved.orderId);
+    afterSaveDb.close();
+    if (afterSavePrintJobs.length !== firstPrintJobs.length) throw new Error(`case ${index + 1}: Save incorrectly created a KOT print job`);
+    await json('POST', '/orders/submit-kot', { restaurantId, actor, orderId: saved.orderId });
+    const secondKotDb = openDatabase(restaurantId);
+    const secondPrintJobs = secondKotDb.prepare("SELECT id, payload FROM print_jobs WHERE type = 'KOT' AND ref_id = ? ORDER BY id").all(saved.orderId);
+    secondKotDb.close();
+    const secondPayloadItems = secondPrintJobs.slice(firstPrintJobs.length).flatMap(job => JSON.parse(job.payload).items || []);
+    if (!secondPayloadItems.some(item => Number(item.order_item_id) === Number(draftLine.order_item_id))) throw new Error(`case ${index + 1}: second KOT omitted new draft line`);
+    if (secondPayloadItems.some(item => Number(item.order_item_id) === Number(originalLine.order_item_id))) throw new Error(`case ${index + 1}: second KOT resent first submitted line`);
     const live = await json('GET', `/orders/live?restaurantId=${restaurantId}`);
     if (!live.orders.some(order => Number(order.id) === Number(saved.orderId))) throw new Error(`case ${index + 1}: live billing visibility failed`);
     const discount = index % 2 === 0

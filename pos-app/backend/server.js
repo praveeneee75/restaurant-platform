@@ -5768,9 +5768,9 @@ app.get('/orders/invoices/:id', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     const invoice = db.prepare(`
-      SELECT o.*, c.name AS customer_name, c.phone AS customer_phone,
+      SELECT o.*, c.name AS customer_name, c.phone AS customer_phone, u.name AS cashier_name,
              COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.order_id = o.id), 0) AS refunded_amount
-      FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+      FROM orders o LEFT JOIN customers c ON c.id = o.customer_id LEFT JOIN users u ON u.id = o.created_by
       WHERE o.id = ? AND o.status = 'PAID'
     `).get(invoiceId);
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
@@ -5784,6 +5784,7 @@ app.get('/orders/invoices/:id', (req, res) => {
       SELECT type, value, value_type, promo_code
       FROM discounts WHERE order_id = ? ORDER BY id
     `).all(invoiceId) : [];
+    const payments = db.prepare('SELECT method, amount, reference_no FROM payments WHERE order_id = ? ORDER BY id').all(invoiceId);
     const items = [];
     const comboRows = new Map();
     rawItems.forEach((item) => {
@@ -5807,7 +5808,7 @@ app.get('/orders/invoices/:id', (req, res) => {
       comboRow.price = comboRow.lineTotal / Math.max(Number(comboRow.quantity || 1), 1);
     });
     items.push(...comboRows.values());
-    res.json({ success: true, invoice, items, discounts });
+    res.json({ success: true, invoice, items, discounts, payments });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -6398,6 +6399,9 @@ app.post('/orders/settle', (req, res) => {
           displayName: getConfigValue(db, 'restaurant_display_name', ''),
           legalName: getConfigValue(db, 'legal_name', ''),
           gstin: getConfigValue(db, 'gstin', ''),
+          fssaiLicenseNo: getConfigValue(db, 'fssai_license_no', ''),
+          stateCode: getConfigValue(db, 'state_code', '33'),
+          sacCode: getConfigValue(db, 'sac_code', '996331'),
           addressLine1: getConfigValue(db, 'address_line_1', ''),
           addressLine2: getConfigValue(db, 'address_line_2', ''),
           city: getConfigValue(db, 'city', ''),

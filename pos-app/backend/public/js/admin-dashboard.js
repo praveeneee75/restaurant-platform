@@ -499,6 +499,7 @@ async function showInvoiceDetail(invoiceId) {
   const invoice = data.invoice;
   const items = data.items || [];
   const discounts = data.discounts || [];
+  const payments = data.payments || [];
   const discountTotal = discounts.reduce((sum, row) => sum + (String(row.value_type || '').toUpperCase() === 'PERCENT'
     ? Number(invoice.total_amount || 0) * Number(row.value || 0) / Math.max(100 - Number(row.value || 0), 1)
     : Number(row.value || 0)), 0);
@@ -530,8 +531,8 @@ async function showInvoiceDetail(invoiceId) {
   refund.className = 'invoice-refund';
   refund.innerHTML = '<h4>Refund</h4><p class="invoice-detail-meta">Refund cannot exceed the remaining paid amount.</p><div class="invoice-refund-fields"><input id="refundAmount" type="number" min="0.01" max="' + remainingPaid + '" step="0.01" placeholder="Amount"><select id="refundMode"><option value="CASH">Cash</option><option value="UPI">UPI</option><option value="OWNER_FUND">Owner fund</option></select><input id="refundReason" maxlength="200" placeholder="Reason"></div><button type="button" class="danger-btn" id="refundInvoice">Refund</button><p id="refundStatus"></p>';
   panel.appendChild(refund);
-  document.getElementById('printInvoice').onclick = () => printInvoice(invoice, items);
-  document.getElementById('downloadInvoicePdf').onclick = () => downloadInvoicePdf(invoice.id, invoice.invoice_no).catch((error) => alert(error.message));
+  document.getElementById('printInvoice').onclick = () => printInvoice(invoice, items, discounts, payments).catch((error) => alert(error.message));
+  document.getElementById('downloadInvoicePdf').onclick = () => saveInvoicePdf(invoice, items, discounts, payments).catch((error) => alert(error.message));
   const refundButton = document.getElementById('refundInvoice');
   if (refundButton) refundButton.onclick = async () => {
     const amount = Number(document.getElementById('refundAmount').value);
@@ -565,25 +566,54 @@ async function downloadInvoicePdf(invoiceId, invoiceNo) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function printInvoice(invoice, items) {
-  const profile = state.settings || {};
+function invoicePrintHtml(invoice, items, discounts = [], payments = []) {
+  const profile = state.settings?.settings || {};
+  if (!/^\d{14}$/.test(String(profile.fssai_license_no || '').trim())) {
+    throw new Error('Configure the restaurant 14-digit FSSAI licence / registration number in Admin → Settings before printing invoices.');
+  }
+  if (profile.gstin && !/^\d{2}[A-Z0-9]{13}$/i.test(String(profile.gstin).trim())) {
+    throw new Error('The GSTIN in Admin → Settings is invalid. Correct it before printing a tax invoice.');
+  }
   const currency = profile.currency || 'INR';
   const lineTotal = items.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
   const taxRate = Number(profile.tax_rate || 0);
-  const tax = taxRate > 0 ? lineTotal * taxRate / (100 + taxRate) : 0;
-  const subtotal = Math.max(lineTotal - tax, 0);
+  const grandTotal = Number(invoice.total_amount || 0);
+  const tax = taxRate > 0 ? grandTotal * taxRate / (100 + taxRate) : 0;
+  const subtotal = Math.max(grandTotal - tax, 0);
   const halfTax = tax / 2;
-  const rows = items.map(item => `<tr><td>${esc(item.quantity)} x ${esc(item.name)}</td><td>${money(Number(item.price || 0) * Number(item.quantity || 0))}</td></tr>`).join('');
-  const printWindow = window.open('', '_blank', 'width=420,height=760');
-  if (!printWindow) { alert('Printing was blocked by the browser. Allow pop-ups for this site and try again.'); return; }
+  const totalQuantity = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  const discountTotal = Math.max(lineTotal - grandTotal, 0);
+  const rows = items.map((item, index) => `<tr><td>${index + 1}</td><td>${esc(item.name)}${item.notes ? `<small>${esc(item.notes)}</small>` : ''}</td><td>${esc(item.quantity)}</td><td>${Number(item.price || 0).toFixed(2)}</td><td>${(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}</td></tr>`).join('');
+  const paymentText = payments.map((payment) => `${payment.method}: ${Number(payment.amount || 0).toFixed(2)}`).join(', ') || invoice.payment_mode || 'CASH';
+  const registered = Boolean(String(profile.gstin || '').trim());
+  const title = registered ? 'TAX INVOICE' : 'RECEIPT / BILL';
   const html = `<!doctype html><html><head><title>${esc(invoice.invoice_no || 'Invoice')}</title><style>
-    @page{size:80mm auto;margin:3mm}*{box-sizing:border-box}body{width:72mm;margin:0 auto;color:#111;font:11px Arial,sans-serif;line-height:1.25}header{text-align:center}h1{font-size:16px;margin:0 0 3px}h2{font-size:12px;margin:0 0 8px}p{margin:2px 0}.rule{border-top:1px dashed #111;margin:7px 0}.meta{display:grid;grid-template-columns:1fr 1fr;gap:2px 6px}.meta b{font-weight:700}.items{width:100%;border-collapse:collapse;margin-top:6px}.items td{padding:2px 0;vertical-align:top}.items td:last-child{text-align:right;white-space:nowrap}.summary{margin-top:7px}.summary p{display:flex;justify-content:space-between}.grand{font-weight:700;font-size:13px}.thanks{text-align:center;margin-top:12px;font-weight:700}@media print{button{display:none}}
-  </style></head><body><header><h1>${esc(profile.displayName || profile.legalName || 'KMaster POS')}</h1><p>${esc(profile.addressLine1 || '')}</p><p>${esc(profile.addressLine2 || '')}</p><p>${esc(profile.city || '')}</p><p>${profile.phone ? `Contact: ${esc(profile.phone)}` : ''}</p><div class="rule"></div></header>
-  <div class="meta"><span>Date:</span><b>${esc(invoice.settled_at || '')}</b><span>Receipt no:</span><b>${esc(invoice.invoice_no || `#${invoice.id}`)}</b><span>Customer:</span><b>${esc(invoice.customer_name || 'Walk-in customer')}</b><span>Payment:</span><b>${esc(invoice.payment_mode || 'CASH')}</b><span>Table:</span><b>${esc(invoice.table_no || invoice.order_type || '')}</b>${profile.gstin ? `<span>GSTIN:</span><b>${esc(profile.gstin)}</b>` : ''}</div>
-  <div class="rule"></div><table class="items"><tbody>${rows}</tbody></table><div class="rule"></div><div class="summary"><p><span>SUBTOTAL:</span><b>${currency} ${subtotal.toFixed(2)}</b></p>${taxRate > 0 ? `<p><span>CGST (${(taxRate / 2).toFixed(2)}%):</span><b>${currency} ${halfTax.toFixed(2)}</b></p><p><span>SGST (${(taxRate / 2).toFixed(2)}%):</span><b>${currency} ${halfTax.toFixed(2)}</b></p>` : ''}<p class="grand"><span>TOTAL:</span><b>${currency} ${Number(invoice.total_amount || 0).toFixed(2)}</b></p></div><p class="thanks">THANK YOU. VISIT AGAIN.</p></body></html>`;
+    @page{size:80mm auto;margin:2.5mm}*{box-sizing:border-box}body{width:75mm;margin:0 auto;color:#111;font:10px Arial,sans-serif;line-height:1.28}header{text-align:center}h1{font-size:15px;margin:0 0 2px;text-transform:uppercase}h2{font-size:12px;margin:6px 0 3px;border-top:1px solid #111;border-bottom:1px solid #111;padding:4px}p{margin:1px 0}.legal{font-weight:700}.meta{display:grid;grid-template-columns:26mm 1fr;gap:2px 4px;border-bottom:1px dashed #111;padding:5px 0}.meta b{font-weight:700}.items{width:100%;border-collapse:collapse;margin-top:5px}.items th,.items td{padding:3px 2px;border:1px solid #555;vertical-align:top}.items th{text-align:center;font-size:9px}.items td:nth-child(1),.items td:nth-child(3){text-align:center}.items td:nth-child(4),.items td:nth-child(5){text-align:right;white-space:nowrap}.items small{display:block}.summary{border:1px solid #555;border-top:0;padding:4px}.summary p{display:flex;justify-content:space-between;gap:8px}.grand{border-top:1px solid #111;margin-top:3px;padding-top:4px;font-weight:800;font-size:13px}.footer{text-align:center;border-top:1px dashed #111;margin-top:7px;padding-top:6px}.compliance{font-size:9px}@media print{button{display:none}}
+  </style></head><body><header><h1>${esc(profile.restaurant_display_name || profile.legal_name || 'Restaurant')}</h1>${profile.legal_name && profile.legal_name !== profile.restaurant_display_name ? `<p class="legal">${esc(profile.legal_name)}</p>` : ''}<p>${esc([profile.address_line_1, profile.address_line_2].filter(Boolean).join(', '))}</p><p>${esc([profile.city, profile.state, profile.state_code ? `Code ${profile.state_code}` : '', profile.country].filter(Boolean).join(', '))}</p><p>${profile.phone ? `Mob: ${esc(profile.phone)}` : ''}${profile.email ? ` · ${esc(profile.email)}` : ''}</p>${profile.gstin ? `<p><b>GSTIN: ${esc(profile.gstin)}</b></p>` : ''}${profile.fssai_license_no ? `<p><b>FSSAI: ${esc(profile.fssai_license_no)}</b></p>` : ''}<h2>${title}</h2></header>
+  <div class="meta"><span>Invoice No.</span><b>${esc(invoice.invoice_no || `#${invoice.id}`)}</b><span>Date / Time</span><b>${esc(invoice.settled_at || '')}</b><span>Order / Table</span><b>${esc(`${invoice.order_reference || invoice.id} / ${invoice.table_no || invoice.order_type || ''}`)}</b><span>Customer</span><b>${esc(invoice.customer_name || 'Walk-in customer')}</b><span>Cashier</span><b>${esc(invoice.cashier_name || 'Owner')}</b><span>Payment</span><b>${esc(paymentText)}</b>${registered ? `<span>Place of supply</span><b>${esc(`${profile.state || 'Tamil Nadu'} (${profile.state_code || '33'})`)}</b><span>SAC</span><b>${esc(profile.sac_code || '996331')}</b>` : ''}</div>
+  <table class="items"><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table><div class="summary"><p><span>Total Qty</span><b>${totalQuantity}</b></p>${discountTotal > 0 ? `<p><span>Discount</span><b>-${currency} ${discountTotal.toFixed(2)}</b></p>` : ''}<p><span>Taxable value</span><b>${currency} ${subtotal.toFixed(2)}</b></p>${registered && taxRate > 0 ? `<p><span>CGST @ ${(taxRate / 2).toFixed(2)}%</span><b>${currency} ${halfTax.toFixed(2)}</b></p><p><span>SGST @ ${(taxRate / 2).toFixed(2)}%</span><b>${currency} ${halfTax.toFixed(2)}</b></p>` : ''}<p class="grand"><span>GRAND TOTAL</span><b>${currency} ${grandTotal.toFixed(2)}</b></p></div><div class="footer"><p><b>THANK YOU. VISIT AGAIN.</b></p><p class="compliance">${registered ? 'Tax is included in the amounts shown.' : 'This document does not collect GST.'}</p></div></body></html>`;
+  return html;
+}
+
+async function printInvoice(invoice, items, discounts, payments) {
+  const html = invoicePrintHtml(invoice, items, discounts, payments);
+  if (window.posDesktop?.printHtml) {
+    await window.posDesktop.printHtml(html);
+    return;
+  }
+  const printWindow = window.open('', '_blank', 'width=420,height=760');
+  if (!printWindow) throw new Error('Printing was blocked. Enable pop-ups and try again.');
   printWindow.document.open(); printWindow.document.write(html); printWindow.document.close();
-  printWindow.focus();
   printWindow.onload = () => { printWindow.focus(); printWindow.print(); };
+}
+
+async function saveInvoicePdf(invoice, items, discounts, payments) {
+  if (window.posDesktop?.savePdf) {
+    const fileName = `${String(invoice.invoice_no || `invoice-${invoice.id}`).replace(/[^a-z0-9._-]/gi, '_')}.pdf`;
+    await window.posDesktop.savePdf(invoicePrintHtml(invoice, items, discounts, payments), fileName);
+    return;
+  }
+  await downloadInvoicePdf(invoice.id, invoice.invoice_no);
 }
 
 function findById(rows, id) {
@@ -793,6 +823,8 @@ function renderSettings() {
   settingRestaurantDisplayName.value = settings.restaurant_display_name || "";
   settingLegalName.value = settings.legal_name || "";
   settingGstin.value = settings.gstin || "";
+  settingFssaiLicenseNo.value = settings.fssai_license_no || "";
+  settingStateCode.value = settings.state_code || "33";
   settingAddressLine1.value = settings.address_line_1 || "";
   settingAddressLine2.value = settings.address_line_2 || "";
   settingCity.value = settings.city || "";
@@ -818,6 +850,7 @@ function renderSettings() {
   setChecked(settingShowTaxOnBill, settings.show_tax_on_bill);
   settingTaxName.value = settings.tax_name || 'GST';
   settingTaxRate.value = settings.tax_rate || '0';
+  settingSacCode.value = settings.sac_code || '996331';
   setChecked(settingShowQrOnBill, settings.show_qr_on_bill);
   setChecked(settingQrRequireTablePin, settings.qr_require_table_pin === undefined ? true : settings.qr_require_table_pin);
   settingQrSessionMinutes.value = settings.qr_session_minutes || '30';
@@ -866,6 +899,8 @@ function collectSettings() {
     restaurant_display_name: settingRestaurantDisplayName.value,
     legal_name: settingLegalName.value,
     gstin: settingGstin.value,
+    fssai_license_no: settingFssaiLicenseNo.value,
+    state_code: settingStateCode.value,
     address_line_1: settingAddressLine1.value,
     address_line_2: settingAddressLine2.value,
     city: settingCity.value,
@@ -891,6 +926,7 @@ function collectSettings() {
     show_tax_on_bill: checkedValue(settingShowTaxOnBill),
     tax_name: settingTaxName.value.trim() || 'GST',
     tax_rate: settingTaxRate.value || '0',
+    sac_code: settingSacCode.value || '996331',
     show_qr_on_bill: checkedValue(settingShowQrOnBill),
     qr_require_table_pin: checkedValue(settingQrRequireTablePin),
     qr_session_minutes: settingQrSessionMinutes.value || '30',

@@ -279,6 +279,19 @@ async function restoreSelectedTableOrder() {
   renderCart();
 }
 
+async function reloadCurrentOrderCart() {
+  if (!state.orderId) return;
+  const selectedOrderItemId = state.cart.find((item) => item.key === state.selectedCartKey)?.orderItemId;
+  const data = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(state.orderId)}`).then((res) => res.json());
+  if (!data.order || Number(data.order.id) !== Number(state.orderId)) throw new Error('Saved order could not be reloaded');
+  state.orderReference = data.order.order_reference || state.orderReference;
+  state.kotSubmitted = (data.items || []).some((item) => item.kot_id);
+  state.cart = (data.items || []).map(cartItemFromOrderItem);
+  state.selectedCartKey = state.cart.find((item) => Number(item.orderItemId) === Number(selectedOrderItemId))?.key || state.cart[0]?.key || null;
+  state.reviewBaselineQuantities = reviewBaselineForCart();
+  renderCart();
+}
+
 async function refreshShiftCashStatus() {
   return;
   const [attendanceData, cashData] = await Promise.all([
@@ -703,11 +716,13 @@ async function saveCurrentOrder(force = false) {
   state.orderId = data.orderId;
   state.serverOrderTotal = Number(data.total || 0);
   state.orderReference = data.orderReference || state.orderReference || data.orderId;
-  state.cart.forEach((item) => { if (!item.sentToKitchen) item.savedLocally = true; });
   state.dirty = false;
   setSelectedTableStatus("OCCUPIED");
   orderMeta.textContent = `Order ${state.orderReference}`;
   await refreshLiveState();
+  // The server assigns order-item IDs during every save. Reload immediately so
+  // a submitted line can never be mistaken for a new line on the next save/KOT.
+  await reloadCurrentOrderCart();
   return data;
 }
 
