@@ -52,6 +52,13 @@ router.post('/validate', async (req, res) => {
       return res.json({
         valid: true,
         restaurantName: 'KMaster White Label Demo Restaurant',
+        restaurantProfile: {
+          restaurant_display_name: 'KMaster White Label Demo Restaurant', legal_name: 'KMaster Demo Foods',
+          gstin: '33ABCDE1234F1Z5', fssai_license_no: '12345678901234', state_code: '33',
+          address_line_1: 'Demo High Street', address_line_2: 'Near Central Bus Stand', city: 'Chennai',
+          state: 'Tamil Nadu', country: 'India', phone: '+91 98765 43210', email: 'demo@kmasterpos.com',
+          currency: 'INR', timezone: 'Asia/Kolkata', logo_path: ''
+        },
         expiresAt: new Date(Date.now() + (3650 * 24 * 60 * 60 * 1000)).toISOString(),
         syncToken: null,
         packageCode: 'WHITE_LABEL_DEMO',
