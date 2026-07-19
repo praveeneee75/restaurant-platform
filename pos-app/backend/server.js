@@ -38,6 +38,7 @@ const { setupDatabase } = require('./services/dbSetup');
 const { openDatabase } = require('./db/database');
 const { hasPermission, permissionsForRole, seedDefaultPermissions } = require('./services/permissions');
 const { getSingleRestaurantId } = require('./utils/restaurantScanner');
+const { groupPrintableItems } = require('./services/printItemGrouping');
 const { dataDir, restaurantDbPath } = require('./utils/dataPaths');
 const { ensureRestaurantSchema, seedDefaultSettings, DEFAULT_SYSTEM_SETTINGS } = require('./services/schema');
 const { runMigrations } = require('./services/migrationRunner');
@@ -5862,6 +5863,7 @@ function invoicePdfText(value) {
 }
 
 function buildInvoicePdf(invoice, items) {
+  const printableItems = groupPrintableItems(items);
   const total = Number(invoice.total_amount || 0);
   const taxRate = Number(invoice.tax_rate || 0);
   const taxIncluded = taxRate > 0 ? total * taxRate / (100 + taxRate) : 0;
@@ -5875,7 +5877,7 @@ function buildInvoicePdf(invoice, items) {
     `Customer: ${invoice.customer_name || 'Walk-in customer'}`,
     `Table: ${invoice.table_no || invoice.order_type || ''}`,
     '',
-    ...items.map((item) => `${item.name} x ${item.quantity}    ${(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}`),
+    ...printableItems.map((item) => `${item.name} x ${item.quantity}    ${(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}`),
     '',
     `SUBTOTAL: ${(total - taxIncluded).toFixed(2)}`,
     ...(taxRate > 0 ? [`CGST (${(taxRate / 2).toFixed(2)}%): ${(taxIncluded / 2).toFixed(2)}`, `SGST (${(taxRate / 2).toFixed(2)}%): ${(taxIncluded / 2).toFixed(2)}`] : []),

@@ -567,6 +567,18 @@ async function downloadInvoicePdf(invoiceId, invoiceNo) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function groupInvoicePrintItems(items = []) {
+  const grouped = new Map();
+  for (const item of items) {
+    const modifiers = Array.isArray(item.modifiers) ? [...item.modifiers].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))) : (item.modifiers || []);
+    const key = JSON.stringify({ item: item.item_id ?? item.name, name: item.name, price: Number(item.price || 0), notes: String(item.notes || '').trim(), modifiers });
+    const existing = grouped.get(key);
+    if (existing) existing.quantity += Number(item.quantity || 0);
+    else grouped.set(key, { ...item, quantity: Number(item.quantity || 0) });
+  }
+  return [...grouped.values()];
+}
+
 function invoicePrintHtml(invoice, items, discounts = [], payments = []) {
   const profile = state.settings?.settings || {};
   if (!/^\d{14}$/.test(String(profile.fssai_license_no || '').trim())) {
@@ -576,15 +588,16 @@ function invoicePrintHtml(invoice, items, discounts = [], payments = []) {
     throw new Error('The GSTIN in Admin → Settings is invalid. Correct it before printing a tax invoice.');
   }
   const currency = profile.currency || 'INR';
-  const lineTotal = items.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
+  const printableItems = groupInvoicePrintItems(items);
+  const lineTotal = printableItems.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
   const taxRate = Number(profile.tax_rate || 0);
   const grandTotal = Number(invoice.total_amount || 0);
   const tax = taxRate > 0 ? grandTotal * taxRate / (100 + taxRate) : 0;
   const subtotal = Math.max(grandTotal - tax, 0);
   const halfTax = tax / 2;
-  const totalQuantity = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  const totalQuantity = printableItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
   const discountTotal = Math.max(lineTotal - grandTotal, 0);
-  const rows = items.map((item, index) => `<tr><td>${index + 1}</td><td>${esc(item.name)}${item.notes ? `<small>${esc(item.notes)}</small>` : ''}</td><td>${esc(item.quantity)}</td><td>${Number(item.price || 0).toFixed(2)}</td><td>${(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}</td></tr>`).join('');
+  const rows = printableItems.map((item, index) => `<tr><td>${index + 1}</td><td>${esc(item.name)}${item.notes ? `<small>${esc(item.notes)}</small>` : ''}</td><td>${esc(item.quantity)}</td><td>${Number(item.price || 0).toFixed(2)}</td><td>${(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}</td></tr>`).join('');
   const paymentText = payments.map((payment) => `${payment.method}: ${Number(payment.amount || 0).toFixed(2)}`).join(', ') || invoice.payment_mode || 'CASH';
   const registered = Boolean(String(profile.gstin || '').trim());
   const title = registered ? 'TAX INVOICE' : 'RECEIPT / BILL';

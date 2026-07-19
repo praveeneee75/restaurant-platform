@@ -9,7 +9,8 @@ const checks = [
   ['Public URLs, QR column sizing, online-order routing', 'tests/production-url-regression.js'],
   ['SaaS mandatory profile and license-to-POS transfer', 'tests/saas-onboarding-profile-regression.js'],
   ['Billing settle/print controls', 'tests/billing-controls-regression.js'],
-  ['Responsive owner mobile dashboard', 'tests/mobile-owner-dashboard-regression.js']
+  ['Responsive owner mobile dashboard', 'tests/mobile-owner-dashboard-regression.js'],
+  ['Print-only invoice item grouping', 'tests/print-item-grouping-regression.js']
 ];
 
 for (const [scope, script] of checks) {
