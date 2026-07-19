@@ -111,6 +111,7 @@ function renderCard(order, item) {
       <p>Qty ${item.quantity} · Started ${esc(formatStartTime(item.startTime || order.createdAt))}</p>
       ${item.status === 'PENDING' || item.status === 'PREPARING' ? `<p class="kds-timer" data-start-time="${esc(item.startTime || order.createdAt)}">Pending <strong>${esc(elapsedLabel(item.startTime || order.createdAt))}</strong></p>` : ''}
       ${(item.modifiers || []).map((modifier) => `<small>- ${esc(modifier.name)}</small>`).join("")}
+      ${item.notes ? `<p class="kds-item-note"><strong>Note:</strong> ${esc(item.notes)}</p>` : ""}
       <div class="kds-actions">${actions}</div>
     </article>
   `;

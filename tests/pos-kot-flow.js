@@ -92,6 +92,23 @@ async function post(url, body) {
   if (!secondSubmissionItems.some((item) => Number(item.order_item_id) === Number(draft.order_item_id))) {
     throw new Error('Second KOT omitted the newly saved draft item');
   }
+
+  const partyNote = 'Birthday party - no onion';
+  const party = await post('/orders/save', { orderType: 'PHONE_ORDER', tableId: null, tableName: null, items: [
+    { itemId: menuItems[0].id, quantity: 4, notes: partyNote, modifiers: [] }
+  ] });
+  const partyOpenList = await request('GET', `/orders/open-list?restaurantId=${restaurantId}&orderType=PHONE_ORDER`);
+  if (!partyOpenList.data.orders?.some((order) => Number(order.id) === Number(party.orderId))) throw new Error('Saved party order was not available to reopen in POS');
+  await post('/orders/submit-kot', { orderId: party.orderId });
+  const partyDb = openDatabase(restaurantId);
+  const partyKitchen = partyDb.prepare('SELECT kitchen_id FROM order_items WHERE order_id = ? LIMIT 1').get(party.orderId)?.kitchen_id;
+  const partyPrintJobs = partyDb.prepare("SELECT payload FROM print_jobs WHERE type = 'KOT' AND ref_id = ? ORDER BY id").all(party.orderId);
+  partyDb.close();
+  if (!partyPrintJobs.some((job) => JSON.parse(job.payload).items?.some((item) => item.notes === partyNote))) throw new Error('Party-order note was omitted from KOT print data');
+  const kdsParty = await request('GET', `/kds/orders?restaurantId=${restaurantId}&kitchenId=${partyKitchen}&role=OWNER`);
+  const partyKdsItem = kdsParty.data.orders?.find((order) => Number(order.orderId) === Number(party.orderId))?.items?.[0];
+  if (partyKdsItem?.notes !== partyNote) throw new Error('Party-order note was omitted from KDS');
+
   const printerDb = openDatabase(restaurantId);
   printerDb.prepare("INSERT INTO printers (name, type, connection, address, active) VALUES ('Regression USB Bill', 'BILL', 'USB', 'Regression USB Bill', 1)").run();
   printerDb.close();
@@ -106,6 +123,6 @@ async function post(url, body) {
   if (!billPayload.kotReferences) throw new Error('Bill print payload omitted KOT numbers');
   const invoice = await request('GET', `/orders/invoices/${first.orderId}?restaurantId=${restaurantId}`);
   if (!invoice.data.invoice?.kot_references) throw new Error('Invoice detail omitted KOT numbers');
-  console.log(JSON.stringify({ success: true, orderId: first.orderId, submittedLines: submitted.length, saveCreatedKot: false, secondKotOnlyNewLines: true, billPrintQueued: true, complianceFieldsIncluded: true, kotReferencesIncluded: true }));
+  console.log(JSON.stringify({ success: true, orderId: first.orderId, submittedLines: submitted.length, saveCreatedKot: false, secondKotOnlyNewLines: true, partyOrderReopens: true, partyNotesInKds: true, partyNotesInKotPrint: true, billPrintQueued: true, complianceFieldsIncluded: true, kotReferencesIncluded: true }));
   process.exit(0);
 })().catch((error) => { console.error(error.stack || error.message); process.exit(1); });

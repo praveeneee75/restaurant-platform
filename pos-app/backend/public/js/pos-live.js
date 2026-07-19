@@ -233,6 +233,7 @@ async function boot() {
     state.selectedTable = null;
     state.activeTableId = null;
     renderTables();
+    await restoreCurrentContextOrder();
     renderCart();
     return;
   }
@@ -247,7 +248,7 @@ async function refreshLiveState({ updateCart = false } = {}) {
   const data = await fetch(`/pos/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`).then((res) => res.json());
   applyBootstrap(data);
   await refreshShiftCashStatus();
-  if (state.selectedTable?.id && updateCart) await restoreSelectedTableOrder();
+  if (updateCart && (state.selectedTable?.id || posMode !== "DINE_IN")) await restoreCurrentContextOrder();
   renderTables();
   renderCategories();
   if (state.selectedCategoryId) renderItems(state.selectedCategoryId);
@@ -265,10 +266,20 @@ async function loadOpenOrdersForTable(tableId, selectedOrderId = null) {
   renderOrderSelector();
 }
 
-async function restoreSelectedTableOrder() {
-  if (!state.selectedTable?.id) return;
+async function loadOpenOrdersForCurrentContext(selectedOrderId = null) {
+  if (isDineIn()) return loadOpenOrdersForTable(state.selectedTable?.id, selectedOrderId);
+  const data = await fetch(`/orders/open-list?restaurantId=${encodeURIComponent(restaurantId)}&orderType=${encodeURIComponent(orderType.value)}`).then((res) => res.json());
+  state.openOrders = data.orders || [];
+  const requestedOrder = state.openOrders.find((order) => Number(order.id) === Number(selectedOrderId));
+  const currentOrder = state.openOrders.find((order) => Number(order.id) === Number(state.orderId));
+  state.orderId = requestedOrder?.id || currentOrder?.id || state.openOrders[0]?.id || null;
+  renderOrderSelector();
+}
+
+async function restoreCurrentContextOrder() {
+  if (isDineIn() && !state.selectedTable?.id) return;
   const rememberedOrderId = state.orderId;
-  await loadOpenOrdersForTable(state.selectedTable.id, rememberedOrderId);
+  await loadOpenOrdersForCurrentContext(rememberedOrderId);
   const orderId = state.openOrders.find((order) => Number(order.id) === Number(rememberedOrderId))?.id || state.openOrders[0]?.id;
   if (!orderId) {
     state.orderId = null;
@@ -279,7 +290,7 @@ async function restoreSelectedTableOrder() {
     return;
   }
   const data = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(orderId)}`).then((res) => res.json());
-  if (!data.order || Number(state.activeTableId) !== Number(state.selectedTable.id)) return;
+  if (!data.order || (isDineIn() && Number(state.activeTableId) !== Number(state.selectedTable.id))) return;
   state.orderId = data.order.id;
   state.orderReference = data.order.order_reference || `${data.order.order_sequence || data.order.id}-${data.order.customer_ref || `A${data.order.id}`}`;
   state.kotSubmitted = (data.items || []).some((item) => item.kot_id);
@@ -865,7 +876,8 @@ async function submitCurrentKot() {
     kotStatus.textContent = data.message || "KOT submitted";
     kotStatus.className = "success-message";
     submitKot.title = data.kotReference ? `Last KOT: ${data.kotReference}` : "KOT submitted";
-    await loadOpenOrdersForTable(state.selectedTable?.id, state.orderId);
+    await loadOpenOrdersForCurrentContext(state.orderId);
+    await reloadCurrentOrderCart();
     refreshCartAndMenu();
   }
   alert(data.message || "KOT submitted");
@@ -1095,14 +1107,14 @@ let itemSearchTimer;
 itemSearch.addEventListener("input", () => { clearTimeout(itemSearchTimer); itemSearchTimer = setTimeout(() => renderItems(state.selectedCategoryId), 120); });
 deliveryFee.addEventListener("input", renderCart);
 orderSelector.addEventListener("change", async () => {
-  if (!state.selectedTable || !orderSelector.value) return;
+  if ((isDineIn() && !state.selectedTable) || !orderSelector.value) return;
   const orderId = Number(orderSelector.value);
   const requestId = ++tableSelectionRequest;
   state.cart = [];
   state.selectedCartKey = null;
   renderCart();
   const data = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(orderId)}`).then((res) => res.json());
-  if (requestId !== tableSelectionRequest || Number(data.order?.id) !== orderId || Number(state.activeTableId) !== Number(state.selectedTable.id)) return;
+  if (requestId !== tableSelectionRequest || Number(data.order?.id) !== orderId || (isDineIn() && Number(state.activeTableId) !== Number(state.selectedTable.id))) return;
   state.orderId = data.order.id;
   state.orderReference = data.order.order_reference || `${data.order.order_sequence || data.order.id}-${data.order.customer_ref || `A${data.order.id}`}`;
   state.kotSubmitted = (data.items || []).some((item) => item.kot_id);

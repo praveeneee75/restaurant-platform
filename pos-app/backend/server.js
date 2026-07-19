@@ -5922,17 +5922,21 @@ app.get('/orders/invoices/:id/pdf', (req, res) => {
 });
 
 app.get('/orders/open-list', (req, res) => {
-  const { restaurantId, tableId } = req.query;
-  if (!restaurantId || !isPositiveId(tableId)) return res.status(400).json({ success: false, message: 'restaurantId and tableId are required' });
+  const { restaurantId, tableId, orderType } = req.query;
+  const hasTable = isPositiveId(tableId);
+  const cleanOrderType = String(orderType || '').trim().toUpperCase();
+  if (!restaurantId || (!hasTable && !cleanOrderType)) return res.status(400).json({ success: false, message: 'restaurantId and tableId or orderType are required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    const contextClause = hasTable ? 'o.table_id = ?' : 'o.table_id IS NULL AND o.order_type = ?';
+    const contextValue = hasTable ? Number(tableId) : cleanOrderType;
     const orders = db.prepare(`
       SELECT o.id, o.table_id, o.table_no, o.order_type, o.total_amount, o.payment_status, o.status, o.created_at, o.updated_at, o.order_sequence, o.customer_ref, o.order_reference, c.name AS customer_name
       FROM orders o
       LEFT JOIN customers c ON c.id = o.customer_id
-      WHERE o.table_id = ? AND o.status NOT IN ('PAID', 'CANCELLED') AND o.payment_status != 'PAID'
+      WHERE ${contextClause} AND o.status NOT IN ('PAID', 'CANCELLED') AND o.payment_status != 'PAID'
       ORDER BY o.created_at ASC, o.id ASC
-    `).all(tableId);
+    `).all(contextValue);
     res.json({ success: true, orders });
   } catch (err) {
     sendError(res, err);
@@ -6849,6 +6853,7 @@ app.get('/kds/orders', (req, res) => {
         oi.item_id,
         oi.quantity,
         oi.price,
+        oi.notes,
         oi.kot_id,
         ksub.created_at AS kot_created_at,
         CASE WHEN oi.status = 'PLACED' THEN 'PENDING' ELSE oi.status END AS status,
@@ -6881,7 +6886,7 @@ app.get('/kds/orders', (req, res) => {
     // data can contain duplicate join rows; collapse only exact KOT/item/status
     // duplicates while keeping separate KOTs and separate item lines intact.
     const uniqueRows = [...new Map(rows.map((row) => [
-      `${row.order_id}:${row.kot_id || 'draft'}:${row.item_id}:${row.status}`,
+      `${row.order_id}:${row.kot_id || 'draft'}:${row.order_item_id}:${row.status}`,
       row
     ])).values()];
     const orders = uniqueRows.reduce((map, row) => {
@@ -6898,6 +6903,7 @@ app.get('/kds/orders', (req, res) => {
         name: row.item_name,
         quantity: row.quantity,
         price: row.price,
+        notes: row.notes || '',
         status: row.status || 'PENDING',
         startedAt: row.started_at,
         readyAt: row.ready_at,

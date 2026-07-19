@@ -63,7 +63,16 @@ function formatDateTime(value) {
   if (!value) return "";
   const text = String(value);
   const date = new Date(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text) ? `${text.replace(" ", "T")}Z` : text);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+  if (Number.isNaN(date.getTime())) return String(value);
+  const timeZone = String(state.settings?.settings?.timezone || "Asia/Kolkata");
+  try {
+    return new Intl.DateTimeFormat("en-IN", {
+      timeZone, day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
+    }).format(date);
+  } catch (_) {
+    return date.toLocaleString();
+  }
 }
 
 function isFutureDate(value) {
@@ -272,7 +281,10 @@ async function loadAll() {
   renderAdmin();
   if (standaloneAdminView && requestedAdminView) {
     await loadUpdates().catch(() => undefined);
-    if (requestedAdminView === "invoices") await loadInvoiceList().catch(() => undefined);
+    if (requestedAdminView === "invoices") {
+      await loadSettings().catch(() => undefined);
+      await loadInvoiceList().catch(() => undefined);
+    }
     if (requestedAdminView === "reservations") await loadReservations().catch(() => undefined);
     adminStatus.textContent = "Workspace ready";
     return;
@@ -475,7 +487,7 @@ function renderInvoices() {
       <td>${esc(invoice.table_no || "")}</td>
       <td>${esc(invoice.order_type || "")}</td>
       <td>${money(invoice.total_amount)}</td>
-      <td>${esc(invoice.settled_at || "")}</td>
+      <td>${esc(formatDateTime(invoice.settled_at))}</td>
       <td><button type="button" class="secondary-btn invoice-view" data-invoice-id="${invoice.id}" title="View invoice details">View</button></td>
     </tr>
   `).join("") || `<tr><td colspan="7">No invoices found.</td></tr>`;
@@ -494,7 +506,7 @@ async function showInvoiceDetail(invoiceId) {
     : Number(row.value || 0)), 0);
   const refundedAmount = Number(invoice.refunded_amount || 0);
   const remainingPaid = Math.max(Number(invoice.paid_amount || 0), 0);
-  panel.innerHTML = `<header><div><h3>${esc(invoice.invoice_no || `Invoice #${invoice.id}`)}</h3><p class="invoice-detail-meta">${esc(invoice.customer_name || 'Walk-in customer')} · ${esc(invoice.table_no || invoice.order_type || '')} · ${esc(invoice.settled_at || '')}</p></div><div class="invoice-detail-actions"><button type="button" class="secondary-btn" id="printInvoice">Print</button><button type="button" class="secondary-btn" id="downloadInvoicePdf">Save PDF</button></div></header><div class="invoice-detail-lines">${items.map(item => `<div class="invoice-detail-line"><span>${esc(item.name)} × ${item.quantity}${item.notes ? `<small>Note: ${esc(item.notes)}</small>` : ''}</span><strong>${money(Number(item.price || 0) * Number(item.quantity || 0))}</strong></div>`).join('') || '<p>No items recorded.</p>'}</div><div class="invoice-detail-total"><span>Total</span><strong>${money(invoice.total_amount)}</strong></div>`;
+  panel.innerHTML = `<header><div><h3>${esc(invoice.invoice_no || `Invoice #${invoice.id}`)}</h3><p class="invoice-detail-meta">${esc(invoice.customer_name || 'Walk-in customer')} · ${esc(invoice.table_no || invoice.order_type || '')} · ${esc(formatDateTime(invoice.settled_at))}</p></div><div class="invoice-detail-actions"><button type="button" class="secondary-btn" id="printInvoice">Print</button><button type="button" class="secondary-btn" id="downloadInvoicePdf">Save PDF</button></div></header><div class="invoice-detail-lines">${items.map(item => `<div class="invoice-detail-line"><span>${esc(item.name)} × ${item.quantity}${item.notes ? `<small>Note: ${esc(item.notes)}</small>` : ''}</span><strong>${money(Number(item.price || 0) * Number(item.quantity || 0))}</strong></div>`).join('') || '<p>No items recorded.</p>'}</div><div class="invoice-detail-total"><span>Total</span><strong>${money(invoice.total_amount)}</strong></div>`;
   panel.hidden = false;
   if (discountTotal > 0) {
     const discountSummary = document.createElement('div');
@@ -579,7 +591,7 @@ function invoicePrintHtml(invoice, items, discounts = [], payments = []) {
   const html = `<!doctype html><html><head><title>${esc(invoice.invoice_no || 'Invoice')}</title><style>
     @page{size:80mm auto;margin:2.5mm}*{box-sizing:border-box}body{width:75mm;margin:0 auto;color:#111;font:10px Arial,sans-serif;line-height:1.28}header{text-align:center}h1{font-size:15px;margin:0 0 2px;text-transform:uppercase}h2{font-size:12px;margin:6px 0 3px;border-top:1px solid #111;border-bottom:1px solid #111;padding:4px}p{margin:1px 0}.legal{font-weight:700}.meta{display:grid;grid-template-columns:26mm 1fr;gap:2px 4px;border-bottom:1px dashed #111;padding:5px 0}.meta b{font-weight:700}.items{width:100%;border-collapse:collapse;margin-top:5px}.items th,.items td{padding:3px 2px;border:1px solid #555;vertical-align:top}.items th{text-align:center;font-size:9px}.items td:nth-child(1),.items td:nth-child(3){text-align:center}.items td:nth-child(4),.items td:nth-child(5){text-align:right;white-space:nowrap}.items small{display:block}.summary{border:1px solid #555;border-top:0;padding:4px}.summary p{display:flex;justify-content:space-between;gap:8px}.grand{border-top:1px solid #111;margin-top:3px;padding-top:4px;font-weight:800;font-size:13px}.footer{text-align:center;border-top:1px dashed #111;margin-top:7px;padding-top:6px}.compliance{font-size:9px}@media print{button{display:none}}
   </style></head><body><header><h1>${esc(profile.restaurant_display_name || profile.legal_name || 'Restaurant')}</h1>${profile.legal_name && profile.legal_name !== profile.restaurant_display_name ? `<p class="legal">${esc(profile.legal_name)}</p>` : ''}<p>${esc([profile.address_line_1, profile.address_line_2].filter(Boolean).join(', '))}</p><p>${esc([profile.city, profile.state, profile.state_code ? `Code ${profile.state_code}` : '', profile.country].filter(Boolean).join(', '))}</p><p>${profile.phone ? `Mob: ${esc(profile.phone)}` : ''}${profile.email ? ` · ${esc(profile.email)}` : ''}</p>${profile.gstin ? `<p><b>GSTIN: ${esc(profile.gstin)}</b></p>` : ''}${profile.fssai_license_no ? `<p><b>FSSAI: ${esc(profile.fssai_license_no)}</b></p>` : ''}<h2>${title}</h2></header>
-  <div class="meta"><span>Invoice No.</span><b>${esc(invoice.invoice_no || `#${invoice.id}`)}</b><span>Date / Time</span><b>${esc(invoice.settled_at || '')}</b><span>Order / Table</span><b>${esc(`${invoice.order_reference || invoice.id} / ${invoice.table_no || invoice.order_type || ''}`)}</b>${invoice.kot_references ? `<span>KOT No(s).</span><b>${esc(invoice.kot_references)}</b>` : ''}<span>Customer</span><b>${esc(invoice.customer_name || 'Walk-in customer')}</b><span>Cashier</span><b>${esc(invoice.cashier_name || 'Owner')}</b><span>Payment</span><b>${esc(paymentText)}</b>${registered ? `<span>Place of supply</span><b>${esc(`${profile.state || 'Tamil Nadu'} (${profile.state_code || '33'})`)}</b><span>SAC</span><b>${esc(profile.sac_code || '996331')}</b>` : ''}</div>
+  <div class="meta"><span>Invoice No.</span><b>${esc(invoice.invoice_no || `#${invoice.id}`)}</b><span>Date / Time</span><b>${esc(formatDateTime(invoice.settled_at))}</b><span>Order / Table</span><b>${esc(`${invoice.order_reference || invoice.id} / ${invoice.table_no || invoice.order_type || ''}`)}</b>${invoice.kot_references ? `<span>KOT No(s).</span><b>${esc(invoice.kot_references)}</b>` : ''}<span>Customer</span><b>${esc(invoice.customer_name || 'Walk-in customer')}</b><span>Cashier</span><b>${esc(invoice.cashier_name || 'Owner')}</b><span>Payment</span><b>${esc(paymentText)}</b>${registered ? `<span>Place of supply</span><b>${esc(`${profile.state || 'Tamil Nadu'} (${profile.state_code || '33'})`)}</b><span>SAC</span><b>${esc(profile.sac_code || '996331')}</b>` : ''}</div>
   <table class="items"><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table><div class="summary"><p><span>Total Qty</span><b>${totalQuantity}</b></p>${discountTotal > 0 ? `<p><span>Discount</span><b>-${currency} ${discountTotal.toFixed(2)}</b></p>` : ''}<p><span>Taxable value</span><b>${currency} ${subtotal.toFixed(2)}</b></p>${registered && taxRate > 0 ? `<p><span>CGST @ ${(taxRate / 2).toFixed(2)}%</span><b>${currency} ${halfTax.toFixed(2)}</b></p><p><span>SGST @ ${(taxRate / 2).toFixed(2)}%</span><b>${currency} ${halfTax.toFixed(2)}</b></p>` : ''}<p class="grand"><span>GRAND TOTAL</span><b>${currency} ${grandTotal.toFixed(2)}</b></p></div><div class="footer"><p><b>THANK YOU. VISIT AGAIN.</b></p><p class="compliance">${registered ? 'Tax is included in the amounts shown.' : 'This document does not collect GST.'}</p></div></body></html>`;
   return html;
 }
@@ -1046,7 +1058,7 @@ invoicesTable.addEventListener("click", (event) => {
   showInvoiceDetail(invoice.id).catch((err) => { invoiceStatus.textContent = err.message; });
   return;
   const printWindow = window.open("", "_blank", "width=760,height=900");
-  printWindow.document.write(`<html><head><title>${esc(invoice.invoice_no || "Invoice")}</title><style>body{font:16px Arial;padding:32px}h1{margin-bottom:24px}table{width:100%;border-collapse:collapse}td{padding:10px;border-bottom:1px solid #ddd}strong{font-size:20px}</style></head><body><h1>Invoice ${esc(invoice.invoice_no || `#${invoice.id}`)}</h1><table><tr><td>Customer</td><td>${esc(invoice.customer_name || "Walk-in customer")}</td></tr><tr><td>Phone</td><td>${esc(invoice.customer_phone || "")}</td></tr><tr><td>Table</td><td>${esc(invoice.table_no || "")}</td></tr><tr><td>Type</td><td>${esc(invoice.order_type || "")}</td></tr><tr><td>Total</td><td><strong>${money(invoice.total_amount)}</strong></td></tr><tr><td>Settled</td><td>${esc(invoice.settled_at || "")}</td></tr></table><script>window.onload=()=>window.print()</script></body></html>`);
+  printWindow.document.write(`<html><head><title>${esc(invoice.invoice_no || "Invoice")}</title><style>body{font:16px Arial;padding:32px}h1{margin-bottom:24px}table{width:100%;border-collapse:collapse}td{padding:10px;border-bottom:1px solid #ddd}strong{font-size:20px}</style></head><body><h1>Invoice ${esc(invoice.invoice_no || `#${invoice.id}`)}</h1><table><tr><td>Customer</td><td>${esc(invoice.customer_name || "Walk-in customer")}</td></tr><tr><td>Phone</td><td>${esc(invoice.customer_phone || "")}</td></tr><tr><td>Table</td><td>${esc(invoice.table_no || "")}</td></tr><tr><td>Type</td><td>${esc(invoice.order_type || "")}</td></tr><tr><td>Total</td><td><strong>${money(invoice.total_amount)}</strong></td></tr><tr><td>Settled</td><td>${esc(formatDateTime(invoice.settled_at))}</td></tr></table><script>window.onload=()=>window.print()</script></body></html>`);
   printWindow.document.close();
 });
 runDisasterCheck.addEventListener("click", async () => {
