@@ -41,6 +41,7 @@
     <div class="category-strip" id="categories"><button data-category="ALL" class="active">All</button></div>
     <label class="item-search"><span>Find an item</span><input id="itemSearch" type="search" placeholder="Search products"></label>
     <div class="item-grid" id="items"></div>
+    <div id="cartItems" class="cart-items middle-cart-items" aria-label="Current order items"></div>
     <section class="selected-item-editor" id="itemNoteEditor" hidden>
       <div>
         <strong id="itemNoteTitle">Selected item</strong>
@@ -75,7 +76,6 @@
       <button id="newCheckBtn" type="button" class="secondary-btn">New customer check</button>
       <button id="parcelCheckBtn" type="button" class="secondary-btn">Parcel check</button>
     </div>
-    <div id="cartItems" class="cart-items"></div>
     <div class="payment-panel">
       <strong id="total">Total: 0.00</strong>
       <div class="order-type-panel">

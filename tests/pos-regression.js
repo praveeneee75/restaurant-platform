@@ -22,6 +22,8 @@ assert.match(live, /tableSelectionRequest/);
 assert.match(live, /data-item-minus/);
 assert.match(live, /data-item-plus/);
 assert.match(live, /data-cart-line/);
+assert.match(liveHtml, /class="cart-items middle-cart-items"/);
+assert.doesNotMatch(liveHtml, /<aside class="pos-cart">[\s\S]*?<div id="cartItems"/);
 assert.match(live, /itemNoteEditor/);
 assert.match(live, /updateSelectedItemNote/);
 assert.match(live, /selectedItemMinus/);
