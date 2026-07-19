@@ -5209,6 +5209,17 @@ app.post('/qr/orders/approve', async (req, res) => {
       if (!order) throw new Error('QR order is no longer waiting for approval');
       const existingOrder = db.prepare("SELECT id FROM orders WHERE id != ? AND table_id = ? AND customer_id = ? AND status = 'OPEN' AND payment_status != 'PAID' ORDER BY id DESC LIMIT 1").get(order.id, order.table_id, order.customer_id);
       const targetOrderId = existingOrder?.id || order.id;
+      // Imported QR rows can arrive from an older POS build with a zero price or
+      // a stale line status. Repair only these pending QR lines before KOT creation.
+      db.prepare(`
+        UPDATE order_items
+        SET price = CASE
+              WHEN COALESCE(price, 0) <= 0 THEN COALESCE((SELECT price FROM items WHERE items.id = order_items.item_id), price, 0)
+              ELSE price
+            END,
+            status = 'PLACED'
+        WHERE order_id = ?
+      `).run(order.id);
       if (existingOrder) {
         if (tableExists(db, 'saas_online_order_imports')) {
           const imported = db.prepare('SELECT saas_order_id FROM saas_online_order_imports WHERE local_order_id = ?').get(order.id);
@@ -5216,7 +5227,14 @@ app.post('/qr/orders/approve', async (req, res) => {
           db.prepare('UPDATE saas_online_order_imports SET local_order_id = ?, updated_at = CURRENT_TIMESTAMP WHERE local_order_id = ?').run(targetOrderId, order.id);
         }
         db.prepare('UPDATE order_items SET order_id = ? WHERE order_id = ?').run(targetOrderId, order.id);
-        db.prepare('DELETE FROM orders WHERE id = ?').run(order.id);
+        // Preserve the submitted shell as a cancelled merge record. Deleting it
+        // violates the history foreign key created when SaaS imported the order.
+        db.prepare(`
+          UPDATE orders
+          SET status = 'CANCELLED', total_amount = 0, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(order.id);
+        writeOrderStatusHistory(db, actor, order.id, 'CANCELLED', 'ORDER', `QR submission merged into order #${targetOrderId}`);
       }
       kotResult = createKotJobs(db, targetOrderId);
       db.prepare("UPDATE orders SET status = 'OPEN', total_amount = (SELECT COALESCE(SUM(quantity * price), 0) FROM order_items WHERE order_id = ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(targetOrderId, targetOrderId);
@@ -5243,7 +5261,8 @@ app.post('/qr/orders/reject', async (req, res) => {
   try {
     const order = db.prepare("SELECT * FROM orders WHERE id = ? AND order_source = 'QR' AND status = 'PENDING_QR'").get(orderId);
     if (!order) return res.status(409).json({ success: false, message: 'QR order is no longer waiting for approval' });
-    db.prepare("UPDATE orders SET status = 'CANCELLED', notes = COALESCE(notes || ' | ', '') || ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(`QR rejected: ${normaliseText(reason) || 'Rejected by staff'}`, orderId);
+    db.prepare("UPDATE orders SET status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(orderId);
+    writeOrderStatusHistory(db, actor, orderId, 'CANCELLED', 'ORDER', `QR rejected: ${normaliseText(reason) || 'Rejected by staff'}`);
     writeAudit(db, actor, 'REJECT_QR_ORDER', 'ORDER', orderId, { status: 'PENDING_QR' }, { status: 'CANCELLED', reason: normaliseText(reason) || null });
     const saasImport = tableExists(db, 'saas_online_order_imports') ? db.prepare('SELECT saas_order_id FROM saas_online_order_imports WHERE local_order_id = ?').get(orderId) : null;
     if (saasImport?.saas_order_id) await updateSaasOnlineOrderStatus(restaurantId, saasImport.saas_order_id, 'REJECTED', orderId);

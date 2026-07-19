@@ -17,6 +17,7 @@ const cases = [
   [adminHtml.includes('settingBillTemplate') && adminHtml.includes('billTemplatePreview') && adminJs.includes("template === 'BORDERLESS'") && adminJs.includes("template === 'COMPACT'"), 'three selectable bill templates have same-page preview'],
   [adminHtml.includes('qrLinkPreview') && adminJs.includes('data-qr-preview') && adminJs.includes('data-qr-print') && cloud.includes("router.get('/qr-code'"), 'QR links provide preview and print'],
   [css.includes('table-layout: auto') && css.includes('min-width: max-content') && css.includes('.admin-section-editor'), 'admin tables auto-fit and filter sections remain column-wise'],
+  [css.includes('.table-panel span.action-cell') && css.includes('width:auto !important') && css.includes('min-width:max-content'), 'admin table action buttons remain separate and readable at narrow widths and zoom levels'],
   [server.includes("app.post('/kds/reprint-kot'") && server.includes('printer_id') && kds.includes('data-reprint-kot'), 'KDS reprint targets the original kitchen printer'],
   [schema.includes("bill_template: 'BORDERED'") && schema.includes("tax_rate: '5'"), 'new registered restaurants start with compliant bill defaults']
 ];

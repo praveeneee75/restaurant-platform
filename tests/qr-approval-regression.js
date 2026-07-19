@@ -1,6 +1,9 @@
 const fs=require('fs');const path=require('path');const root=path.resolve(__dirname,'..');const read=f=>fs.readFileSync(path.join(root,f),'utf8');
 const server=read('pos-app/backend/server.js');const cloud=read('saas-backend/src/routes/onlineOrdering.js');const qr=read('saas-backend/public/js/qr-public.js');const billing=read('pos-app/backend/public/js/billing.js');
 const checks=[
+ [server.includes('QR submission merged into order #')&&!server.includes("db.prepare('DELETE FROM orders WHERE id = ?').run(order.id)"), 'same-customer QR submissions merge without deleting the history-referenced source order'],
+ [server.includes("status = 'PLACED'")&&server.includes('WHEN COALESCE(price, 0) <= 0'), 'legacy imported QR lines recover their menu price and KOT-ready status during merge'],
+ [server.includes("writeOrderStatusHistory(db, actor, orderId, 'CANCELLED'")&&!server.includes("UPDATE orders SET status = 'CANCELLED', notes ="), 'QR rejection records its reason without requiring a legacy-missing orders.notes column'],
  [cloud.includes("field: 'customerName'")&&cloud.includes("field: 'customerPhone'")&&cloud.includes('^\\d{10}$'), 'server-side QR customer validation'],
  [qr.includes('qrCustomerNameError.textContent')&&qr.includes('qrCustomerPhoneError.textContent')&&qr.includes("aria-invalid"), 'visible inline QR validation'],
  [server.includes("isQrDineIn ? 'PENDING_QR' : 'OPEN'")&&server.includes("isQrDineIn ? 'QR' : 'SAAS_ONLINE'"), 'internet QR import waits for approval'],
