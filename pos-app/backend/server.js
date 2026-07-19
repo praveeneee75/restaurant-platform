@@ -2971,6 +2971,7 @@ app.get('/print-jobs/pending', (req, res) => {
       FROM print_jobs pj
       LEFT JOIN printers p ON p.id = pj.printer_id AND p.active = 1
       WHERE pj.status = 'PENDING'
+         OR (pj.status = 'FAILED' AND COALESCE(pj.attempts, 0) < 3)
       ORDER BY pj.created_at
       LIMIT 10
     `).all();

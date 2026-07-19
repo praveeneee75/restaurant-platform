@@ -926,7 +926,8 @@ button:hover,
 
 .cart-items {
   flex: 1;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .middle-cart-items {
@@ -1138,7 +1139,7 @@ button:hover,
 .table-panel .qr-links-table th:first-child,
 .table-panel .qr-links-table td:first-child {
   width: 1%;
-  min-width: max-content;
+  min-width: 0;
   white-space: nowrap;
 }
 .table-panel .qr-links-table th:last-child,
@@ -1150,6 +1151,8 @@ button:hover,
   display: inline-block;
   max-width: 100%;
   overflow-wrap: anywhere;
+  min-width: 0;
+  white-space: normal;
 }
 
 .qr-admin-workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(280px,360px); gap:16px; align-items:start; }
@@ -1918,9 +1921,7 @@ button:hover,
     max-width: 100%;
   }
 
-  .table-panel table {
-    min-width: 680px;
-  }
+  .table-panel table { min-width: 0; }
 
   .pos-shell {
     display: grid;

@@ -308,7 +308,7 @@ function renderAdmin() {
   fillSelect(comboItem, items);
   fillSelect(reservationTable, tables, "table_name");
   kitchensTable.innerHTML = kitchens.map((k) => `<tr><td>${esc(k.name)}</td><td>${esc(k.printer_name || "Not assigned")}</td><td>${k.active ? "Active" : "Inactive"}</td><td>${actions("kitchen", k.id)}</td></tr>`).join("");
-  printersTable.innerHTML = printers.map((printer) => `<tr><td>${esc(printer.name)}</td><td>${esc(printer.type)}</td><td>${esc(printer.connection)}</td><td>${esc(printer.address || "")}</td><td>${printer.active ? "Active" : "Inactive"}</td><td>${actions("printer", printer.id)}</td></tr>`).join("");
+  printersTable.innerHTML = printers.map((printer) => `<tr><td>${esc(printer.name)}</td><td>${esc(printer.type)}</td><td>${esc(printer.connection)}</td><td>${esc(printer.address || "")}</td><td>${printer.active ? "Active" : "Inactive"}</td><td><span class="action-cell"><button type="button" class="secondary-btn" data-test-printer="${printer.id}">Test Print</button><button class="mini-btn" data-edit-printer="${printer.id}" type="button">Edit</button><button class="danger-btn" data-delete-printer="${printer.id}" type="button">Delete</button></span></td></tr>`).join("");
   categoriesTable.innerHTML = categories.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.kitchen_name || "Unassigned")}${Number(c.kitchen_active) === 0 ? " (inactive kitchen)" : ""}</td><td>${c.active ? "Active" : "Inactive"}</td><td>${actions("category", c.id)}</td></tr>`).join("");
   const term = (itemSearch?.value || "").toLowerCase();
   itemsTable.innerHTML = items.filter((i) => !term || i.name.toLowerCase().includes(term)).map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td><td>${i.active ? "Active" : "Inactive"}${Number(i.online_enabled ?? 1) ? "" : " / Hidden online"}</td><td>${actions("item", i.id)}</td></tr>`).join("");
@@ -344,10 +344,15 @@ function showQrPreview(url, tableName) {
   qrLinkPreview.innerHTML = `<header><div><h3>${esc(tableName)} QR code</h3><p>Scan to open the table ordering page.</p></div><button type="button" class="secondary-btn" data-qr-print="${encodeURIComponent(url)}" data-qr-table="${esc(tableName)}">Print</button></header><img src="${qrImageUrl(url)}" alt="QR code for ${esc(tableName)}"><a href="${url}" target="_blank">Open ordering page</a>`;
 }
 
-function printQrCode(url, tableName) {
+async function printQrCode(url, tableName) {
+  const html = `<!doctype html><html><head><title>${esc(tableName)} QR</title><style>@page{margin:8mm}body{font-family:Arial;text-align:center;padding:24px}img{width:320px;height:320px}h1{margin-bottom:4px}p{overflow-wrap:anywhere}</style></head><body><h1>${esc(tableName)}</h1><p>Scan to order</p><img src="${qrImageUrl(url)}"><p>${esc(url)}</p></body></html>`;
+  if (window.posDesktop?.printHtml) {
+    await window.posDesktop.printHtml(html);
+    return;
+  }
   const popup = window.open('', '_blank', 'width=520,height=680');
   if (!popup) throw new Error('Printing was blocked. Enable pop-ups and try again.');
-  popup.document.write(`<!doctype html><title>${esc(tableName)} QR</title><style>body{font-family:Arial;text-align:center;padding:24px}img{width:320px;height:320px}h1{margin-bottom:4px}p{overflow-wrap:anywhere}@media print{button{display:none}}</style><h1>${esc(tableName)}</h1><p>Scan to order</p><img src="${qrImageUrl(url)}"><p>${esc(url)}</p><button onclick="print()">Print</button>`);
+  popup.document.write(html);
   popup.document.close();
   popup.onload = () => { popup.focus(); popup.print(); };
 }
@@ -356,7 +361,19 @@ document.addEventListener('click', (event) => {
   const preview = event.target.closest('[data-qr-preview]');
   const print = event.target.closest('[data-qr-print]');
   if (preview) showQrPreview(decodeURIComponent(preview.dataset.qrPreview), preview.dataset.qrTable);
-  if (print) printQrCode(decodeURIComponent(print.dataset.qrPrint), print.dataset.qrTable);
+  if (print) printQrCode(decodeURIComponent(print.dataset.qrPrint), print.dataset.qrTable).catch((error) => alert(error.message));
+});
+
+printersTable?.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-test-printer]');
+  if (!button) return;
+  const printer = (state.admin.printers || []).find((row) => String(row.id) === String(button.dataset.testPrinter));
+  if (!printer) return;
+  if (!window.posDesktop?.testPrinter) return alert('Test Print is available in the installed desktop POS app.');
+  button.disabled = true;
+  try { await window.posDesktop.testPrinter(printer); alert(`Test page sent to ${printer.name}.`); }
+  catch (error) { alert(`Printer test failed: ${error.message}`); }
+  finally { button.disabled = false; }
 });
 
 function applyModuleGuards() {

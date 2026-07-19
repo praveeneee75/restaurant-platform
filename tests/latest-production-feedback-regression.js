@@ -19,6 +19,10 @@ const cases = [
   [css.includes('table-layout: auto') && css.includes('min-width: max-content') && css.includes('.admin-section-editor'), 'admin tables auto-fit and filter sections remain column-wise'],
   [css.includes('.table-panel span.action-cell') && css.includes('width:auto !important') && css.includes('min-width:max-content'), 'admin table action buttons remain separate and readable at narrow widths and zoom levels'],
   [adminHtml.includes('availability-items-table') && css.includes('.availability-items-panel { overflow-x:hidden; }') && css.includes('.table-panel .availability-items-table { width:100%; min-width:0; table-layout:auto; }'), 'availability columns auto-fit without a horizontal page scrollbar'],
+  [css.includes('.table-panel table { min-width: 0; }') && css.includes('overflow-x: hidden;') && !css.includes('min-width: 680px;'), 'all application tables fit their page instead of forcing horizontal scrolling'],
+  [electron.includes("await startPrintWorker(entitlement && !isExpired(entitlement) ? entitlement.restaurantId : '')") && electron.includes("status: retryable ? 'PENDING' : 'FAILED'") && server.includes("pj.status = 'FAILED' AND COALESCE(pj.attempts, 0) < 3"), 'licensed desktop always starts the print worker and retries transient KOT or bill failures'],
+  [electron.includes("ipcMain.handle('pos:test-printer'") && adminJs.includes('data-test-printer') && adminJs.includes('window.posDesktop.testPrinter'), 'every configured KOT or bill printer can be tested through the exact desktop print path'],
+  [adminJs.includes('async function printQrCode') && adminJs.includes('window.posDesktop?.printHtml') && adminJs.includes('await window.posDesktop.printHtml(html)'), 'QR printing uses native Electron printing instead of a blocked desktop popup'],
   [server.includes("app.post('/kds/reprint-kot'") && server.includes('printer_id') && kds.includes('data-reprint-kot'), 'KDS reprint targets the original kitchen printer'],
   [schema.includes("bill_template: 'BORDERED'") && schema.includes("tax_rate: '5'"), 'new registered restaurants start with compliant bill defaults']
 ];

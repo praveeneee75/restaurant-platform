@@ -204,6 +204,27 @@ async function printToConfiguredPrinter(job) {
   }
 }
 
+ipcMain.handle('pos:test-printer', async (_event, printer = {}) => {
+  const isBill = String(printer.type || '').toUpperCase() === 'BILL';
+  const job = {
+    type: isBill ? 'BILL' : 'KOT',
+    ref_id: 'TEST',
+    created_at: new Date().toISOString(),
+    printer_name: String(printer.name || ''),
+    printer_address: String(printer.address || ''),
+    payload: isBill ? {
+      invoiceNo: 'TEST PRINT', orderReference: 'TEST', tableNumber: 'Printer setup', payable: 0,
+      restaurantProfile: { displayName: "K'Master POS Printer Test", currency: 'INR' },
+      items: [{ name: 'Bill printer connected', quantity: 1, price: 0 }]
+    } : {
+      kotReference: 'TEST', orderType: 'DINE_IN', tableName: 'Printer setup',
+      headerText: "K'Master POS Printer Test", items: [{ name: 'KOT printer connected', quantity: 1, notes: '--' }]
+    }
+  };
+  await printToConfiguredPrinter(job);
+  return { success: true };
+});
+
 async function processPrintJobs() {
   if (!activePrintRestaurantId || printWorkerBusy || !backendStarted) return;
   printWorkerBusy = true;
@@ -214,7 +235,8 @@ async function processPrintJobs() {
         await printToConfiguredPrinter(job);
         await backendRequest('POST', '/print-jobs/update', { restaurantId: activePrintRestaurantId, jobId: job.id, status: 'PRINTED' });
       } catch (error) {
-        await backendRequest('POST', '/print-jobs/update', { restaurantId: activePrintRestaurantId, jobId: job.id, status: 'FAILED', error: String(error.message || error) });
+        const retryable = Number(job.attempts || 0) < 2;
+        await backendRequest('POST', '/print-jobs/update', { restaurantId: activePrintRestaurantId, jobId: job.id, status: retryable ? 'PENDING' : 'FAILED', error: String(error.message || error) });
       }
     }
   } finally {
@@ -222,12 +244,22 @@ async function processPrintJobs() {
   }
 }
 
-ipcMain.handle('pos:start-print-worker', async (_event, restaurantId) => {
-  activePrintRestaurantId = String(restaurantId || '').trim();
+async function startPrintWorker(restaurantId) {
+  const nextRestaurantId = String(restaurantId || '').trim();
+  if (!nextRestaurantId) {
+    activePrintRestaurantId = '';
+    clearInterval(printWorkerTimer);
+    return { success: true, active: false };
+  }
+  activePrintRestaurantId = nextRestaurantId;
   clearInterval(printWorkerTimer);
   printWorkerTimer = setInterval(() => processPrintJobs().catch(() => {}), 1500);
   await processPrintJobs();
-  return { success: true };
+  return { success: true, active: true };
+}
+
+ipcMain.handle('pos:start-print-worker', async (_event, restaurantId) => {
+  return startPrintWorker(restaurantId);
 });
 
 async function publishRuntimeState(entitlement, reason) {
@@ -237,6 +269,7 @@ async function publishRuntimeState(entitlement, reason) {
     expiresAt: entitlement?.expiresAt || null,
     reason: reason || null
   });
+  await startPrintWorker(entitlement && !isExpired(entitlement) ? entitlement.restaurantId : '');
 }
 
 async function showLicensePage(page, message) {
