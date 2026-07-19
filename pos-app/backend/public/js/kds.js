@@ -101,7 +101,7 @@ async function boot() {
   await loadOrders();
 }
 
-function renderCard(order, item) {
+function renderCard(order, item, showReprint) {
   const actions = {
     PENDING: `<button data-item-status="PREPARING" data-order-item="${item.orderItemId}">Start</button><button class="danger-btn" data-item-status="CANCELLED" data-order-item="${item.orderItemId}">Cancel</button>`,
     PREPARING: `<button data-item-status="READY" data-order-item="${item.orderItemId}">Ready</button>`,
@@ -115,16 +115,19 @@ function renderCard(order, item) {
       ${item.status === 'PENDING' || item.status === 'PREPARING' ? `<p class="kds-timer" data-start-time="${esc(item.startTime || order.createdAt)}">Pending <strong>${esc(elapsedLabel(item.startTime || order.createdAt))}</strong></p>` : ''}
       ${(item.modifiers || []).map((modifier) => `<small>- ${esc(modifier.name)}</small>`).join("")}
       ${item.notes ? `<p class="kds-item-note"><strong>Note:</strong> ${esc(item.notes)}</p>` : ""}
-      <div class="kds-actions">${actions}</div>
+      <div class="kds-actions">${actions}${showReprint ? `<button type="button" class="secondary-btn kds-print-icon" data-reprint-kot="${item.kotId}" title="Reprint this KOT to ${esc(item.kitchenName || 'its kitchen printer')}" aria-label="Reprint KOT ${esc(item.kotReference)}">🖨 Reprint</button>` : ''}</div>
     </article>
   `;
 }
 
 function renderOrders(orders) {
   const buckets = { PENDING: [], PREPARING: [], READY: [] };
+  const renderedKots = new Set();
   orders.forEach((order) => {
     order.items.forEach((item) => {
-      if (buckets[item.status]) buckets[item.status].push(renderCard(order, item));
+      const showReprint = item.status === 'PENDING' && item.kotId && !renderedKots.has(item.kotId);
+      if (showReprint) renderedKots.add(item.kotId);
+      if (buckets[item.status]) buckets[item.status].push(renderCard(order, item, showReprint));
     });
   });
   kdsPending.innerHTML = buckets.PENDING.join("") || "<p>No new orders</p>";
@@ -174,6 +177,14 @@ document.addEventListener("click", async (event) => {
       target.disabled = false;
       target.textContent = previousText;
     }
+  }
+  if (target.dataset.reprintKot) {
+    target.disabled = true;
+    try {
+      const result = await postJson('/kds/reprint-kot', { kotId:Number(target.dataset.reprintKot) });
+      kdsStatus.textContent = result.message;
+    } catch (err) { kdsStatus.textContent = err.message; alert(err.message); }
+    finally { target.disabled = false; }
   }
 });
 

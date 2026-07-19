@@ -5922,8 +5922,9 @@ function buildInvoicePdf(invoice, items) {
   const printableItems = groupPrintableItems(items);
   const billOption = (key) => !['0', 'false', 'off'].includes(String(invoice[key] ?? '1').toLowerCase());
   const total = Number(invoice.total_amount || 0);
-  const taxRate = Number(invoice.tax_rate || 0);
-  const taxIncluded = taxRate > 0 ? total * taxRate / (100 + taxRate) : 0;
+  const taxRate = Number(invoice.tax_rate || (invoice.gstin ? 5 : 0));
+  const taxIncluded = Number(invoice.tax_amount || 0) || (taxRate > 0 ? total * taxRate / (100 + taxRate) : 0);
+  const serviceCharge = Number(invoice.service_charge_amount || 0);
   const lines = [
     invoice.restaurant_display_name || invoice.legal_name || 'RESTAURANT',
     invoice.address_line_1 || '',
@@ -5942,7 +5943,8 @@ function buildInvoicePdf(invoice, items) {
     '',
     ...printableItems.map((item) => `${item.name} x ${item.quantity}    ${(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}`),
     '',
-    `SUBTOTAL: ${(total - taxIncluded).toFixed(2)}`,
+    `SUBTOTAL: ${(total - taxIncluded - serviceCharge).toFixed(2)}`,
+    ...(serviceCharge > 0 ? [`SERVICE CHARGE: ${serviceCharge.toFixed(2)}`] : []),
     ...(taxRate > 0 ? [`CGST (${(taxRate / 2).toFixed(2)}%): ${(taxIncluded / 2).toFixed(2)}`, `SGST (${(taxRate / 2).toFixed(2)}%): ${(taxIncluded / 2).toFixed(2)}`, `TOTAL GST: ${taxIncluded.toFixed(2)}`] : []),
     `TOTAL: ${total.toFixed(2)}`,
     '',
@@ -5981,7 +5983,7 @@ app.get('/orders/invoices/:id/pdf', (req, res) => {
       city: getConfigValue(db, 'city', ''), state: getConfigValue(db, 'state', ''), state_code: getConfigValue(db, 'state_code', '33'), country: getConfigValue(db, 'country', 'India'),
       gstin: getConfigValue(db, 'gstin', ''), fssai_license_no: getConfigValue(db, 'fssai_license_no', ''), sac_code: getConfigValue(db, 'sac_code', '996331'),
       bill_print_customer: getConfigValue(db, 'bill_print_customer', '1'), bill_print_authorised_signatory: getConfigValue(db, 'bill_print_authorised_signatory', '1'), bill_footer_text: getConfigValue(db, 'bill_footer_text', 'THANK YOU. VISIT AGAIN.'),
-      tax_rate: getNumberConfig(db, 'tax_rate', 0)
+      tax_rate: getNumberConfig(db, 'tax_rate', getConfigValue(db, 'gstin', '') ? 5 : 0)
     });
     const items = db.prepare(`SELECT i.name, oi.quantity, oi.price FROM order_items oi LEFT JOIN items i ON i.id = oi.item_id WHERE oi.order_id = ? ORDER BY oi.id`).all(invoiceId);
     const pdf = buildInvoicePdf(invoice, items);
@@ -6455,7 +6457,7 @@ app.post('/orders/settle', (req, res) => {
       ), 0);
       const payableBeforeRoundOff = Math.max(grossAmount + serviceCharge - Math.min(discountAmount, grossAmount + serviceCharge) - Math.min(redeem * pointValue, grossAmount + serviceCharge), 0);
       const payable = applyRoundOff(db, payableBeforeRoundOff);
-      const configuredTaxRate = getNumberConfig(db, 'tax_rate', 0);
+      const configuredTaxRate = getNumberConfig(db, 'tax_rate', 0) || (getConfigValue(db, 'gstin', '') ? 5 : 0);
       const taxAmount = configuredTaxRate > 0 ? payable * configuredTaxRate / (100 + configuredTaxRate) : 0;
       const roundOff = payable - payableBeforeRoundOff;
       const loyaltyDiscount = Math.min(redeem * pointValue, grossAmount + serviceCharge);
@@ -6489,10 +6491,10 @@ app.post('/orders/settle', (req, res) => {
       });
       db.prepare(`
         UPDATE orders
-        SET total_amount = ?, tax_amount = ?, paid_amount = ?, payment_status = 'PAID', status = 'PAID', invoice_no = ?, is_invoice = ?, settled_at = CURRENT_TIMESTAMP,
+        SET total_amount = ?, tax_amount = ?, service_charge_amount = ?, paid_amount = ?, payment_status = 'PAID', status = 'PAID', invoice_no = ?, is_invoice = ?, settled_at = CURRENT_TIMESTAMP,
             customer_id = COALESCE(?, customer_id), redeemed_points = ?, loyalty_discount = ?
         WHERE id = ?
-      `).run(payable, taxAmount, paid, invoiceNo, isInvoice === false ? 0 : 1, linkedCustomerId || null, redeem, loyaltyDiscount, orderId);
+      `).run(payable, taxAmount, serviceCharge, paid, invoiceNo, isInvoice === false ? 0 : 1, linkedCustomerId || null, redeem, loyaltyDiscount, orderId);
       if (linkedCustomerId) {
         db.prepare('INSERT INTO customer_visits (customer_id, order_id, amount) VALUES (?, ?, ?)')
           .run(linkedCustomerId, orderId, paid);
@@ -6555,6 +6557,7 @@ app.post('/orders/settle', (req, res) => {
           printPayment: getBooleanConfig(db, 'bill_print_payment', true),
           printAuthorisedSignatory: getBooleanConfig(db, 'bill_print_authorised_signatory', true),
           footerText: getConfigValue(db, 'bill_footer_text', 'THANK YOU. VISIT AGAIN.')
+          ,billTemplate: getConfigValue(db, 'bill_template', 'BORDERED')
         },
         payments,
         customerId: linkedCustomerId || null,
@@ -6569,7 +6572,7 @@ app.post('/orders/settle', (req, res) => {
         roundOff,
         payable,
         taxName: getConfigValue(db, 'tax_name', 'GST'),
-        taxRate: getNumberConfig(db, 'tax_rate', 0),
+        taxRate: getNumberConfig(db, 'tax_rate', getConfigValue(db, 'gstin', '') ? 5 : 0),
         paymentMode: payments?.[0]?.method || payments?.[0]?.paymentMethod || 'CASH',
         kotReferences
       }));
@@ -6936,6 +6939,8 @@ app.get('/kds/orders', (req, res) => {
         oi.quantity,
         oi.price,
         oi.notes,
+        oi.kitchen_id,
+        kitchens.name AS kitchen_name,
         oi.kot_id,
         ksub.created_at AS kot_created_at,
         CASE WHEN oi.status = 'PLACED' THEN 'PENDING' ELSE oi.status END AS status,
@@ -6946,6 +6951,7 @@ app.get('/kds/orders', (req, res) => {
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
       JOIN items i ON i.id = oi.item_id
+      JOIN kitchens ON kitchens.id = oi.kitchen_id
       LEFT JOIN kots ksub ON ksub.id = oi.kot_id
       WHERE oi.kitchen_id IN (${selectedKitchenIds.map(() => '?').join(',')})
         AND o.status != 'CANCELLED'
@@ -6992,6 +6998,8 @@ app.get('/kds/orders', (req, res) => {
         servedAt: row.served_at,
         startTime: row.kot_created_at || row.order_created_at,
         kotId: row.kot_id || null,
+        kitchenId: row.kitchen_id,
+        kitchenName: row.kitchen_name,
         kotReference: row.kot_id ? `${row.order_reference || row.order_id}-${row.kot_id}` : null,
         modifiers: modifiersByItem[row.order_item_id] || []
       });
@@ -7055,6 +7063,27 @@ app.post('/kds/item-status', (req, res) => {
   } finally {
     db.close();
   }
+});
+
+app.post('/kds/reprint-kot', (req, res) => {
+  const { restaurantId, actor, kotId } = req.body;
+  if (!restaurantId || !isPositiveId(kotId)) return res.status(400).json({ success:false, message:'Valid KOT is required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    if (!canUseKdsWithDb(db, actor?.role)) return res.status(403).json({ success:false, message:'KDS access denied' });
+    if (!getBooleanConfig(db, 'allow_kot_reprint', true)) throw new Error('KOT reprint is disabled in Bill Configuration');
+    const kot = db.prepare(`SELECT k.id,k.order_id,k.kitchen_id,k.suborder_no,ki.name kitchen_name,ki.printer_id FROM kots k JOIN kitchens ki ON ki.id=k.kitchen_id WHERE k.id=?`).get(kotId);
+    if (!kot) throw new Error('KOT not found');
+    const source = db.prepare("SELECT payload FROM print_jobs WHERE type='KOT' AND ref_id=? AND kitchen_id=? ORDER BY id DESC").all(kot.order_id, kot.kitchen_id)
+      .map((row) => { try { return JSON.parse(row.payload); } catch (_) { return null; } })
+      .find((payload) => Number(payload?.kotId) === Number(kotId));
+    if (!source) throw new Error('Original KOT print data is unavailable');
+    const payload = { ...source, reprint:true, reprintedAt:new Date().toISOString(), reprintedBy:actor?.id || null };
+    const result = db.prepare("INSERT INTO print_jobs(type,ref_id,kitchen_id,printer_id,payload,status) VALUES('KOT',?,?,?,?, 'PENDING')")
+      .run(kot.order_id, kot.kitchen_id, kot.printer_id, JSON.stringify(payload));
+    writeAudit(db, actor, 'REPRINT', 'KOT', kotId, null, { printJobId:result.lastInsertRowid, kitchenId:kot.kitchen_id, printerId:kot.printer_id });
+    res.json({ success:true, message:`KOT ${source.kotReference || kotId} queued to ${kot.kitchen_name}` });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
 });
 
 app.post('/kds/order-status', (req, res) => {
@@ -9246,7 +9275,7 @@ function importSaasOnlineOrderLocal(db, restaurantId, actor, saasOrder) {
     const customerId = existingCustomer?.id || db.prepare('INSERT INTO customers (name, phone, email, address) VALUES (?, ?, ?, ?)')
       .run(customerName, customerPhone || null, normaliseText(saasOrder.customer_email) || null, deliveryAddress || null).lastInsertRowid;
     if (existingCustomer && customerName && existingCustomer.name !== customerName) {
-      db.prepare('UPDATE customers SET name = COALESCE(NULLIF(?, ""), name), email = COALESCE(NULLIF(?, ""), email), address = COALESCE(NULLIF(?, ""), address) WHERE id = ?')
+      db.prepare("UPDATE customers SET name = COALESCE(NULLIF(?, ''), name), email = COALESCE(NULLIF(?, ''), email), address = COALESCE(NULLIF(?, ''), address) WHERE id = ?")
         .run(customerName, normaliseText(saasOrder.customer_email), deliveryAddress, existingCustomer.id);
     }
 
@@ -9461,7 +9490,8 @@ async function runSaasOrderImportTick() {
   }
 }
 
-setInterval(runSaasOrderImportTick, 30 * 1000);
+runSaasOrderImportTick().catch(() => {});
+setInterval(runSaasOrderImportTick, 10 * 1000);
 
 setInterval(sendPosHeartbeat, 60 * 1000);
 

@@ -329,11 +329,35 @@ function renderAdmin() {
   tablesTable.innerHTML = tables.map((t) => `<tr><td>${esc(t.table_name)}</td><td>${esc(t.status)}</td><td>${actions("table", t.id)}</td></tr>`).join("");
   qrLinksTable.innerHTML = tables.map((t) => {
     const baseUrl = String(state.network.publicQrBaseUrl || 'https://pos.kmasterpos.com').replace(/\/$/, '');
-    const url = `${baseUrl}/qr-menu.html?v=1.0.99&restaurantId=${encodeURIComponent(restaurantId)}&tableId=${t.id}`;
+    const url = `${baseUrl}/qr-menu.html?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${t.id}`;
     const enabled = !['0', 0, false, 'false'].includes(state.settings?.qr_ordering_enabled);
-    return `<tr><td>${esc(t.table_name)}</td><td>${enabled?`<a href="${url}" target="_blank">${esc(url)}</a>`:'<span>QR ordering disabled</span>'}</td></tr>`;
+    return `<tr><td>${esc(t.table_name)}</td><td>${enabled?`<a href="${url}" target="_blank">${esc(url)}</a>`:'<span>QR ordering disabled</span>'}</td><td class="action-cell">${enabled?`<button type="button" class="mini-btn" data-qr-preview="${encodeURIComponent(url)}" data-qr-table="${esc(t.table_name)}">Preview</button><button type="button" class="secondary-btn" data-qr-print="${encodeURIComponent(url)}" data-qr-table="${esc(t.table_name)}">Print</button>`:''}</td></tr>`;
   }).join("");
 }
+
+function qrImageUrl(url) {
+  const baseUrl = String(state.network.publicQrBaseUrl || 'https://pos.kmasterpos.com').replace(/\/$/, '');
+  return `${baseUrl}/online-ordering/qr-code?url=${encodeURIComponent(url)}`;
+}
+
+function showQrPreview(url, tableName) {
+  qrLinkPreview.innerHTML = `<header><div><h3>${esc(tableName)} QR code</h3><p>Scan to open the table ordering page.</p></div><button type="button" class="secondary-btn" data-qr-print="${encodeURIComponent(url)}" data-qr-table="${esc(tableName)}">Print</button></header><img src="${qrImageUrl(url)}" alt="QR code for ${esc(tableName)}"><a href="${url}" target="_blank">Open ordering page</a>`;
+}
+
+function printQrCode(url, tableName) {
+  const popup = window.open('', '_blank', 'width=520,height=680');
+  if (!popup) throw new Error('Printing was blocked. Enable pop-ups and try again.');
+  popup.document.write(`<!doctype html><title>${esc(tableName)} QR</title><style>body{font-family:Arial;text-align:center;padding:24px}img{width:320px;height:320px}h1{margin-bottom:4px}p{overflow-wrap:anywhere}@media print{button{display:none}}</style><h1>${esc(tableName)}</h1><p>Scan to order</p><img src="${qrImageUrl(url)}"><p>${esc(url)}</p><button onclick="print()">Print</button>`);
+  popup.document.close();
+  popup.onload = () => { popup.focus(); popup.print(); };
+}
+
+document.addEventListener('click', (event) => {
+  const preview = event.target.closest('[data-qr-preview]');
+  const print = event.target.closest('[data-qr-print]');
+  if (preview) showQrPreview(decodeURIComponent(preview.dataset.qrPreview), preview.dataset.qrTable);
+  if (print) printQrCode(decodeURIComponent(print.dataset.qrPrint), print.dataset.qrTable);
+});
 
 function applyModuleGuards() {
   const moduleViews = {
@@ -582,6 +606,15 @@ function groupInvoicePrintItems(items = []) {
   return [...grouped.values()];
 }
 
+function renderBillTemplatePreview() {
+  if (!window.billTemplatePreview || !window.settingBillTemplate) return;
+  const template = settingBillTemplate.value || 'BORDERED';
+  billTemplatePreview.dataset.template = template;
+  billTemplatePreview.innerHTML = `<div class="bill-preview-paper"><strong>${esc((state.settings?.settings || {}).restaurant_display_name || 'RESTAURANT NAME')}</strong><small>TAX INVOICE</small><div class="bill-preview-meta">Invoice: DEMO-0001<br>Date: 19/07/2026<br>Table: A1</div><table><tr><th>Item</th><th>Qty</th><th>Amount</th></tr><tr><td>Sample item</td><td>2</td><td>200.00</td></tr></table><div class="bill-preview-totals"><span>Taxable value</span><b>190.48</b><span>CGST @ 2.50%</span><b>4.76</b><span>SGST @ 2.50%</span><b>4.76</b><span>Grand total</span><b>200.00</b></div></div>`;
+}
+
+settingBillTemplate?.addEventListener('change', renderBillTemplatePreview);
+
 function invoicePrintHtml(invoice, items, discounts = [], payments = []) {
   const profile = state.settings?.settings || {};
   const billOption = (key) => !['0', 'false', 'off'].includes(String(profile[key] ?? '1').toLowerCase());
@@ -594,22 +627,25 @@ function invoicePrintHtml(invoice, items, discounts = [], payments = []) {
   const currency = profile.currency || 'INR';
   const printableItems = groupInvoicePrintItems(items);
   const lineTotal = printableItems.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
-  const taxRate = Number(profile.tax_rate || 0);
+  const registered = Boolean(String(profile.gstin || '').trim());
+  const taxRate = Number(profile.tax_rate || (registered ? 5 : 0));
   const grandTotal = Number(invoice.total_amount || 0);
-  const tax = taxRate > 0 ? grandTotal * taxRate / (100 + taxRate) : 0;
-  const subtotal = Math.max(grandTotal - tax, 0);
+  const serviceCharge = Number(invoice.service_charge_amount || 0);
+  const tax = Number(invoice.tax_amount || 0) || (taxRate > 0 ? grandTotal * taxRate / (100 + taxRate) : 0);
+  const subtotal = Math.max(grandTotal - tax - serviceCharge, 0);
   const halfTax = tax / 2;
   const totalQuantity = printableItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
   const discountTotal = Math.max(lineTotal - grandTotal, 0);
   const rows = printableItems.map((item, index) => `<tr><td>${index + 1}</td><td>${esc(item.name)}${item.notes ? `<small>${esc(item.notes)}</small>` : ''}</td><td>${esc(item.quantity)}</td><td>${Number(item.price || 0).toFixed(2)}</td><td>${(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}</td></tr>`).join('');
   const paymentText = payments.map((payment) => `${payment.method}: ${Number(payment.amount || 0).toFixed(2)}`).join(', ') || invoice.payment_mode || 'CASH';
-  const registered = Boolean(String(profile.gstin || '').trim());
   const title = registered ? 'TAX INVOICE' : 'RECEIPT / BILL';
+  const template = String(profile.bill_template || 'BORDERED').toUpperCase();
+  const templateCss = template === 'BORDERLESS' ? '.items th,.items td{border:0;border-bottom:1px solid #bbb}.summary{border:0}' : template === 'COMPACT' ? 'body{font-size:9px}.items th,.items td{padding:2px 1px}.meta{grid-template-columns:22mm 1fr}.items th,.items td{border:0;border-bottom:1px dashed #999}' : '';
   const html = `<!doctype html><html><head><title>${esc(invoice.invoice_no || 'Invoice')}</title><style>
-    @page{size:80mm auto;margin:2.5mm}*{box-sizing:border-box}body{width:75mm;margin:0 auto;color:#111;font:10px Arial,sans-serif;line-height:1.28}header{text-align:center}h1{font-size:15px;margin:0 0 2px;text-transform:uppercase}h2{font-size:12px;margin:6px 0 3px;border-top:1px solid #111;border-bottom:1px solid #111;padding:4px}p{margin:1px 0}.legal{font-weight:700}.meta{display:grid;grid-template-columns:26mm 1fr;gap:2px 4px;border-bottom:1px dashed #111;padding:5px 0}.meta b{font-weight:700}.items{width:100%;border-collapse:collapse;margin-top:5px}.items th,.items td{padding:3px 2px;border:1px solid #555;vertical-align:top}.items th{text-align:center;font-size:9px}.items td:nth-child(1),.items td:nth-child(3){text-align:center}.items td:nth-child(4),.items td:nth-child(5){text-align:right;white-space:nowrap}.items small{display:block}.summary{border:1px solid #555;border-top:0;padding:4px}.summary p{display:flex;justify-content:space-between;gap:8px}.grand{border-top:1px solid #111;margin-top:3px;padding-top:4px;font-weight:800;font-size:13px}.footer{text-align:center;border-top:1px dashed #111;margin-top:7px;padding-top:6px}.compliance{font-size:9px}@media print{button{display:none}}
+    @page{size:80mm auto;margin:2.5mm}*{box-sizing:border-box}body{width:75mm;margin:0 auto;color:#111;font:10px Arial,sans-serif;line-height:1.28}header{text-align:center}h1{font-size:15px;margin:0 0 2px;text-transform:uppercase}h2{font-size:12px;margin:6px 0 3px;border-top:1px solid #111;border-bottom:1px solid #111;padding:4px}p{margin:1px 0}.legal{font-weight:700}.meta{display:grid;grid-template-columns:26mm 1fr;gap:2px 4px;border-bottom:1px dashed #111;padding:5px 0}.meta b{font-weight:700}.items{width:100%;border-collapse:collapse;margin-top:5px}.items th,.items td{padding:3px 2px;border:1px solid #555;vertical-align:top}.items th{text-align:center;font-size:9px}.items td:nth-child(1),.items td:nth-child(3){text-align:center}.items td:nth-child(4),.items td:nth-child(5){text-align:right;white-space:nowrap}.items small{display:block}.summary{border:1px solid #555;border-top:0;padding:4px}.summary p{display:flex;justify-content:space-between;gap:8px}.grand{border-top:1px solid #111;margin-top:3px;padding-top:4px;font-weight:800;font-size:13px}.footer{text-align:center;border-top:1px dashed #111;margin-top:7px;padding-top:6px}.compliance{font-size:9px}${templateCss}@media print{button{display:none}}
   </style></head><body><header><h1>${esc(profile.restaurant_display_name || profile.legal_name || 'Restaurant')}</h1>${profile.legal_name && profile.legal_name !== profile.restaurant_display_name ? `<p class="legal">${esc(profile.legal_name)}</p>` : ''}<p>${esc([profile.address_line_1, profile.address_line_2].filter(Boolean).join(', '))}</p><p>${esc([profile.city, profile.state, profile.state_code ? `Code ${profile.state_code}` : '', profile.country].filter(Boolean).join(', '))}</p>${billOption('bill_print_contact') ? `<p>${profile.phone ? `Mob: ${esc(profile.phone)}` : ''}${profile.email ? ` · ${esc(profile.email)}` : ''}</p>` : ''}${profile.gstin ? `<p><b>GSTIN: ${esc(profile.gstin)}</b></p>` : ''}${profile.fssai_license_no ? `<p><b>FSSAI: ${esc(profile.fssai_license_no)}</b></p>` : ''}<h2>${title}</h2></header>
   <div class="meta"><span>Invoice No.</span><b>${esc(invoice.invoice_no || `#${invoice.id}`)}</b><span>Date / Time</span><b>${esc(formatDateTime(invoice.settled_at))}</b><span>Order / Table</span><b>${esc(`${invoice.order_reference || invoice.id} / ${invoice.table_no || invoice.order_type || ''}`)}</b>${billOption('bill_print_kot_references') && invoice.kot_references ? `<span>KOT No(s).</span><b>${esc(invoice.kot_references)}</b>` : ''}${billOption('bill_print_customer') ? `<span>Customer</span><b>${esc(invoice.customer_name || 'Walk-in customer')}</b>` : ''}<span>Cashier</span><b>${esc(invoice.cashier_name || 'Owner')}</b>${billOption('bill_print_payment') ? `<span>Payment</span><b>${esc(paymentText)}</b>` : ''}${registered ? `<span>Place of supply</span><b>${esc(`${profile.state || 'Tamil Nadu'} (${profile.state_code || '33'})`)}</b><span>SAC</span><b>${esc(profile.sac_code || '996331')}</b><span>Reverse charge</span><b>No</b>` : ''}</div>
-  <table class="items"><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table><div class="summary"><p><span>Total Qty</span><b>${totalQuantity}</b></p>${discountTotal > 0 ? `<p><span>Discount</span><b>-${currency} ${discountTotal.toFixed(2)}</b></p>` : ''}<p><span>Taxable value</span><b>${currency} ${subtotal.toFixed(2)}</b></p>${registered && taxRate > 0 ? `<p><span>CGST @ ${(taxRate / 2).toFixed(2)}%</span><b>${currency} ${halfTax.toFixed(2)}</b></p><p><span>SGST @ ${(taxRate / 2).toFixed(2)}%</span><b>${currency} ${halfTax.toFixed(2)}</b></p><p><span>Total GST</span><b>${currency} ${tax.toFixed(2)}</b></p>` : ''}<p class="grand"><span>GRAND TOTAL</span><b>${currency} ${grandTotal.toFixed(2)}</b></p></div><div class="footer">${profile.bill_footer_text ? `<p><b>${esc(profile.bill_footer_text)}</b></p>` : ''}<p class="compliance">${registered ? 'Tax is included in the amounts shown.' : 'This document does not collect GST.'}</p>${billOption('bill_print_authorised_signatory') ? '<p><b>Authorised Signatory</b></p>' : ''}</div></body></html>`;
+  <table class="items"><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table><div class="summary"><p><span>Total Qty</span><b>${totalQuantity}</b></p>${discountTotal > 0 ? `<p><span>Discount</span><b>-${currency} ${discountTotal.toFixed(2)}</b></p>` : ''}<p><span>Taxable value</span><b>${currency} ${subtotal.toFixed(2)}</b></p>${serviceCharge > 0 ? `<p><span>Service charge</span><b>${currency} ${serviceCharge.toFixed(2)}</b></p>` : ''}${registered && taxRate > 0 ? `<p><span>CGST @ ${(taxRate / 2).toFixed(2)}%</span><b>${currency} ${halfTax.toFixed(2)}</b></p><p><span>SGST @ ${(taxRate / 2).toFixed(2)}%</span><b>${currency} ${halfTax.toFixed(2)}</b></p><p><span>Total GST</span><b>${currency} ${tax.toFixed(2)}</b></p>` : ''}<p class="grand"><span>GRAND TOTAL</span><b>${currency} ${grandTotal.toFixed(2)}</b></p></div><div class="footer">${profile.bill_footer_text ? `<p><b>${esc(profile.bill_footer_text)}</b></p>` : ''}<p class="compliance">${registered ? 'GST is included in the amounts shown.' : 'This document does not collect GST.'}</p>${billOption('bill_print_authorised_signatory') ? '<p><b>Authorised Signatory</b></p>' : ''}</div></body></html>`;
   return html;
 }
 
@@ -879,6 +915,8 @@ function renderSettings() {
   setChecked(settingBillPrintPayment, settings.bill_print_payment);
   setChecked(settingBillPrintAuthorisedSignatory, settings.bill_print_authorised_signatory);
   settingBillFooterText.value = settings.bill_footer_text || 'THANK YOU. VISIT AGAIN.';
+  settingBillTemplate.value = settings.bill_template || 'BORDERED';
+  renderBillTemplatePreview();
   setChecked(settingQrRequireTablePin, settings.qr_require_table_pin === undefined ? true : settings.qr_require_table_pin);
   settingQrSessionMinutes.value = settings.qr_session_minutes || '30';
   setChecked(settingQrOrderingEnabled, settings.qr_ordering_enabled === undefined ? true : settings.qr_ordering_enabled);
@@ -959,6 +997,7 @@ function collectSettings() {
     bill_print_payment: checkedValue(settingBillPrintPayment),
     bill_print_authorised_signatory: checkedValue(settingBillPrintAuthorisedSignatory),
     bill_footer_text: settingBillFooterText.value.trim(),
+    bill_template: settingBillTemplate.value,
     qr_require_table_pin: checkedValue(settingQrRequireTablePin),
     qr_session_minutes: settingQrSessionMinutes.value || '30',
     qr_ordering_enabled: checkedValue(settingQrOrderingEnabled),
@@ -996,7 +1035,7 @@ const SETTINGS_KEYS_BY_SECTION = {
   profile: ["restaurant_display_name", "legal_name", "gstin", "fssai_license_no", "state_code", "address_line_1", "address_line_2", "city", "state", "country", "phone", "email", "currency", "timezone", "logo_path"],
   pos: ["default_order_type", "allow_non_invoice_orders", "allow_discount", "allow_manual_price_override", "allow_refund", "allow_order_cancel", "require_manager_pin_for_discount", "require_manager_pin_for_refund", "require_manager_pin_for_void", "require_clock_in_before_order"],
   billing: ["invoice_prefix", "invoice_reset_frequency", "show_tax_on_bill", "tax_name", "tax_rate", "sac_code", "show_qr_on_bill", "qr_require_table_pin", "qr_session_minutes", "qr_ordering_enabled", "qr_pending_order_limit", "upi_id", "service_charge_enabled", "service_charge_percent", "round_off_enabled"],
-  "bill-print": ["bill_print_contact", "bill_print_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text"],
+  "bill-print": ["bill_template", "bill_print_contact", "bill_print_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text"],
   kot: ["auto_print_kot", "print_kot_on_save", "print_kot_on_submit", "allow_kot_reprint", "kot_header_text", "kot_footer_text"],
   online: ["mobile_app_enabled", "online_order_enabled", "online_storefront_slug", "online_theme", "online_primary_color", "online_accent_color", "online_logo_path", "online_payment_methods", "online_require_otp", "online_allow_loyalty_credit", "online_delivery_enabled", "online_takeaway_enabled", "online_min_order_amount"]
 };

@@ -1,8 +1,23 @@
 const express = require('express');
+const QRCode = require('qrcode');
 const pool = require('../db/db');
 const { publicError } = require('../config');
 
 const router = express.Router();
+
+router.get('/qr-code', async (req, res) => {
+  try {
+    const value = String(req.query.url || '').trim();
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'https:' || !/(^|\.)kmasterpos\.com$/i.test(parsed.hostname)) {
+      return res.status(400).send('A valid KMaster QR URL is required');
+    }
+    const svg = await QRCode.toString(value, { type: 'svg', width: 320, margin: 2, errorCorrectionLevel: 'M' });
+    res.type('image/svg+xml').send(svg);
+  } catch (_) {
+    res.status(400).send('Unable to generate QR code');
+  }
+});
 
 function money(value) {
   const number = Number(value || 0);

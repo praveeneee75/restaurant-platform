@@ -45,7 +45,7 @@
     alert(messages.length ? `Notifications\n\n${messages.join('\n\n')}` : 'No new notifications');
   });
   refresh().catch(() => undefined);
-  window.setInterval(() => refresh().catch(() => undefined), 60000);
+  window.setInterval(() => refresh().catch(() => undefined), 10000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh().catch(() => undefined); });
   window.addEventListener('pos:notifications-changed', () => refresh().catch(() => undefined));
 })();

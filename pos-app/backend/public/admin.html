@@ -314,7 +314,10 @@
           <p class="form-hint">The waiter generates the PIN when opening the table. QR orders remain waiting for waiter confirmation.</p>
         </article>
       </div>
-      <div class="table-panel qr-links-panel"><table class="qr-links-table"><thead><tr><th>Table</th><th>QR Link</th></tr></thead><tbody id="qrLinksTable"></tbody></table></div>
+      <div class="qr-admin-workspace">
+        <div class="table-panel qr-links-panel"><table class="qr-links-table"><thead><tr><th>Table</th><th>QR Link</th><th>Actions</th></tr></thead><tbody id="qrLinksTable"></tbody></table></div>
+        <aside id="qrLinkPreview" class="qr-link-preview"><h3>QR preview</h3><p>Select Preview against a table.</p></aside>
+      </div>
     </section>
 
     <section class="admin-view" id="view-modifiers">
@@ -499,12 +502,14 @@
           <article class="settings-section" data-settings-panel="bill-print" hidden>
             <h3>Bill Configuration</h3>
             <p class="settings-help">Supplier identity, GSTIN, FSSAI, invoice number/date, SAC, place of supply and statutory tax breakup are always printed on GST tax invoices.</p>
+            <label>Bill template<select id="settingBillTemplate"><option value="BORDERED">Classic with borders</option><option value="BORDERLESS">Classic without line borders</option><option value="COMPACT">Compact thermal</option></select></label>
             <label class="check-row"><input id="settingBillPrintContact" type="checkbox"> Print restaurant phone and email</label>
             <label class="check-row"><input id="settingBillPrintKotReferences" type="checkbox"> Print KOT reference numbers</label>
             <label class="check-row"><input id="settingBillPrintCustomer" type="checkbox"> Print customer name</label>
             <label class="check-row"><input id="settingBillPrintPayment" type="checkbox"> Print payment method</label>
             <label class="check-row"><input id="settingBillPrintAuthorisedSignatory" type="checkbox"> Print authorised-signatory line</label>
             <label>Bill footer text<input id="settingBillFooterText" maxlength="120" placeholder="THANK YOU. VISIT AGAIN."></label>
+            <div id="billTemplatePreview" class="bill-template-preview" aria-label="Bill template preview"></div>
           </article>
 
           <article class="settings-section" data-settings-panel="online" hidden>
@@ -672,8 +677,8 @@
     </section>
 
     <section class="admin-view" id="view-audit">
-      <div class="editor-panel">
-        <h2>Audit & Compliance</h2>
+      <div class="editor-panel admin-section-editor audit-editor-panel">
+        <div class="admin-section-heading"><h2>Audit & Compliance</h2><p id="auditStatus"></p></div>
         <div class="toolbar admin-filter-toolbar">
           <label>From date<input id="auditFromDate" type="date"></label>
           <label>To date<input id="auditToDate" type="date"></label>
@@ -689,7 +694,6 @@
           <button id="loadAuditLogs" type="button">Load Audit</button>
           <button id="exportAuditCsv" type="button" class="secondary-btn">Export CSV</button>
         </div>
-        <p id="auditStatus"></p>
       </div>
       <div class="report-grid" id="complianceCards"></div>
       <div class="table-panel">

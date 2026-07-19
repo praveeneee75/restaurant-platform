@@ -8,6 +8,6 @@ const checks=[
  [server.includes('kotResult = createKotJobs(db, targetOrderId)')&&server.includes('APPROVE_QR_ORDER'), 'approval creates KOT and audit'],
  [billing.includes('pendingQrApprovals.innerHTML')&&billing.includes('data-approve-qr')&&billing.includes('Approve & send KOT'), 'billing approval panel'],
  [read('pos-app/backend/public/js/nav-notifications.js').includes('/qr/orders/pending'), 'QR approval notification badge'],
- [server.includes('runSaasOrderImportTick')&&server.includes('setInterval(runSaasOrderImportTick, 30 * 1000)'), 'internet orders automatically reach local approval queue']
+ [server.includes('runSaasOrderImportTick().catch')&&server.includes('setInterval(runSaasOrderImportTick, 10 * 1000)'), 'internet orders automatically reach local approval queue']
 ];
 for(const [ok,label] of checks){if(!ok)throw new Error(`Missing QR regression contract: ${label}`);console.log(`PASS: ${label}`)}console.log(`QR approval regression passed (${checks.length} contracts)`);

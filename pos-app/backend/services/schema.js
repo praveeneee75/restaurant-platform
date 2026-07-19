@@ -42,7 +42,7 @@ const DEFAULT_SYSTEM_SETTINGS = {
   invoice_reset_frequency: 'DAILY',
   show_tax_on_bill: '1',
   tax_name: 'GST',
-  tax_rate: '0',
+  tax_rate: '5',
   show_qr_on_bill: '0',
   bill_print_contact: '1',
   bill_print_kot_references: '1',
@@ -50,6 +50,7 @@ const DEFAULT_SYSTEM_SETTINGS = {
   bill_print_payment: '1',
   bill_print_authorised_signatory: '1',
   bill_footer_text: 'THANK YOU. VISIT AGAIN.',
+  bill_template: 'BORDERED',
   qr_require_table_pin: '1',
   qr_session_minutes: '30',
   qr_ordering_enabled: '1',
@@ -154,6 +155,7 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'orders', "table_no TEXT");
   addColumn(db, 'orders', 'total_amount REAL DEFAULT 0');
   addColumn(db, 'orders', 'tax_amount REAL DEFAULT 0');
+  addColumn(db, 'orders', 'service_charge_amount REAL DEFAULT 0');
   addColumn(db, 'orders', 'paid_amount REAL DEFAULT 0');
   addColumn(db, 'orders', "payment_status TEXT DEFAULT 'UNPAID'");
   addColumn(db, 'orders', "invoice_no TEXT");
