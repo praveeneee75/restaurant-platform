@@ -77,7 +77,7 @@ async function main() {
 
   try {
     const health = await waitForServer(child);
-    const pages = ['/website.html', '/mobile-download.html', '/login.html', '/admin.html', '/downloads.html', '/owner-login.html', '/owner-change-password.html', '/owner-dashboard.html', '/partner-login.html', '/partner-dashboard.html', '/owner-mobile.html'];
+    const pages = ['/website.html', '/mobile-download.html', '/login.html', '/admin.html', '/downloads.html', '/owner-login.html', '/owner-change-password.html', '/owner-dashboard.html', '/owner-control.html', '/partner-login.html', '/partner-dashboard.html', '/owner-mobile.html'];
     const pageResults = {};
     for (const page of pages) {
       const res = await request(page);

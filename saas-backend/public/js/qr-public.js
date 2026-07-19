@@ -51,19 +51,28 @@ document.addEventListener('click', (event) => {
 
 placeQrOrder.addEventListener('click', async () => {
   try {
+    qrCustomerNameError.textContent = '';
+    qrCustomerPhoneError.textContent = '';
+    qrCustomerName.removeAttribute('aria-invalid');
+    qrCustomerPhone.removeAttribute('aria-invalid');
     const customerName = qrCustomerName.value.trim();
     const customerPhone = qrCustomerPhone.value.replace(/\D/g, '').slice(-10);
     if (!state.storefront || !state.cart.length) throw new Error('Add at least one item first.');
-    if (!customerName || !/^\d{10}$/.test(customerPhone)) throw new Error('Enter your name and a valid 10-digit mobile number.');
+    if (!customerName) { qrCustomerNameError.textContent = 'Customer name is required.'; qrCustomerName.setAttribute('aria-invalid','true'); qrCustomerName.focus(); throw new Error('Customer name is required.'); }
+    if (!/^\d{10}$/.test(customerPhone)) { qrCustomerPhoneError.textContent = 'Enter a valid 10-digit mobile number.'; qrCustomerPhone.setAttribute('aria-invalid','true'); qrCustomerPhone.focus(); throw new Error('Enter a valid 10-digit mobile number.'); }
     const response = await fetch(`/online-ordering/storefront/${encodeURIComponent(state.storefront.slug)}/orders`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ orderType: 'DINE_IN', tableId, customerName, customerPhone, paymentMode: 'COD', notes: qrOrderNotes.value.trim(), items: state.cart.map((item) => ({ itemId: item.id, itemName: item.name, quantity: item.quantity, unitPrice: item.price })) })
     });
     const data = await response.json();
-    if (!response.ok || !data.success) throw new Error(data.message || 'Unable to place order');
+    if (!response.ok || !data.success) {
+      if (data.field === 'customerName') { qrCustomerNameError.textContent = data.message; qrCustomerName.setAttribute('aria-invalid','true'); }
+      if (data.field === 'customerPhone') { qrCustomerPhoneError.textContent = data.message; qrCustomerPhone.setAttribute('aria-invalid','true'); }
+      throw new Error(data.message || 'Unable to place order');
+    }
     state.cart = [];
     render();
-    qrStatus.textContent = `Order placed: ${data.order.order_no}. The waiter will confirm it.`;
+    qrStatus.textContent = `Order placed: ${data.order.order_no}. Waiting for billing approval before the table is occupied and KOT is printed.`;
   } catch (error) { qrStatus.textContent = error.message; }
 });
 

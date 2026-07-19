@@ -1,7 +1,8 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const pool = require('../db/db');
-const { publicError } = require('../config');
+const { config, publicError } = require('../config');
 
 const WHITELABEL_RESTAURANT_ID = 'RESTOWHITELABEL';
 const WHITELABEL_LICENSE_KEY = 'WLTEST-2026-KMASTER';
@@ -129,6 +130,10 @@ router.post('/validate', async (req, res) => {
       ORDER BY created_at DESC
       LIMIT 1
     `);
+    const ownerCapabilities = await pool.query(`
+      SELECT capability_code FROM tenant_owner_capabilities
+      WHERE tenant_id = $1 AND enabled = true ORDER BY capability_code
+    `, [license.tenant_id]);
 
     res.json({
       valid: true,
@@ -139,6 +144,7 @@ router.post('/validate', async (req, res) => {
       packageCode: license.package_code || null,
       packageName: license.package_name || null,
       enabledModules: modules.rows.map((row) => row.code),
+      ownerCapabilities: ownerCapabilities.rows.map((row) => row.capability_code),
       updatePolicy: release.rowCount === 0 ? null : {
         latestVersion: release.rows[0].version,
         minimumVersion: release.rows[0].mandatory_update ? release.rows[0].version : null,
@@ -204,6 +210,7 @@ router.post('/owner-pos-login', async (req, res) => {
 
     res.json({
       success: true,
+      token: jwt.sign({ id: owner.id, role: 'OWNER_USER', type: 'OWNER', resetRequired: false }, config.jwtSecret, { expiresIn: '8h' }),
       user: {
         id: `cloud-owner:${owner.id}`,
         name: owner.name,

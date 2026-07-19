@@ -102,8 +102,16 @@ router.get('/storefront/:slug/menu', async (req, res) => {
 router.post('/storefront/:slug/orders', async (req, res) => {
   const { orderType, tableId, customerName, customerPhone, customerEmail, deliveryAddress, paymentMode, notes, items } = req.body || {};
   const selectedType = cleanText(orderType, 20).toUpperCase();
-  if (!['DINE_IN', 'TAKEAWAY', 'DELIVERY'].includes(selectedType) || (selectedType === 'DINE_IN' && !cleanText(tableId, 30)) || !cleanText(customerName, 120) || !cleanText(customerPhone, 20) || !Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ success: false, message: 'Order type, customer and items are required' });
+  const normalizedName = cleanText(customerName, 120);
+  const normalizedPhone = String(customerPhone || '').replace(/\D/g, '').slice(-10);
+  if (!['DINE_IN', 'TAKEAWAY', 'DELIVERY'].includes(selectedType) || (selectedType === 'DINE_IN' && !cleanText(tableId, 30)) || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ success: false, message: 'Order type, table and at least one item are required' });
+  }
+  if (!normalizedName) {
+    return res.status(400).json({ success: false, field: 'customerName', message: 'Customer name is required.' });
+  }
+  if (!/^\d{10}$/.test(normalizedPhone)) {
+    return res.status(400).json({ success: false, field: 'customerPhone', message: 'Enter a valid 10-digit mobile number.' });
   }
   const client = await pool.connect();
   try {
@@ -154,8 +162,8 @@ router.post('/storefront/:slug/orders', async (req, res) => {
       storefront.rows[0].id,
       orderNo,
       selectedType,
-      cleanText(customerName, 120),
-      cleanText(customerPhone, 20),
+      normalizedName,
+      normalizedPhone,
       cleanText(customerEmail, 160) || null,
       cleanText(deliveryAddress, 500) || null,
       cleanText(paymentMode, 30).toUpperCase() || 'COD',

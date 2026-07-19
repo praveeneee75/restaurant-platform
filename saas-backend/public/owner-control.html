@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>K'Master POS Remote Owner Control</title>
+  <link rel="stylesheet" href="/css/app.css?v=owner-control-20260719">
+  <style>
+    .control-shell{max-width:1500px;margin:auto;padding:20px}.control-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) auto auto;gap:10px;align-items:end}.control-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}.control-card,.control-panel{background:#fff;border:1px solid #dbe4f0;border-radius:14px;padding:16px}.control-card strong{display:block;font-size:1.65rem;margin-top:8px}.control-columns{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;margin-top:16px}.control-list{display:grid;gap:8px}.control-row{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #e8edf5;padding:8px 0}.freshness{padding:10px;border-radius:8px;background:#eef6ff}.freshness.stale{background:#fff1e7;color:#8a3b12}.config-tabs{display:flex;gap:8px;flex-wrap:wrap}.config-editor{width:100%;min-height:310px;font-family:ui-monospace,monospace;font-size:12px}.approval{border-left:5px solid #f59e0b}.alert-high{border-left:5px solid #dc2626}@media(max-width:700px){.control-toolbar{grid-template-columns:1fr}.control-columns{grid-template-columns:1fr}}
+  </style>
+</head>
+<body class="owner-page">
+  <header class="owner-header owner-hero"><div><p class="eyebrow">Owner Portal</p><h1>Remote owner control</h1><p>Internet view of cloud-synced POS operations. No invoice-level data is exposed.</p></div><nav class="owner-actions"><a href="/owner-dashboard.html">Home</a><button data-session-logout>Sign out</button></nav></header>
+  <main class="control-shell">
+    <section class="control-toolbar"><label>Restaurant<select id="restaurantSelect"></select></label><button id="refreshButton">Refresh</button><button id="requestSyncButton">Request POS sync</button></section>
+    <p id="status" class="freshness">Loading...</p>
+    <section id="metrics" class="control-grid"></section>
+    <div class="control-columns">
+      <section class="control-panel"><h2>Live operations</h2><div id="liveOperations" class="control-list"></div></section>
+      <section class="control-panel"><h2>Payment & executive sales</h2><div id="executiveSales" class="control-list"></div></section>
+      <section class="control-panel"><h2>Refund summary</h2><div id="refunds" class="control-list"></div></section>
+      <section class="control-panel"><h2>Promocode usage</h2><div id="promocodes" class="control-list"></div></section>
+      <section class="control-panel"><h2>Alerts</h2><div id="alerts" class="control-list"></div></section>
+      <section class="control-panel"><h2>Confirm license-sensitive changes</h2><div id="approvals" class="control-list"></div></section>
+    </div>
+    <section class="control-panel" style="margin-top:16px"><h2>Remote configuration</h2><p>Only capabilities enabled by SaaS administration appear. Changes are versioned, applied by POS, and acknowledged.</p><div id="configTabs" class="config-tabs"></div><h3 id="configTitle"></h3><textarea id="configEditor" class="config-editor" spellcheck="false"></textarea><button id="saveConfigButton">Publish version to POS</button><button id="runBackupButton">Run backup now</button><p>Restore is intentionally confirmed locally at the POS because it overwrites active data.</p></section>
+  </main>
+  <script src="/js/saas-session.js" data-session-scope="owner"></script>
+  <script src="/js/owner-control.js?v=20260719"></script>
+</body>
+</html>

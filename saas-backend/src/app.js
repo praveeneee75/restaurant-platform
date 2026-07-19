@@ -117,6 +117,7 @@ app.use('/updates', require('./routes/updates'));
 app.use('/online-ordering', require('./routes/onlineOrdering'));
 app.use('/sync', require('./routes/sync'));
 app.use('/owner/reports', require('./routes/ownerReports'));
+app.use('/owner-control', require('./routes/ownerControl'));
 app.use('/owners', require('./routes/owners'));
 app.use('/subscriptions', require('./routes/subscriptions'));
 app.use('/monitoring', require('./routes/monitoring'));

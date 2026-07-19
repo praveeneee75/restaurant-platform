@@ -1,11 +1,11 @@
 const express = require('express');
 const pool = require('../db/db');
-const authenticate = require('../middleware/authMiddleware');
+const { requireOwner, requireOwnedTenant } = require('../middleware/ownerScope');
 const { publicError } = require('../config');
 
 const router = express.Router();
 
-router.use(authenticate);
+router.use(requireOwner, requireOwnedTenant);
 
 function dateRange(query) {
   const today = new Date().toISOString().slice(0, 10);
@@ -14,18 +14,12 @@ function dateRange(query) {
   return { fromDate, toDate };
 }
 
-async function tenantForRestaurant(restaurantId) {
-  const result = await pool.query('SELECT id, restaurant_code, name FROM tenants WHERE restaurant_code = $1', [restaurantId]);
-  return result.rows[0] || null;
-}
-
 router.get('/summary', async (req, res) => {
   const { restaurantId } = req.query;
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
 
   try {
-    const tenant = await tenantForRestaurant(restaurantId);
-    if (!tenant) return res.status(404).json({ success: false, message: 'Restaurant not found' });
+    const tenant = req.tenant;
     const { fromDate, toDate } = dateRange(req.query);
     const rows = await pool.query(
       `
@@ -70,8 +64,7 @@ router.get('/items', async (req, res) => {
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
 
   try {
-    const tenant = await tenantForRestaurant(restaurantId);
-    if (!tenant) return res.status(404).json({ success: false, message: 'Restaurant not found' });
+    const tenant = req.tenant;
     const { fromDate, toDate } = dateRange(req.query);
     const result = await pool.query(
       `
@@ -96,8 +89,7 @@ router.get('/sync-status', async (req, res) => {
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
 
   try {
-    const tenant = await tenantForRestaurant(restaurantId);
-    if (!tenant) return res.status(404).json({ success: false, message: 'Restaurant not found' });
+    const tenant = req.tenant;
     const result = await pool.query(
       `SELECT sync_type, status, message, created_at
        FROM tenant_sync_logs
@@ -118,14 +110,13 @@ router.post('/request-sync', async (req, res) => {
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
 
   try {
-    const tenant = await tenantForRestaurant(restaurantId);
-    if (!tenant) return res.status(404).json({ success: false, message: 'Restaurant not found' });
+    const tenant = req.tenant;
     await pool.query(
-      `INSERT INTO tenant_sync_logs (tenant_id, restaurant_code, sync_type, status, message)
-       VALUES ($1, $2, 'REQUEST_SYNC', 'REQUESTED', 'Owner requested POS sync')`,
-      [tenant.id, tenant.restaurant_code]
+      `INSERT INTO tenant_remote_commands (tenant_id, restaurant_code, command_type, payload, status, requested_by, expires_at)
+       VALUES ($1, $2, 'REQUEST_SYNC', '{}'::jsonb, 'PENDING', $3, NOW() + INTERVAL '24 hours')`,
+      [tenant.id, tenant.restaurant_code, req.user.id]
     );
-    res.json({ success: true, message: 'Sync request recorded. POS will sync when it is online.' });
+    res.json({ success: true, message: 'Sync command queued. POS will execute and acknowledge it when online.' });
   } catch (err) {
     console.error('OWNER REQUEST SYNC ERROR:', err.message);
     res.status(500).json({ success: false, message: publicError(err) });

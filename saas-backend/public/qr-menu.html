@@ -22,12 +22,14 @@
       <h2>Your order</h2>
       <div id="qrCartItems"></div>
       <p><strong id="qrTotal">Total: INR 0.00</strong></p>
-      <input id="qrCustomerName" required placeholder="Customer name">
-      <input id="qrCustomerPhone" required inputmode="tel" placeholder="10-digit mobile number">
+      <label>Customer name<input id="qrCustomerName" required maxlength="120" autocomplete="name" placeholder="Customer name" aria-describedby="qrCustomerNameError"></label>
+      <p id="qrCustomerNameError" class="field-error" role="alert"></p>
+      <label>Mobile number<input id="qrCustomerPhone" required inputmode="numeric" maxlength="10" pattern="[0-9]{10}" autocomplete="tel" placeholder="10-digit mobile number" aria-describedby="qrCustomerPhoneError"></label>
+      <p id="qrCustomerPhoneError" class="field-error" role="alert"></p>
       <textarea id="qrOrderNotes" placeholder="Order notes (optional)"></textarea>
       <button id="placeQrOrder" type="button">Place Dine-in Order</button>
     </section>
   </main>
-  <script src="/js/qr-public.js?v=1.0.90"></script>
+  <script src="/js/qr-public.js?v=1.0.99"></script>
 </body>
 </html>

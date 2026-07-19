@@ -173,6 +173,37 @@ function renderOwnerDashboard(payload) {
 
 async function refreshOwnerDashboard() {
   const restaurant = state.restaurant || selectedRestaurant();
+  const cloudToken = localStorage.getItem("ownerCloudToken");
+  if (state.user?.cloudOwner && cloudToken) {
+    const restaurantId = restaurant?.restaurantId || localStorage.getItem("restaurantId");
+    const data = await fetchJson(`${MOBILE_DIRECTORY_URL}/owner-control/owner/dashboard?restaurantId=${encodeURIComponent(restaurantId)}`, {
+      headers: { Authorization: `Bearer ${cloudToken}` }
+    });
+    const today = data.executiveSales?.today || {};
+    ownerTotalSales.textContent = currency(today.netSales);
+    ownerNetSales.textContent = currency(Math.max(Number(today.netSales || 0) - Number(data.refunds?.total || 0), 0));
+    ownerAverageOrder.textContent = currency(today.averageOrder);
+    ownerTaxCollected.textContent = currency(today.tax);
+    ownerPaidOrders.textContent = `${today.orders || 0} paid order(s)`;
+    ownerAllOrders.textContent = "Invoice details excluded";
+    ownerSalesChart.innerHTML = '<p class="empty-state">Daily summaries are available in the owner web portal.</p>';
+    ownerPaymentSummary.innerHTML = dataRows((data.executiveSales?.byPayment || []).map((row) => `<div class="data-row"><i class="data-dot"></i><span><strong>${esc(row.mode)}</strong><small>Today</small></span><b>${esc(currency(row.total))}</b></div>`), "No settled payments");
+    ownerTopItems.innerHTML = dataRows((data.topItems || []).slice(0, 8).map((row) => `<div class="data-row"><i class="data-dot"></i><span><strong>${esc(row.item_name)}</strong><small>${row.quantity_sold || 0} sold</small></span><b>${esc(currency(row.total_sales))}</b></div>`), "No item sales");
+    const groups = data.liveOperations || {};
+    const running = Object.values(groups).flat();
+    ownerRunningOrders.textContent = String(running.length);
+    ownerRunningAmount.textContent = `${currency(running.reduce((s,o)=>s+Number(o.total||0),0))} value`;
+    ownerPendingOrders.textContent = String((data.pendingApprovals || []).length);
+    ownerOrderOperations.innerHTML = dataRows(Object.entries(groups).map(([name, list]) => `<div class="data-row"><i class="data-dot"></i><span><strong>${esc(name)}</strong><small>${list.length} live order(s)</small></span><b>${esc(currency(list.reduce((s,o)=>s+Number(o.total||0),0)))}</b></div>`), "No running orders");
+    ownerLeakage.innerHTML = dataRows([['Refunds',data.refunds?.total],['Promocode uses',data.promocodes?.totalUses]].map(([name,value])=>`<div class="data-row"><i class="data-dot"></i><span><strong>${esc(name)}</strong><small>Last 30 days</small></span><b>${name.includes('uses')?Number(value||0):esc(currency(value))}</b></div>`),"No leakage data");
+    ownerExpenses.innerHTML = '<p class="empty-state">Expense data is not included in the current cloud snapshot.</p>';
+    ownerNotificationCount.textContent = String((data.alerts || []).length + (data.pendingApprovals || []).length);
+    const last = data.freshness?.lastSnapshotAt;
+    ownerSyncStatus.textContent = last ? `Synced ${new Date(last).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}` : 'Not synced';
+    dashboardStatus.textContent = last ? `Cloud data updated ${new Date(last).toLocaleString()}` : 'Waiting for POS cloud sync';
+    state.ownerData = data;
+    return;
+  }
   const posBase = restaurantPosUrl(restaurant);
   const restaurantId = restaurant?.restaurantId || localStorage.getItem("restaurantId");
   if (!posBase || !restaurantId) throw new Error("Connect to the restaurant POS to load the owner dashboard.");
@@ -439,6 +470,7 @@ async function login() {
       });
     }
     state.user = data.user;
+    if (data.token) localStorage.setItem("ownerCloudToken", data.token);
     if (data.restaurant?.name) state.restaurant.name = data.restaurant.name;
     localStorage.setItem("restaurantId", state.restaurant.restaurantId);
     localStorage.setItem("restaurantName", state.restaurant.name);
@@ -538,6 +570,7 @@ biometricToggle.addEventListener("change", async () => {
 logoutButton.addEventListener("click", () => {
   state.user = null;
   localStorage.removeItem("user");
+  localStorage.removeItem("ownerCloudToken");
   showRoleGrid("");
   showLoginView("Logged out. Login with your POS username and PIN.");
 });

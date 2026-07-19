@@ -578,6 +578,96 @@ async function migrate() {
       updated_at TIMESTAMPTZ
     )
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_remote_configs (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      domain TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      created_by UUID REFERENCES owner_users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      applied_at TIMESTAMPTZ,
+      apply_message TEXT,
+      UNIQUE(tenant_id, domain, version)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_remote_commands (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      restaurant_code TEXT NOT NULL,
+      command_type TEXT NOT NULL,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      message TEXT,
+      requested_by UUID REFERENCES owner_users(id) ON DELETE SET NULL,
+      requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      acknowledged_at TIMESTAMPTZ
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_operational_snapshots (
+      tenant_id UUID PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+      live_operations JSONB NOT NULL DEFAULT '{}'::jsonb,
+      executive_sales JSONB NOT NULL DEFAULT '{}'::jsonb,
+      refund_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+      promocode_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+      configuration_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+      received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_owner_alerts (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      severity TEXT NOT NULL,
+      alert_type TEXT NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'OPEN',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      resolved_at TIMESTAMPTZ
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_owner_capabilities (
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      capability_code TEXT NOT NULL,
+      enabled BOOLEAN NOT NULL DEFAULT false,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY(tenant_id, capability_code)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_change_approvals (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      change_type TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      status TEXT NOT NULL DEFAULT 'AWAITING_OWNER',
+      requested_by UUID,
+      requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      confirmed_by UUID REFERENCES owner_users(id) ON DELETE SET NULL,
+      confirmed_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '7 days')
+    )
+  `);
+  await pool.query(`
+    INSERT INTO tenant_owner_capabilities (tenant_id, capability_code, enabled)
+    SELECT t.id, c.code, c.enabled
+    FROM tenants t
+    CROSS JOIN (VALUES
+      ('SALES_DETAIL', true), ('EXECUTIVE_SALES', true), ('REFUNDS', true),
+      ('PROMOCODES', true), ('LIVE_OPERATIONS', true), ('REMOTE_MENU', false),
+      ('REMOTE_BILLING', false), ('REMOTE_BACKUP', false), ('REMOTE_ONLINE_ORDERING', false),
+      ('REMOTE_COMMANDS', true), ('ALERTS', true), ('REMOTE_INVENTORY', false)
+    ) AS c(code, enabled)
+    ON CONFLICT(tenant_id, capability_code) DO NOTHING
+  `);
   await pool.query('ALTER TABLE online_orders ADD COLUMN IF NOT EXISTS table_id TEXT');
 
   await pool.query(`
@@ -741,6 +831,10 @@ async function migrate() {
   await pool.query('CREATE INDEX IF NOT EXISTS idx_tenant_daily_reports_date ON tenant_daily_reports(tenant_id, report_date)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_tenant_item_sales_date ON tenant_item_sales(tenant_id, report_date)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_tenant_sync_logs_tenant ON tenant_sync_logs(tenant_id, created_at DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_remote_configs_pull ON tenant_remote_configs(tenant_id, domain, version DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_remote_commands_pull ON tenant_remote_commands(tenant_id, status, requested_at)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_owner_alerts_open ON tenant_owner_alerts(tenant_id, status, created_at DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_change_approvals_owner ON tenant_change_approvals(tenant_id, status, requested_at DESC)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_restaurant_owners_owner ON restaurant_owners(owner_user_id, active)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_subscriptions_tenant ON subscriptions(tenant_id, status, expires_at)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_subscription_payments_tenant ON subscription_payments(tenant_id, paid_at DESC)');

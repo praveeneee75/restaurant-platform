@@ -52,6 +52,20 @@ router.post('/heartbeat', async (req, res) => {
     if (/^https?:\/\//i.test(cleanMobilePosUrl)) {
       await pool.query('UPDATE tenants SET mobile_pos_url = $1 WHERE id = $2', [cleanMobilePosUrl, tenant.id]);
     }
+    const healthChecks = [
+      ['PRINTER_ERROR', /ERROR|FAILED/i.test(String(printerStatus || '')), 'HIGH', `Printer requires attention: ${printerStatus}`],
+      ['BACKUP_FAILED', /ERROR|FAILED/i.test(String(backupStatus || '')), 'HIGH', `Backup requires attention: ${backupStatus}`],
+      ['LICENSE_WARNING', !/^ACTIVE$/i.test(String(licenseStatus || '')), 'HIGH', `License status is ${licenseStatus || 'unknown'}`]
+    ];
+    for (const [type, failed, severity, message] of healthChecks) {
+      if (failed) {
+        await pool.query(`INSERT INTO tenant_owner_alerts (tenant_id, severity, alert_type, message)
+          SELECT $1, $2, $3, $4 WHERE NOT EXISTS
+          (SELECT 1 FROM tenant_owner_alerts WHERE tenant_id = $1 AND alert_type = $3 AND status = 'OPEN')`, [tenant.id, severity, type, message]);
+      } else {
+        await pool.query("UPDATE tenant_owner_alerts SET status = 'RESOLVED', resolved_at = NOW() WHERE tenant_id = $1 AND alert_type = $2 AND status = 'OPEN'", [tenant.id, type]);
+      }
+    }
     res.json({ success: true, message: 'Heartbeat recorded' });
   } catch (err) {
     console.error('POS HEARTBEAT ERROR:', err.message);

@@ -31,5 +31,7 @@
     "test:production:urls": "node tests/production-url-regression.js",
     "test:reported-issues": "node tests/reported-issues-regression.js",
     "test:saas": "node tests/saas-smoke.js"
+    ,"test:owner-control": "node tests/owner-remote-control-regression.js"
+    ,"test:qr-approval": "node tests/qr-approval-regression.js"
   }
 }

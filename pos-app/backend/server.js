@@ -1018,6 +1018,9 @@ function applyCloudRestaurantProfile(db, licenseData) {
   // An omitted SaaS logo must not erase a locally configured image path.
   if (!values.logo_path) delete values.logo_path;
   setConfigValues(db, values);
+  if (Array.isArray(licenseData?.ownerCapabilities)) {
+    setConfigValues(db, { owner_capabilities: JSON.stringify(licenseData.ownerCapabilities.map((code) => String(code).toUpperCase())) });
+  }
 }
 
 function mobilePosBaseUrl() {
@@ -1176,6 +1179,8 @@ app.post('/desktop/license/refresh', async (req, res) => {
     }
 
     applyCloudRestaurantProfile(db, response.data);
+    cacheEnabledModules(db, response.data.enabledModules);
+    setConfigValues(db, { license_reauthentication_required: '0', license_reauthentication_message: '' });
 
     db.prepare(`
       UPDATE license_status
@@ -1279,6 +1284,8 @@ setConfigValues(db, {
   update_latest_version: response.data.updatePolicy?.latestVersion || '',
   update_minimum_version: response.data.updatePolicy?.minimumVersion || '',
   update_mandatory: response.data.updatePolicy?.mandatory ? '1' : '0'
+  ,license_reauthentication_required: '0'
+  ,license_reauthentication_message: ''
 });
 cacheEnabledModules(db, response.data.enabledModules);
 if (isWhitelabelDemo(restaurantId, licenseKey)) {
@@ -3237,6 +3244,10 @@ async function checkLicenseDaily(restaurantId) {
     if (response.data.syncToken) {
       setConfigValues(db, { cloud_sync_token: response.data.syncToken });
     }
+    if (response.data.valid) {
+      applyCloudRestaurantProfile(db, response.data);
+      setConfigValues(db, { license_reauthentication_required: '0', license_reauthentication_message: '' });
+    }
     cacheEnabledModules(db, response.data.enabledModules);
     if (!response.data.valid) {
       db.exec(`
@@ -5139,7 +5150,6 @@ app.post('/qr/orders/place', (req, res) => {
         total += Number(item.price || 0) * quantity;
       });
       db.prepare("UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(total, order.lastInsertRowid);
-      db.prepare("UPDATE tables SET status = 'OCCUPIED' WHERE id = ?").run(table.id);
       writeAudit(db, { role: 'QR' }, 'CREATE', 'ORDER', order.lastInsertRowid, null, { orderSource: 'QR', total });
       const orderMeta = db.prepare('SELECT order_reference, customer_ref FROM orders WHERE id = ?').get(order.lastInsertRowid);
       return { orderId: order.lastInsertRowid, orderReference: orderMeta?.order_reference || String(order.lastInsertRowid), customerRef: orderMeta?.customer_ref || null, total, customerName: cleanName, customerPhone: cleanPhone };
@@ -5176,7 +5186,7 @@ app.get('/qr/orders/pending', (req, res) => {
   }
 });
 
-app.post('/qr/orders/approve', (req, res) => {
+app.post('/qr/orders/approve', async (req, res) => {
   const { restaurantId, actor, orderId } = req.body;
   if (!restaurantId || !isPositiveId(orderId) || !canSell(actor?.role)) return res.status(400).json({ success: false, message: 'Order and waiter approval permission are required' });
   const db = openRestaurantDatabase(restaurantId);
@@ -5187,9 +5197,14 @@ app.post('/qr/orders/approve', (req, res) => {
       if (!order) throw new Error('QR order is no longer waiting for approval');
       kotResult = createKotJobs(db, order.id);
       db.prepare("UPDATE orders SET status = 'OPEN', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(order.id);
+      db.prepare("UPDATE tables SET status = 'OCCUPIED' WHERE id = ?").run(order.table_id);
       deductInventoryForOrder(db, actor, order.id, 'KOT_SUBMIT');
       writeAudit(db, actor, 'APPROVE_QR_ORDER', 'ORDER', order.id, { status: 'PENDING_QR' }, { status: 'OPEN', kotReference: kotResult.kotReference });
     })();
+    const saasImport = tableExists(db, 'saas_online_order_imports')
+      ? db.prepare('SELECT saas_order_id FROM saas_online_order_imports WHERE local_order_id = ?').get(orderId)
+      : null;
+    if (saasImport?.saas_order_id) await updateSaasOnlineOrderStatus(restaurantId, saasImport.saas_order_id, 'ACCEPTED', orderId);
     res.json({ success: true, kotReference: kotResult.kotReference, message: `QR order approved and KOT ${kotResult.kotReference} submitted` });
   } catch (err) {
     sendError(res, err);
@@ -9192,17 +9207,20 @@ function importSaasOnlineOrderLocal(db, restaurantId, actor, saasOrder) {
         .run(customerName, normaliseText(saasOrder.customer_email), deliveryAddress, existingCustomer.id);
     }
 
+    const isQrDineIn = selectedOrderType === 'DINE_IN' && Boolean(dineInTable);
     const result = db.prepare(`
       INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, created_by, customer_id, delivery_fee, order_source)
-      VALUES (?, ?, ?, 'OPEN', 0, ?, ?, ?, ?, 'SAAS_ONLINE')
+      VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
     `).run(
       selectedOrderType,
       dineInTable?.id || null,
       dineInTable?.table_name || `${selectedOrderType.replace(/_/g, ' ')} ${saasOrder.order_no || ''}`.trim(),
+      isQrDineIn ? 'PENDING_QR' : 'OPEN',
       String(saasOrder.payment_status || 'UNPAID').toUpperCase() === 'PAID' ? 'PAID' : 'UNPAID',
       actor?.id || null,
       customerId,
-      Number(saasOrder.delivery_fee || 0)
+      Number(saasOrder.delivery_fee || 0),
+      isQrDineIn ? 'QR' : 'SAAS_ONLINE'
     );
     const orderId = result.lastInsertRowid;
     let total = 0;
@@ -9229,8 +9247,8 @@ function importSaasOnlineOrderLocal(db, restaurantId, actor, saasOrder) {
         VALUES (?, ?, ?, ?, ?, 'RECEIVED', ?, ?, ?)
       `).run(orderId, customerId, deliveryAddress || null, customerPhone || null, Number(saasOrder.delivery_fee || 0), saasOrder.order_no || saasOrder.id, saasOrder.order_status || 'PLACED', JSON.stringify(saasOrder));
     }
-    createKotJobs(db, orderId);
-    writeOrderStatusHistory(db, actor, orderId, 'OPEN', 'ORDER', `Imported SaaS online order ${saasOrder.order_no || saasOrder.id}`);
+    if (!isQrDineIn) createKotJobs(db, orderId);
+    writeOrderStatusHistory(db, actor, orderId, isQrDineIn ? 'PENDING_QR' : 'OPEN', 'ORDER', `Imported SaaS online order ${saasOrder.order_no || saasOrder.id}`);
     writeAudit(db, actor, 'IMPORT', 'SAAS_ONLINE_ORDER', orderId, null, { saasOrderId: saasOrder.id, orderNo: saasOrder.order_no, total });
     db.prepare(`
       INSERT INTO saas_online_order_imports (saas_order_id, saas_order_no, local_order_id, status, payload)
@@ -9241,7 +9259,7 @@ function importSaasOnlineOrderLocal(db, restaurantId, actor, saasOrder) {
         payload = excluded.payload,
         updated_at = CURRENT_TIMESTAMP
     `).run(saasOrder.id, saasOrder.order_no || null, orderId, JSON.stringify(saasOrder));
-    return { imported: true, orderId, duplicate: false };
+    return { imported: true, orderId, duplicate: false, waitingForApproval: isQrDineIn };
   })();
 }
 
@@ -9253,7 +9271,7 @@ async function importSaasOnlineOrders(restaurantId, actor) {
     for (const order of pulled.orders || []) {
       const result = importSaasOnlineOrderLocal(db, restaurantId, actor, order);
       imported.push({ ...result, saasOrderId: order.id, orderNo: order.order_no });
-      if (result.imported) {
+      if (result.imported && !result.waitingForApproval) {
         await updateSaasOnlineOrderStatus(restaurantId, order.id, 'ACCEPTED', result.orderId);
       }
     }
@@ -9386,7 +9404,187 @@ async function sendPosHeartbeat() {
   }
 }
 
+async function runSaasOrderImportTick() {
+  const restaurantId = getSingleRestaurantId();
+  if (!restaurantId || !process.env.SAAS_URL) return;
+  try {
+    const db = openRestaurantDatabase(restaurantId);
+    const enabled = moduleEnabled(db, 'ONLINE_ORDERING') && getBooleanConfig(db, 'online_order_enabled', true);
+    db.close();
+    if (!enabled) return;
+    await importSaasOnlineOrders(restaurantId, { id: null, role: 'SYSTEM', name: 'Cloud order sync' });
+  } catch (err) {
+    console.warn('Online order import skipped:', err.message);
+  }
+}
+
+setInterval(runSaasOrderImportTick, 30 * 1000);
+
 setInterval(sendPosHeartbeat, 60 * 1000);
+
+function safeAll(db, sql, params = []) {
+  try { return db.prepare(sql).all(...params); } catch (_) { return []; }
+}
+
+function safeGet(db, sql, params = [], fallback = {}) {
+  try { return db.prepare(sql).get(...params) || fallback; } catch (_) { return fallback; }
+}
+
+function buildOwnerControlSnapshot(db) {
+  const liveRows = safeAll(db, `
+    SELECT o.id, o.order_reference, o.order_type, o.table_no, o.status, o.total_amount, o.created_at,
+           COUNT(oi.id) AS line_count, COALESCE(SUM(oi.quantity), 0) AS item_count
+    FROM orders o LEFT JOIN order_items oi ON oi.order_id = o.id
+    WHERE o.payment_status != 'PAID' AND COALESCE(o.status, '') != 'CANCELLED'
+    GROUP BY o.id ORDER BY o.created_at DESC LIMIT 200
+  `).map((row) => ({
+    orderId: row.id, reference: row.order_reference || String(row.id), type: row.order_type,
+    table: row.table_no || '', status: row.status, total: Number(row.total_amount || 0),
+    createdAt: row.created_at, lineCount: Number(row.line_count || 0), itemCount: Number(row.item_count || 0)
+  }));
+  const liveOperations = { dineIn: [], parcel: [], party: [], online: [] };
+  liveRows.forEach((row) => {
+    const type = String(row.type || '').toUpperCase();
+    if (type === 'DINE_IN') liveOperations.dineIn.push(row);
+    else if (type.includes('PARTY') || type.includes('PHONE')) liveOperations.party.push(row);
+    else if (type.includes('ONLINE') || type.includes('DELIVERY')) liveOperations.online.push(row);
+    else liveOperations.parcel.push(row);
+  });
+
+  const sales = safeGet(db, `
+    SELECT COUNT(*) orders, COALESCE(SUM(total_amount),0) net_sales, COALESCE(SUM(tax_amount),0) tax,
+           COALESCE(SUM(loyalty_discount),0) loyalty_discount, COALESCE(AVG(total_amount),0) average_order
+    FROM orders WHERE payment_status = 'PAID' AND COALESCE(status,'') != 'CANCELLED'
+      AND DATE(COALESCE(settled_at, created_at)) = DATE('now','localtime')
+  `);
+  const byType = safeAll(db, `
+    SELECT order_type, COUNT(*) orders, COALESCE(SUM(total_amount),0) sales
+    FROM orders WHERE payment_status = 'PAID' AND COALESCE(status,'') != 'CANCELLED'
+      AND DATE(COALESCE(settled_at, created_at)) = DATE('now','localtime') GROUP BY order_type
+  `);
+  const payments = safeAll(db, `
+    SELECT UPPER(p.payment_mode) mode, COALESCE(SUM(p.amount),0) total
+    FROM payments p JOIN orders o ON o.id = p.order_id
+    WHERE o.payment_status = 'PAID' AND DATE(COALESCE(o.settled_at,p.created_at)) = DATE('now','localtime')
+    GROUP BY UPPER(p.payment_mode)
+  `);
+  const refundRows = safeAll(db, `SELECT refund_mode, reason, COUNT(*) count, COALESCE(SUM(amount),0) amount
+    FROM refunds WHERE DATE(created_at) >= DATE('now','-30 days','localtime') GROUP BY refund_mode, reason ORDER BY amount DESC`);
+  const promoRows = safeAll(db, `SELECT COALESCE(promo_code,'UNSPECIFIED') code, COUNT(*) usage_count,
+    COALESCE(SUM(CASE WHEN UPPER(value_type) IN ('AMOUNT','FLAT') THEN value ELSE 0 END),0) discount_amount
+    FROM discounts WHERE type = 'PROMO' AND DATE(created_at) >= DATE('now','-30 days','localtime') GROUP BY promo_code ORDER BY usage_count DESC`);
+  const settings = getAllSettings(db);
+  return {
+    liveOperations,
+    executiveSales: {
+      today: { orders: Number(sales.orders || 0), netSales: Number(sales.net_sales || 0), tax: Number(sales.tax || 0), loyaltyDiscount: Number(sales.loyalty_discount || 0), averageOrder: Number(sales.average_order || 0) },
+      byOrderType: byType,
+      byPayment: payments,
+      generatedAt: new Date().toISOString()
+    },
+    refundSummary: { periodDays: 30, rows: refundRows, total: refundRows.reduce((sum, row) => sum + Number(row.amount || 0), 0) },
+    promocodeSummary: { periodDays: 30, rows: promoRows, totalUses: promoRows.reduce((sum, row) => sum + Number(row.usage_count || 0), 0) },
+    configurationSnapshot: {
+      menu: {
+        kitchens: safeAll(db, 'SELECT id, name, active FROM kitchens ORDER BY name'),
+        categories: safeAll(db, 'SELECT id, name, kitchen_id, active FROM categories ORDER BY name'),
+        items: safeAll(db, 'SELECT id, name, category_id, price, is_veg, allow_parcel, online_enabled, active FROM items ORDER BY name'),
+        modifierGroups: safeAll(db, 'SELECT id, name, min_select, max_select, required, active FROM modifier_groups ORDER BY name'),
+        modifiers: safeAll(db, 'SELECT id, group_id, name, price_delta, active FROM modifiers ORDER BY name'),
+        combos: safeAll(db, 'SELECT id, name, price, active FROM combos ORDER BY name'),
+        comboItems: safeAll(db, 'SELECT combo_id, item_id, quantity, active FROM combo_items')
+      },
+      billing: {
+        settings: Object.fromEntries(['service_charge_enabled','service_charge_percent','round_off_enabled','allow_refund','require_manager_pin_for_refund','allow_discount','require_manager_pin_for_discount'].map((key) => [key, settings[key] ?? ''])),
+        promocodes: safeAll(db, 'SELECT id, code, discount_value, discount_type, min_order_amount, max_discount_amount, valid_from, valid_to, active FROM promo_codes ORDER BY code')
+      },
+      backup: Object.fromEntries(['backup_enabled','backup_folder_path','onedrive_folder_path','backup_interval_minutes','last_backup_at','last_sync_at'].map((key) => [key, settings[key] ?? ''])),
+      onlineOrdering: Object.fromEntries(Object.keys(settings).filter((key) => key.startsWith('online_')).map((key) => [key, settings[key]]))
+    }
+  };
+}
+
+function applyRemoteMenu(db, payload) {
+  const updateKitchen = db.prepare('UPDATE kitchens SET name = COALESCE(?, name), active = COALESCE(?, active) WHERE id = ?');
+  const updateCategory = db.prepare('UPDATE categories SET name = COALESCE(?, name), kitchen_id = COALESCE(?, kitchen_id), active = COALESCE(?, active) WHERE id = ?');
+  const updateItem = db.prepare('UPDATE items SET name = COALESCE(?, name), category_id = COALESCE(?, category_id), price = COALESCE(?, price), is_veg = COALESCE(?, is_veg), allow_parcel = COALESCE(?, allow_parcel), online_enabled = COALESCE(?, online_enabled), active = COALESCE(?, active) WHERE id = ?');
+  const updateModifier = db.prepare('UPDATE modifiers SET name = COALESCE(?, name), price_delta = COALESCE(?, price_delta), active = COALESCE(?, active) WHERE id = ?');
+  const updateCombo = db.prepare('UPDATE combos SET name = COALESCE(?, name), price = COALESCE(?, price), active = COALESCE(?, active) WHERE id = ?');
+  db.transaction(() => {
+    (payload.kitchens || []).forEach((row) => updateKitchen.run(row.name ?? null, row.active ?? null, row.id));
+    (payload.categories || []).forEach((row) => updateCategory.run(row.name ?? null, row.kitchen_id ?? null, row.active ?? null, row.id));
+    (payload.items || []).forEach((row) => {
+      const price = row.price == null ? null : Number(row.price);
+      if (price != null && (!Number.isFinite(price) || price < 0)) throw new Error(`Invalid price for item ${row.id}`);
+      updateItem.run(row.name ?? null, row.category_id ?? null, price, row.is_veg ?? null, row.allow_parcel ?? null, row.online_enabled ?? null, row.active ?? null, row.id);
+    });
+    (payload.modifiers || []).forEach((row) => updateModifier.run(row.name ?? null, row.price_delta ?? null, row.active ?? null, row.id));
+    (payload.combos || []).forEach((row) => updateCombo.run(row.name ?? null, row.price ?? null, row.active ?? null, row.id));
+  })();
+}
+
+function applyRemoteConfiguration(db, domain, payload) {
+  const allowedSettings = {
+    BILLING: ['service_charge_enabled','service_charge_percent','round_off_enabled','allow_refund','require_manager_pin_for_refund','allow_discount','require_manager_pin_for_discount'],
+    BACKUP: ['backup_enabled','backup_folder_path','onedrive_folder_path','backup_interval_minutes'],
+    ONLINE_ORDERING: Object.keys(DEFAULT_SYSTEM_SETTINGS).filter((key) => key.startsWith('online_'))
+  };
+  if (domain === 'MENU') return applyRemoteMenu(db, payload);
+  const settings = payload.settings || payload;
+  const filtered = Object.fromEntries(Object.entries(settings).filter(([key]) => (allowedSettings[domain] || []).includes(key)));
+  if (Object.keys(filtered).length) setConfigValues(db, normaliseSettingsInput(filtered));
+  if (domain === 'BILLING' && Array.isArray(payload.promocodes)) {
+    const update = db.prepare(`UPDATE promo_codes SET code = COALESCE(?,code), discount_value = COALESCE(?,discount_value), discount_type = COALESCE(?,discount_type), value = COALESCE(?,value), value_type = COALESCE(?,value_type), min_order_amount = COALESCE(?,min_order_amount), max_discount_amount = COALESCE(?,max_discount_amount), valid_from = ?, valid_to = ?, active = COALESCE(?,active) WHERE id = ?`);
+    db.transaction(() => payload.promocodes.forEach((row) => update.run(row.code ?? null, row.discount_value ?? null, row.discount_type ?? null, row.discount_value ?? null, row.discount_type ?? null, row.min_order_amount ?? null, row.max_discount_amount ?? null, row.valid_from || null, row.valid_to || null, row.active ?? null, row.id)))();
+  }
+}
+
+async function ackOwnerControl(saasUrl, credentials, restaurantId, body) {
+  await axios.post(`${saasUrl}/owner-control/pos/ack`, { restaurantId, ...credentials, ...body }, { timeout: 7000 });
+}
+
+async function runOwnerControlTick() {
+  const restaurantId = getSingleRestaurantId();
+  const saasUrl = String(process.env.SAAS_URL || '').replace(/\/$/, '');
+  if (!restaurantId || !saasUrl) return;
+  let db;
+  try {
+    db = openRestaurantDatabase(restaurantId);
+    const credentials = saasCredentials(db, restaurantId);
+    const snapshot = buildOwnerControlSnapshot(db);
+    await axios.post(`${saasUrl}/owner-control/pos/push-snapshot`, { restaurantId, ...credentials, ...snapshot }, { timeout: 10000 });
+    const pulled = await axios.post(`${saasUrl}/owner-control/pos/pull`, { restaurantId, ...credentials }, { timeout: 10000 });
+    for (const config of pulled.data?.configurations || []) {
+      try {
+        applyRemoteConfiguration(db, String(config.domain).toUpperCase(), config.payload || {});
+        setConfigValues(db, { [`remote_config_${String(config.domain).toLowerCase()}_version`]: config.version });
+        await ackOwnerControl(saasUrl, credentials, restaurantId, { domain: config.domain, version: config.version, success: true, message: 'Applied by POS' });
+      } catch (err) {
+        await ackOwnerControl(saasUrl, credentials, restaurantId, { domain: config.domain, version: config.version, success: false, message: err.message });
+      }
+    }
+    for (const command of pulled.data?.commands || []) {
+      try {
+        let message = 'Command completed';
+        if (command.command_type === 'REQUEST_SYNC') await runCloudSyncForDate(restaurantId, dateDaysAgo(0));
+        else if (command.command_type === 'RUN_BACKUP') backupRestaurantDatabase(db, restaurantId);
+        else if (command.command_type === 'PUBLISH_MENU') await publishOnlineMenuToSaas(restaurantId);
+        else if (command.command_type === 'REFRESH_LICENSE') {
+          setConfigValues(db, { license_reauthentication_required: '1', license_reauthentication_message: command.payload?.summary || 'Owner approved a license-sensitive change. Reauthenticate the license.' });
+          if (tableExists(db, 'notification_logs')) queueNotification(db, 'LICENSE_REAUTH_REQUIRED', 'IN_APP', null, { title: 'License reauthentication required', message: command.payload?.summary || 'Open Admin and refresh the license.', commandId: command.id });
+          message = 'POS notified; local reauthentication is required';
+        }
+        await ackOwnerControl(saasUrl, credentials, restaurantId, { commandId: command.id, success: true, message });
+      } catch (err) {
+        await ackOwnerControl(saasUrl, credentials, restaurantId, { commandId: command.id, success: false, message: err.message });
+      }
+    }
+  } catch (err) {
+    console.warn('Owner control sync skipped:', err.message);
+  } finally { if (db) db.close(); }
+}
+
+setInterval(runOwnerControlTick, 60 * 1000);
 
 app.post('/cloud-sync/run', async (req, res) => {
   const { restaurantId, actor, date } = req.body;
