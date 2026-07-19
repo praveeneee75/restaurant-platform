@@ -787,6 +787,7 @@ const SETTINGS_BOOLEAN_KEYS = new Set([
   'show_tax_on_bill',
   'show_qr_on_bill',
   'qr_require_table_pin',
+  'qr_ordering_enabled',
   'service_charge_enabled',
   'round_off_enabled',
   'auto_print_kot',
@@ -854,6 +855,12 @@ function normaliseSettingsInput(input) {
         throw new Error('QR PIN validity must be a whole number between 5 and 240 minutes');
       }
       output[key] = String(minutes);
+      return;
+    }
+    if (key === 'qr_pending_order_limit') {
+      const limit = Number(value);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error('QR pending-order limit must be between 1 and 500');
+      output[key] = String(limit);
       return;
     }
     if (SETTINGS_NON_NEGATIVE_NUMBER_KEYS.has(key)) {
@@ -5122,6 +5129,10 @@ app.post('/qr/orders/place', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     const saved = db.transaction(() => {
+      if (!getBooleanConfig(db, 'qr_ordering_enabled', true)) throw new Error('QR ordering is temporarily unavailable. Please order through your waiter.');
+      const pendingLimit = Number(getConfigValue(db, 'qr_pending_order_limit', '25')) || 25;
+      const pendingCount = Number(db.prepare("SELECT COUNT(*) total FROM orders WHERE order_source = 'QR' AND status = 'PENDING_QR'").get()?.total || 0);
+      if (pendingCount >= pendingLimit) throw new Error('QR ordering has reached its current waiting-order limit. Please order through your waiter.');
       const table = db.prepare('SELECT * FROM tables WHERE id = ? AND active = 1').get(tableId);
       if (!table) throw new Error('Table not found');
       if (qrPinRequired(db) && !validQrSession(table, pin)) throw new Error('The table PIN is invalid or expired. Ask the waiter for the current PIN.');
@@ -5192,25 +5203,52 @@ app.post('/qr/orders/approve', async (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     let kotResult;
+    let saasOrderId = null;
     db.transaction(() => {
       const order = db.prepare("SELECT * FROM orders WHERE id = ? AND order_source = 'QR' AND status = 'PENDING_QR'").get(orderId);
       if (!order) throw new Error('QR order is no longer waiting for approval');
-      kotResult = createKotJobs(db, order.id);
-      db.prepare("UPDATE orders SET status = 'OPEN', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(order.id);
+      const existingOrder = db.prepare("SELECT id FROM orders WHERE id != ? AND table_id = ? AND customer_id = ? AND status = 'OPEN' AND payment_status != 'PAID' ORDER BY id DESC LIMIT 1").get(order.id, order.table_id, order.customer_id);
+      const targetOrderId = existingOrder?.id || order.id;
+      if (existingOrder) {
+        if (tableExists(db, 'saas_online_order_imports')) {
+          const imported = db.prepare('SELECT saas_order_id FROM saas_online_order_imports WHERE local_order_id = ?').get(order.id);
+          saasOrderId = imported?.saas_order_id || null;
+          db.prepare('UPDATE saas_online_order_imports SET local_order_id = ?, updated_at = CURRENT_TIMESTAMP WHERE local_order_id = ?').run(targetOrderId, order.id);
+        }
+        db.prepare('UPDATE order_items SET order_id = ? WHERE order_id = ?').run(targetOrderId, order.id);
+        db.prepare('DELETE FROM orders WHERE id = ?').run(order.id);
+      }
+      kotResult = createKotJobs(db, targetOrderId);
+      db.prepare("UPDATE orders SET status = 'OPEN', total_amount = (SELECT COALESCE(SUM(quantity * price), 0) FROM order_items WHERE order_id = ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(targetOrderId, targetOrderId);
       db.prepare("UPDATE tables SET status = 'OCCUPIED' WHERE id = ?").run(order.table_id);
-      deductInventoryForOrder(db, actor, order.id, 'KOT_SUBMIT');
-      writeAudit(db, actor, 'APPROVE_QR_ORDER', 'ORDER', order.id, { status: 'PENDING_QR' }, { status: 'OPEN', kotReference: kotResult.kotReference });
+      deductInventoryForOrder(db, actor, targetOrderId, 'KOT_SUBMIT');
+      writeAudit(db, actor, 'APPROVE_QR_ORDER', 'ORDER', targetOrderId, { status: 'PENDING_QR', submittedOrderId: order.id }, { status: 'OPEN', kotReference: kotResult.kotReference });
     })();
     const saasImport = tableExists(db, 'saas_online_order_imports')
       ? db.prepare('SELECT saas_order_id FROM saas_online_order_imports WHERE local_order_id = ?').get(orderId)
       : null;
-    if (saasImport?.saas_order_id) await updateSaasOnlineOrderStatus(restaurantId, saasImport.saas_order_id, 'ACCEPTED', orderId);
+    if (saasOrderId || saasImport?.saas_order_id) await updateSaasOnlineOrderStatus(restaurantId, saasOrderId || saasImport.saas_order_id, 'ACCEPTED', orderId);
     res.json({ success: true, kotReference: kotResult.kotReference, message: `QR order approved and KOT ${kotResult.kotReference} submitted` });
   } catch (err) {
     sendError(res, err);
   } finally {
     db.close();
   }
+});
+
+app.post('/qr/orders/reject', async (req, res) => {
+  const { restaurantId, actor, orderId, reason } = req.body;
+  if (!restaurantId || !isPositiveId(orderId) || !canSell(actor?.role)) return res.status(400).json({ success: false, message: 'Order and waiter approval permission are required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const order = db.prepare("SELECT * FROM orders WHERE id = ? AND order_source = 'QR' AND status = 'PENDING_QR'").get(orderId);
+    if (!order) return res.status(409).json({ success: false, message: 'QR order is no longer waiting for approval' });
+    db.prepare("UPDATE orders SET status = 'CANCELLED', notes = COALESCE(notes || ' | ', '') || ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(`QR rejected: ${normaliseText(reason) || 'Rejected by staff'}`, orderId);
+    writeAudit(db, actor, 'REJECT_QR_ORDER', 'ORDER', orderId, { status: 'PENDING_QR' }, { status: 'CANCELLED', reason: normaliseText(reason) || null });
+    const saasImport = tableExists(db, 'saas_online_order_imports') ? db.prepare('SELECT saas_order_id FROM saas_online_order_imports WHERE local_order_id = ?').get(orderId) : null;
+    if (saasImport?.saas_order_id) await updateSaasOnlineOrderStatus(restaurantId, saasImport.saas_order_id, 'REJECTED', orderId);
+    res.json({ success: true, message: 'QR order rejected' });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
 });
 
 app.get('/online/menu', (req, res) => {
@@ -5959,6 +5997,10 @@ app.get('/orders/open-list', (req, res) => {
   if (!restaurantId || (!hasTable && !cleanOrderType)) return res.status(400).json({ success: false, message: 'restaurantId and tableId or orderType are required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    if (!getBooleanConfig(db, 'qr_ordering_enabled', true)) return res.status(503).json({ success: false, code: 'QR_DISABLED', message: 'QR ordering is temporarily unavailable. Please order through your waiter.' });
+    const pendingLimit = Number(getConfigValue(db, 'qr_pending_order_limit', '25')) || 25;
+    const pendingCount = Number(db.prepare("SELECT COUNT(*) total FROM orders WHERE order_source = 'QR' AND status = 'PENDING_QR'").get()?.total || 0);
+    if (pendingCount >= pendingLimit) return res.status(429).json({ success: false, code: 'QR_CAPACITY', message: 'QR ordering has reached its current waiting-order limit. Please order through your waiter.' });
     const contextClause = hasTable ? 'o.table_id = ?' : 'o.table_id IS NULL AND o.order_type = ?';
     const contextValue = hasTable ? Number(tableId) : cleanOrderType;
     const orders = db.prepare(`
@@ -6871,8 +6913,9 @@ app.get('/reports/order-types', (req, res) => {
 // ========================
 
 app.get('/kds/orders', (req, res) => {
-  const { restaurantId, kitchenId, role } = req.query;
-  if (!restaurantId || !isPositiveId(kitchenId)) {
+  const { restaurantId, kitchenId, kitchenIds, role } = req.query;
+  const selectedKitchenIds = String(kitchenIds || kitchenId || '').split(',').map(Number).filter(isPositiveId);
+  if (!restaurantId || !selectedKitchenIds.length) {
     return res.status(400).json({ success: false, message: 'Kitchen, restaurant and KDS permission are required' });
   }
 
@@ -6904,11 +6947,11 @@ app.get('/kds/orders', (req, res) => {
       JOIN orders o ON o.id = oi.order_id
       JOIN items i ON i.id = oi.item_id
       LEFT JOIN kots ksub ON ksub.id = oi.kot_id
-      WHERE oi.kitchen_id = ?
+      WHERE oi.kitchen_id IN (${selectedKitchenIds.map(() => '?').join(',')})
         AND o.status != 'CANCELLED'
         AND COALESCE(oi.status, 'PLACED') NOT IN ('SERVED', 'CANCELLED')
       ORDER BY o.created_at, oi.id
-    `).all(kitchenId);
+    `).all(...selectedKitchenIds);
 
     const modifiersByItem = rows.length === 0 ? {} : db.prepare(`
       SELECT order_item_id, name, price_delta
@@ -9499,7 +9542,7 @@ function buildOwnerControlSnapshot(db) {
         promocodes: safeAll(db, 'SELECT id, code, discount_value, discount_type, min_order_amount, max_discount_amount, valid_from, valid_to, active FROM promo_codes ORDER BY code')
       },
       backup: Object.fromEntries(['backup_enabled','backup_folder_path','onedrive_folder_path','backup_interval_minutes','last_backup_at','last_sync_at'].map((key) => [key, settings[key] ?? ''])),
-      onlineOrdering: Object.fromEntries(Object.keys(settings).filter((key) => key.startsWith('online_')).map((key) => [key, settings[key]]))
+      onlineOrdering: Object.fromEntries(Object.keys(settings).filter((key) => key.startsWith('online_') || key.startsWith('qr_')).map((key) => [key, settings[key]]))
     }
   };
 }

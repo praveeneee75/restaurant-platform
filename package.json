@@ -33,5 +33,6 @@
     "test:saas": "node tests/saas-smoke.js"
     ,"test:owner-control": "node tests/owner-remote-control-regression.js"
     ,"test:qr-approval": "node tests/qr-approval-regression.js"
+    ,"test:qr-kds-owner": "node tests/qr-kds-owner-hardening-regression.js"
   }
 }

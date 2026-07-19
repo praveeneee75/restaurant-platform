@@ -8,7 +8,7 @@ if (!allowedRoles.includes(String(actor.role).toUpperCase())) { window.location.
 document.querySelectorAll('[data-role-nav="availability"]').forEach((el) => { el.hidden = !['OWNER', 'MANAGER_1', 'MANAGER_2'].includes(String(actor.role).toUpperCase()); });
 document.querySelectorAll("[data-logout]").forEach((button) => button.addEventListener("click", () => { localStorage.clear(); window.location.href = "/login.html"; }));
 if (String(actor.role).toUpperCase() === "KITCHEN") document.getElementById("kdsBackBtn").hidden = true;
-const state = { kitchens: [], kitchenId: null, lastPendingIds: new Set(), firstLoad: true };
+const state = { kitchens: [], kitchenIds: [], lastPendingIds: new Set(), firstLoad: true };
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 
@@ -68,8 +68,9 @@ async function postJson(url, body) {
 }
 
 function renderKitchenOptions() {
-  kitchenSelect.innerHTML = state.kitchens.map((kitchen) => `<option value="${kitchen.id}">${esc(kitchen.name)}</option>`).join("");
-  if (state.kitchenId) kitchenSelect.value = state.kitchenId;
+  kitchenSelectOptions.innerHTML = state.kitchens.map((kitchen) => `<label><input type="checkbox" data-kitchen-id="${kitchen.id}" ${state.kitchenIds.includes(Number(kitchen.id))?'checked':''}> ${esc(kitchen.name)}</label>`).join("");
+  const selected = state.kitchens.filter((kitchen) => state.kitchenIds.includes(Number(kitchen.id))).map((kitchen) => kitchen.name);
+  kitchenSelectLabel.textContent = selected.length === state.kitchens.length ? 'All kitchens' : selected.length ? selected.join(', ') : 'Select kitchens';
 }
 
 function goBack() {
@@ -93,7 +94,9 @@ async function boot() {
   const nameElement = document.getElementById("kdsRestaurantName");
   if (nameElement) nameElement.textContent = restaurantName;
   state.kitchens = data.kitchens || [];
-  state.kitchenId = Number(new URLSearchParams(window.location.search).get("kitchenId")) || Number(localStorage.getItem("kdsKitchenId")) || state.kitchens[0]?.id;
+  const requested = new URLSearchParams(window.location.search).get("kitchenId");
+  const stored = localStorage.getItem("kdsKitchenIds");
+  state.kitchenIds = String(requested || stored || state.kitchens.map(k=>k.id).join(',')).split(',').map(Number).filter(id=>state.kitchens.some(k=>Number(k.id)===id));
   renderKitchenOptions();
   await loadOrders();
 }
@@ -144,9 +147,9 @@ function updateTimers() {
 }
 
 async function loadOrders() {
-  if (!state.kitchenId || !allowedRoles.includes(actor.role)) return;
-  localStorage.setItem("kdsKitchenId", state.kitchenId);
-  const data = await fetch(`/kds/orders?restaurantId=${encodeURIComponent(restaurantId)}&kitchenId=${state.kitchenId}&role=${encodeURIComponent(actor.role)}`).then((res) => res.json());
+  if (!state.kitchenIds.length || !allowedRoles.includes(actor.role)) { renderOrders([]); return; }
+  localStorage.setItem("kdsKitchenIds", state.kitchenIds.join(','));
+  const data = await fetch(`/kds/orders?restaurantId=${encodeURIComponent(restaurantId)}&kitchenIds=${encodeURIComponent(state.kitchenIds.join(','))}&role=${encodeURIComponent(actor.role)}`).then((res) => res.json());
   if (!data.success) {
     kdsStatus.textContent = data.message;
     return;
@@ -174,8 +177,9 @@ document.addEventListener("click", async (event) => {
   }
 });
 
-kitchenSelect.addEventListener("change", async () => {
-  state.kitchenId = Number(kitchenSelect.value);
+kitchenSelectOptions.addEventListener("change", async () => {
+  state.kitchenIds = [...kitchenSelectOptions.querySelectorAll('[data-kitchen-id]:checked')].map(input=>Number(input.dataset.kitchenId));
+  renderKitchenOptions();
   state.firstLoad = true;
   await loadOrders();
 });

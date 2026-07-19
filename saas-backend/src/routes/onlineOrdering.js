@@ -44,6 +44,19 @@ async function onlineOrderingEnabled(tenantId) {
   return result.rowCount > 0;
 }
 
+async function qrOrderingPolicy(client, tenantId) {
+  const snapshot = await client.query('SELECT configuration_snapshot FROM tenant_operational_snapshots WHERE tenant_id = $1', [tenantId]);
+  const config = snapshot.rows[0]?.configuration_snapshot?.onlineOrdering || {};
+  return { enabled: !['0', 0, false, 'false'].includes(config.qr_ordering_enabled), pendingLimit: Math.min(Math.max(Number(config.qr_pending_order_limit || 25), 1), 500) };
+}
+
+async function assertQrOrderingAvailable(client, tenantId) {
+  const policy = await qrOrderingPolicy(client, tenantId);
+  if (!policy.enabled) throw Object.assign(new Error('QR ordering is temporarily unavailable. Please order through your waiter.'), { statusCode: 503 });
+  const pending = await client.query("SELECT COUNT(*)::int total FROM online_orders WHERE tenant_id = $1 AND order_type = 'DINE_IN' AND order_status = 'PLACED'", [tenantId]);
+  if (Number(pending.rows[0]?.total || 0) >= policy.pendingLimit) throw Object.assign(new Error('QR ordering has reached its current waiting-order limit. Please order through your waiter.'), { statusCode: 429 });
+}
+
 router.get('/storefronts', async (req, res) => {
   const { organizationId } = req.query;
   try {
@@ -81,6 +94,7 @@ router.get('/storefront/:slug/menu', async (req, res) => {
     if (!await onlineOrderingEnabled(storefront.rows[0].tenant_id)) {
       return res.status(403).json({ success: false, message: 'Online ordering is not enabled for this restaurant' });
     }
+    await assertQrOrderingAvailable(pool, storefront.rows[0].tenant_id);
     const menu = await pool.query(`
       SELECT payload, synced_at
       FROM online_menu_snapshots
@@ -126,6 +140,7 @@ router.post('/storefront/:slug/orders', async (req, res) => {
     `, [req.params.slug]);
     if (storefront.rowCount === 0) throw new Error('Storefront not found');
     if (!await onlineOrderingEnabled(storefront.rows[0].tenant_id)) throw new Error('Online ordering is not enabled');
+    if (selectedType === 'DINE_IN') await assertQrOrderingAvailable(client, storefront.rows[0].tenant_id);
     if (selectedType === 'DELIVERY' && !storefront.rows[0].delivery_enabled) throw new Error('Delivery is not enabled');
     if (selectedType === 'TAKEAWAY' && !storefront.rows[0].takeaway_enabled) throw new Error('Takeaway is not enabled');
 
@@ -184,7 +199,7 @@ router.post('/storefront/:slug/orders', async (req, res) => {
     res.json({ success: true, order: order.rows[0], items: safeItems });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(400).json({ success: false, message: publicError(err) });
+    res.status(err.statusCode || 400).json({ success: false, message: publicError(err) });
   } finally {
     client.release();
   }

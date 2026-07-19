@@ -18,6 +18,8 @@ document.querySelectorAll(".app-home-nav a").forEach((link) => link.classList.to
 const state = { admin: {}, network: {}, inventory: {}, modifiers: {}, backups: {}, settings: {}, permissions: {}, devices: {}, reservations: [], expenseCategories: [], latestUpdate: null, commercial: {}, invoices: [] };
 const settingQrRequireTablePin = document.getElementById('settingQrRequireTablePin');
 const settingQrSessionMinutes = document.getElementById('settingQrSessionMinutes');
+const settingQrOrderingEnabled = document.getElementById('settingQrOrderingEnabled');
+const settingQrPendingOrderLimit = document.getElementById('settingQrPendingOrderLimit');
 const promoCodesTable = document.getElementById('promoCodesTable');
 const staffCashSettingsForm = document.getElementById('staffCashSettingsForm');
 const staffCashSettingsStatus = document.getElementById('staffCashSettingsStatus');
@@ -327,8 +329,9 @@ function renderAdmin() {
   tablesTable.innerHTML = tables.map((t) => `<tr><td>${esc(t.table_name)}</td><td>${esc(t.status)}</td><td>${actions("table", t.id)}</td></tr>`).join("");
   qrLinksTable.innerHTML = tables.map((t) => {
     const baseUrl = String(state.network.publicQrBaseUrl || 'https://pos.kmasterpos.com').replace(/\/$/, '');
-    const url = `${baseUrl}/qr-menu.html?v=1.0.90&restaurantId=${encodeURIComponent(restaurantId)}&tableId=${t.id}`;
-    return `<tr><td>${esc(t.table_name)}</td><td><a href="${url}" target="_blank">${esc(url)}</a></td></tr>`;
+    const url = `${baseUrl}/qr-menu.html?v=1.0.99&restaurantId=${encodeURIComponent(restaurantId)}&tableId=${t.id}`;
+    const enabled = !['0', 0, false, 'false'].includes(state.settings?.qr_ordering_enabled);
+    return `<tr><td>${esc(t.table_name)}</td><td>${enabled?`<a href="${url}" target="_blank">${esc(url)}</a>`:'<span>QR ordering disabled</span>'}</td></tr>`;
   }).join("");
 }
 
@@ -878,6 +881,8 @@ function renderSettings() {
   settingBillFooterText.value = settings.bill_footer_text || 'THANK YOU. VISIT AGAIN.';
   setChecked(settingQrRequireTablePin, settings.qr_require_table_pin === undefined ? true : settings.qr_require_table_pin);
   settingQrSessionMinutes.value = settings.qr_session_minutes || '30';
+  setChecked(settingQrOrderingEnabled, settings.qr_ordering_enabled === undefined ? true : settings.qr_ordering_enabled);
+  settingQrPendingOrderLimit.value = settings.qr_pending_order_limit || '25';
   settingUpiId.value = settings.upi_id || "";
   setChecked(settingServiceChargeEnabled, settings.service_charge_enabled);
   settingServiceChargePercent.value = settings.service_charge_percent || "0";
@@ -956,6 +961,8 @@ function collectSettings() {
     bill_footer_text: settingBillFooterText.value.trim(),
     qr_require_table_pin: checkedValue(settingQrRequireTablePin),
     qr_session_minutes: settingQrSessionMinutes.value || '30',
+    qr_ordering_enabled: checkedValue(settingQrOrderingEnabled),
+    qr_pending_order_limit: settingQrPendingOrderLimit.value || '25',
     upi_id: settingUpiId.value,
     service_charge_enabled: checkedValue(settingServiceChargeEnabled),
     service_charge_percent: settingServiceChargePercent.value,
@@ -988,7 +995,7 @@ function collectSettings() {
 const SETTINGS_KEYS_BY_SECTION = {
   profile: ["restaurant_display_name", "legal_name", "gstin", "fssai_license_no", "state_code", "address_line_1", "address_line_2", "city", "state", "country", "phone", "email", "currency", "timezone", "logo_path"],
   pos: ["default_order_type", "allow_non_invoice_orders", "allow_discount", "allow_manual_price_override", "allow_refund", "allow_order_cancel", "require_manager_pin_for_discount", "require_manager_pin_for_refund", "require_manager_pin_for_void", "require_clock_in_before_order"],
-  billing: ["invoice_prefix", "invoice_reset_frequency", "show_tax_on_bill", "tax_name", "tax_rate", "sac_code", "show_qr_on_bill", "qr_require_table_pin", "qr_session_minutes", "upi_id", "service_charge_enabled", "service_charge_percent", "round_off_enabled"],
+  billing: ["invoice_prefix", "invoice_reset_frequency", "show_tax_on_bill", "tax_name", "tax_rate", "sac_code", "show_qr_on_bill", "qr_require_table_pin", "qr_session_minutes", "qr_ordering_enabled", "qr_pending_order_limit", "upi_id", "service_charge_enabled", "service_charge_percent", "round_off_enabled"],
   "bill-print": ["bill_print_contact", "bill_print_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text"],
   kot: ["auto_print_kot", "print_kot_on_save", "print_kot_on_submit", "allow_kot_reprint", "kot_header_text", "kot_footer_text"],
   online: ["mobile_app_enabled", "online_order_enabled", "online_storefront_slug", "online_theme", "online_primary_color", "online_accent_color", "online_logo_path", "online_payment_methods", "online_require_otp", "online_allow_loyalty_credit", "online_delivery_enabled", "online_takeaway_enabled", "online_min_order_amount"]

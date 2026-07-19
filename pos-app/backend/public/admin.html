@@ -308,7 +308,9 @@
         <article>
           <h3>QR table security</h3>
           <label class="check-row"><input id="settingQrRequireTablePin" type="checkbox"> Require the current table PIN before QR orders</label>
+          <label class="check-row"><input id="settingQrOrderingEnabled" type="checkbox"> Enable QR ordering</label>
           <label>PIN validity (minutes)<input id="settingQrSessionMinutes" type="number" min="5" max="240" step="5"></label>
+          <label>Maximum QR orders waiting for approval<input id="settingQrPendingOrderLimit" type="number" min="1" max="500" step="1"></label>
           <p class="form-hint">The waiter generates the PIN when opening the table. QR orders remain waiting for waiter confirmation.</p>
         </article>
       </div>

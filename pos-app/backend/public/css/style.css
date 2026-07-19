@@ -354,6 +354,16 @@ button:hover,
   text-transform: uppercase;
 }
 
+.qr-approval-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:16px; align-items:center; padding:12px; border-bottom:1px solid var(--border); }
+.qr-approval-row > div:first-child { display:grid; gap:4px; min-width:0; }
+.qr-approval-actions { display:flex; justify-content:flex-end; align-items:center; gap:8px; }
+.qr-approval-actions button { width:auto; white-space:nowrap; }
+.kitchen-multiselect { position:relative; min-width:220px; }
+.kitchen-multiselect summary { cursor:pointer; list-style:none; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:#fff; }
+.kitchen-multiselect-options { position:absolute; z-index:20; right:0; min-width:100%; padding:8px; background:#fff; border:1px solid var(--border); border-radius:8px; box-shadow:0 10px 24px rgba(15,23,42,.16); }
+.kitchen-multiselect-options label { display:flex; gap:8px; padding:7px; white-space:nowrap; }
+@media (max-width:700px) { .qr-approval-row { grid-template-columns:1fr; } .qr-approval-actions { justify-content:flex-end; } }
+
 .nav-subtitle {
   margin: 8px 10px 2px;
   color: var(--muted);

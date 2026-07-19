@@ -422,17 +422,18 @@ async function refreshQrApprovals() {
       <strong>${esc(order.table_no)} · ${esc(order.customer_name)}</strong>
       <span>${esc(order.customer_phone)} · ${money(order.total_amount)}</span>
       <small>${order.items.map((item) => `${esc(item.name)} x${item.quantity}`).join(', ')}</small>
-      <button type="button" data-approve-qr="${order.id}">Approve and send KOT</button>
+      <div class="qr-approval-actions"><button type="button" class="danger-btn" data-reject-qr="${order.id}">Reject</button><button type="button" data-approve-qr="${order.id}">Approve and send KOT</button></div>
     </article>
   `).join("");
   window.dispatchEvent(new CustomEvent('pos:notifications-changed'));
 }
 
 document.addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-approve-qr]");
+  const button = event.target.closest("[data-approve-qr],[data-reject-qr]");
   if (!button) return;
+  const rejecting=Boolean(button.dataset.rejectQr);
   button.disabled = true;
-  try { const result = await postJson('/qr/orders/approve', { orderId: Number(button.dataset.approveQr) }); alert(result.message); await refreshQrApprovals(); await refreshLiveState(); }
+  try { const result = await postJson(rejecting?'/qr/orders/reject':'/qr/orders/approve', { orderId: Number(button.dataset.rejectQr||button.dataset.approveQr), reason: rejecting?'Rejected from POS':undefined }); alert(result.message); await refreshQrApprovals(); await refreshLiveState(); }
   catch (error) { button.disabled = false; }
 });
 

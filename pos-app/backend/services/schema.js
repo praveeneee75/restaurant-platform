@@ -52,6 +52,8 @@ const DEFAULT_SYSTEM_SETTINGS = {
   bill_footer_text: 'THANK YOU. VISIT AGAIN.',
   qr_require_table_pin: '1',
   qr_session_minutes: '30',
+  qr_ordering_enabled: '1',
+  qr_pending_order_limit: '25',
   upi_id: '',
   service_charge_enabled: '0',
   service_charge_percent: '0',
