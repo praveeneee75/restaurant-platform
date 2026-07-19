@@ -23,5 +23,8 @@ for (const action of ['applyBillingPromo', 'applyBillingCashDiscount', 'applyBil
 
 if (!css.includes('.billing-adjustment-row')) throw new Error('Billing adjustment layout styles are missing');
 if (!css.includes('.billing-adjustment-grid label')) throw new Error('Billing adjustment labels are missing');
+if (!billing.includes('kotGroups') || !billing.includes('KOT ${esc(reference)}')) throw new Error('Billing items must be grouped under visible KOT references');
+if (!billing.includes('item.kot_sequence || item.kot_id')) throw new Error('Billing KOT grouping needs a stable sequence fallback');
+if (!css.includes('.bill-kot-group')) throw new Error('Billing KOT group styles are missing');
 
 console.log('Billing controls regression passed: all adjustment inputs are labeled, editable, and actionable.');

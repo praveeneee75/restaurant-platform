@@ -5700,8 +5700,11 @@ app.get('/orders/open', (req, res) => {
         .run(order.order_sequence, order.customer_ref, order.order_reference, order.id);
     }
     const items = order ? db.prepare(`
-      SELECT oi.id AS order_item_id, oi.item_id AS id, i.name, oi.quantity, oi.price, oi.kot_id, oi.combo_id, oi.combo_name, oi.combo_quantity, oi.notes
+      SELECT oi.id AS order_item_id, oi.item_id AS id, i.name, oi.quantity, oi.price, oi.kot_id,
+             COALESCE(k.suborder_no, k.id) AS kot_sequence,
+             oi.combo_id, oi.combo_name, oi.combo_quantity, oi.notes
       FROM order_items oi JOIN items i ON i.id = oi.item_id
+      LEFT JOIN kots k ON k.id = oi.kot_id
       WHERE oi.order_id = ?
     `).all(order.id) : [];
     const modifiers = items.length === 0 ? [] : db.prepare(`
