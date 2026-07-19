@@ -18,6 +18,7 @@ const cases = [
   [adminHtml.includes('qrLinkPreview') && adminJs.includes('data-qr-preview') && adminJs.includes('data-qr-print') && cloud.includes("router.get('/qr-code'"), 'QR links provide preview and print'],
   [css.includes('table-layout: auto') && css.includes('min-width: max-content') && css.includes('.admin-section-editor'), 'admin tables auto-fit and filter sections remain column-wise'],
   [css.includes('.table-panel span.action-cell') && css.includes('width:auto !important') && css.includes('min-width:max-content'), 'admin table action buttons remain separate and readable at narrow widths and zoom levels'],
+  [adminHtml.includes('availability-items-table') && css.includes('.availability-items-panel { overflow-x:hidden; }') && css.includes('.table-panel .availability-items-table { width:100%; min-width:0; table-layout:auto; }'), 'availability columns auto-fit without a horizontal page scrollbar'],
   [server.includes("app.post('/kds/reprint-kot'") && server.includes('printer_id') && kds.includes('data-reprint-kot'), 'KDS reprint targets the original kitchen printer'],
   [schema.includes("bill_template: 'BORDERED'") && schema.includes("tax_rate: '5'"), 'new registered restaurants start with compliant bill defaults']
 ];
