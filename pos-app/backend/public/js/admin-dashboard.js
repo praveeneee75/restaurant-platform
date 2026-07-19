@@ -581,6 +581,7 @@ function groupInvoicePrintItems(items = []) {
 
 function invoicePrintHtml(invoice, items, discounts = [], payments = []) {
   const profile = state.settings?.settings || {};
+  const billOption = (key) => !['0', 'false', 'off'].includes(String(profile[key] ?? '1').toLowerCase());
   if (!/^\d{14}$/.test(String(profile.fssai_license_no || '').trim())) {
     throw new Error('Configure the restaurant 14-digit FSSAI licence / registration number in Admin → Settings before printing invoices.');
   }
@@ -603,9 +604,9 @@ function invoicePrintHtml(invoice, items, discounts = [], payments = []) {
   const title = registered ? 'TAX INVOICE' : 'RECEIPT / BILL';
   const html = `<!doctype html><html><head><title>${esc(invoice.invoice_no || 'Invoice')}</title><style>
     @page{size:80mm auto;margin:2.5mm}*{box-sizing:border-box}body{width:75mm;margin:0 auto;color:#111;font:10px Arial,sans-serif;line-height:1.28}header{text-align:center}h1{font-size:15px;margin:0 0 2px;text-transform:uppercase}h2{font-size:12px;margin:6px 0 3px;border-top:1px solid #111;border-bottom:1px solid #111;padding:4px}p{margin:1px 0}.legal{font-weight:700}.meta{display:grid;grid-template-columns:26mm 1fr;gap:2px 4px;border-bottom:1px dashed #111;padding:5px 0}.meta b{font-weight:700}.items{width:100%;border-collapse:collapse;margin-top:5px}.items th,.items td{padding:3px 2px;border:1px solid #555;vertical-align:top}.items th{text-align:center;font-size:9px}.items td:nth-child(1),.items td:nth-child(3){text-align:center}.items td:nth-child(4),.items td:nth-child(5){text-align:right;white-space:nowrap}.items small{display:block}.summary{border:1px solid #555;border-top:0;padding:4px}.summary p{display:flex;justify-content:space-between;gap:8px}.grand{border-top:1px solid #111;margin-top:3px;padding-top:4px;font-weight:800;font-size:13px}.footer{text-align:center;border-top:1px dashed #111;margin-top:7px;padding-top:6px}.compliance{font-size:9px}@media print{button{display:none}}
-  </style></head><body><header><h1>${esc(profile.restaurant_display_name || profile.legal_name || 'Restaurant')}</h1>${profile.legal_name && profile.legal_name !== profile.restaurant_display_name ? `<p class="legal">${esc(profile.legal_name)}</p>` : ''}<p>${esc([profile.address_line_1, profile.address_line_2].filter(Boolean).join(', '))}</p><p>${esc([profile.city, profile.state, profile.state_code ? `Code ${profile.state_code}` : '', profile.country].filter(Boolean).join(', '))}</p><p>${profile.phone ? `Mob: ${esc(profile.phone)}` : ''}${profile.email ? ` · ${esc(profile.email)}` : ''}</p>${profile.gstin ? `<p><b>GSTIN: ${esc(profile.gstin)}</b></p>` : ''}${profile.fssai_license_no ? `<p><b>FSSAI: ${esc(profile.fssai_license_no)}</b></p>` : ''}<h2>${title}</h2></header>
-  <div class="meta"><span>Invoice No.</span><b>${esc(invoice.invoice_no || `#${invoice.id}`)}</b><span>Date / Time</span><b>${esc(formatDateTime(invoice.settled_at))}</b><span>Order / Table</span><b>${esc(`${invoice.order_reference || invoice.id} / ${invoice.table_no || invoice.order_type || ''}`)}</b>${invoice.kot_references ? `<span>KOT No(s).</span><b>${esc(invoice.kot_references)}</b>` : ''}<span>Customer</span><b>${esc(invoice.customer_name || 'Walk-in customer')}</b><span>Cashier</span><b>${esc(invoice.cashier_name || 'Owner')}</b><span>Payment</span><b>${esc(paymentText)}</b>${registered ? `<span>Place of supply</span><b>${esc(`${profile.state || 'Tamil Nadu'} (${profile.state_code || '33'})`)}</b><span>SAC</span><b>${esc(profile.sac_code || '996331')}</b><span>Reverse charge</span><b>No</b>` : ''}</div>
-  <table class="items"><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table><div class="summary"><p><span>Total Qty</span><b>${totalQuantity}</b></p>${discountTotal > 0 ? `<p><span>Discount</span><b>-${currency} ${discountTotal.toFixed(2)}</b></p>` : ''}<p><span>Taxable value</span><b>${currency} ${subtotal.toFixed(2)}</b></p>${registered && taxRate > 0 ? `<p><span>CGST @ ${(taxRate / 2).toFixed(2)}%</span><b>${currency} ${halfTax.toFixed(2)}</b></p><p><span>SGST @ ${(taxRate / 2).toFixed(2)}%</span><b>${currency} ${halfTax.toFixed(2)}</b></p><p><span>Total GST</span><b>${currency} ${tax.toFixed(2)}</b></p>` : ''}<p class="grand"><span>GRAND TOTAL</span><b>${currency} ${grandTotal.toFixed(2)}</b></p></div><div class="footer"><p><b>THANK YOU. VISIT AGAIN.</b></p><p class="compliance">${registered ? 'Tax is included in the amounts shown.' : 'This document does not collect GST.'}</p><p><b>Authorised Signatory</b></p></div></body></html>`;
+  </style></head><body><header><h1>${esc(profile.restaurant_display_name || profile.legal_name || 'Restaurant')}</h1>${profile.legal_name && profile.legal_name !== profile.restaurant_display_name ? `<p class="legal">${esc(profile.legal_name)}</p>` : ''}<p>${esc([profile.address_line_1, profile.address_line_2].filter(Boolean).join(', '))}</p><p>${esc([profile.city, profile.state, profile.state_code ? `Code ${profile.state_code}` : '', profile.country].filter(Boolean).join(', '))}</p>${billOption('bill_print_contact') ? `<p>${profile.phone ? `Mob: ${esc(profile.phone)}` : ''}${profile.email ? ` · ${esc(profile.email)}` : ''}</p>` : ''}${profile.gstin ? `<p><b>GSTIN: ${esc(profile.gstin)}</b></p>` : ''}${profile.fssai_license_no ? `<p><b>FSSAI: ${esc(profile.fssai_license_no)}</b></p>` : ''}<h2>${title}</h2></header>
+  <div class="meta"><span>Invoice No.</span><b>${esc(invoice.invoice_no || `#${invoice.id}`)}</b><span>Date / Time</span><b>${esc(formatDateTime(invoice.settled_at))}</b><span>Order / Table</span><b>${esc(`${invoice.order_reference || invoice.id} / ${invoice.table_no || invoice.order_type || ''}`)}</b>${billOption('bill_print_kot_references') && invoice.kot_references ? `<span>KOT No(s).</span><b>${esc(invoice.kot_references)}</b>` : ''}${billOption('bill_print_customer') ? `<span>Customer</span><b>${esc(invoice.customer_name || 'Walk-in customer')}</b>` : ''}<span>Cashier</span><b>${esc(invoice.cashier_name || 'Owner')}</b>${billOption('bill_print_payment') ? `<span>Payment</span><b>${esc(paymentText)}</b>` : ''}${registered ? `<span>Place of supply</span><b>${esc(`${profile.state || 'Tamil Nadu'} (${profile.state_code || '33'})`)}</b><span>SAC</span><b>${esc(profile.sac_code || '996331')}</b><span>Reverse charge</span><b>No</b>` : ''}</div>
+  <table class="items"><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table><div class="summary"><p><span>Total Qty</span><b>${totalQuantity}</b></p>${discountTotal > 0 ? `<p><span>Discount</span><b>-${currency} ${discountTotal.toFixed(2)}</b></p>` : ''}<p><span>Taxable value</span><b>${currency} ${subtotal.toFixed(2)}</b></p>${registered && taxRate > 0 ? `<p><span>CGST @ ${(taxRate / 2).toFixed(2)}%</span><b>${currency} ${halfTax.toFixed(2)}</b></p><p><span>SGST @ ${(taxRate / 2).toFixed(2)}%</span><b>${currency} ${halfTax.toFixed(2)}</b></p><p><span>Total GST</span><b>${currency} ${tax.toFixed(2)}</b></p>` : ''}<p class="grand"><span>GRAND TOTAL</span><b>${currency} ${grandTotal.toFixed(2)}</b></p></div><div class="footer">${profile.bill_footer_text ? `<p><b>${esc(profile.bill_footer_text)}</b></p>` : ''}<p class="compliance">${registered ? 'Tax is included in the amounts shown.' : 'This document does not collect GST.'}</p>${billOption('bill_print_authorised_signatory') ? '<p><b>Authorised Signatory</b></p>' : ''}</div></body></html>`;
   return html;
 }
 
@@ -869,6 +870,12 @@ function renderSettings() {
   settingTaxRate.value = settings.tax_rate || '0';
   settingSacCode.value = settings.sac_code || '996331';
   setChecked(settingShowQrOnBill, settings.show_qr_on_bill);
+  setChecked(settingBillPrintContact, settings.bill_print_contact);
+  setChecked(settingBillPrintKotReferences, settings.bill_print_kot_references);
+  setChecked(settingBillPrintCustomer, settings.bill_print_customer);
+  setChecked(settingBillPrintPayment, settings.bill_print_payment);
+  setChecked(settingBillPrintAuthorisedSignatory, settings.bill_print_authorised_signatory);
+  settingBillFooterText.value = settings.bill_footer_text || 'THANK YOU. VISIT AGAIN.';
   setChecked(settingQrRequireTablePin, settings.qr_require_table_pin === undefined ? true : settings.qr_require_table_pin);
   settingQrSessionMinutes.value = settings.qr_session_minutes || '30';
   settingUpiId.value = settings.upi_id || "";
@@ -941,6 +948,12 @@ function collectSettings() {
     tax_rate: settingTaxRate.value || '0',
     sac_code: settingSacCode.value || '996331',
     show_qr_on_bill: checkedValue(settingShowQrOnBill),
+    bill_print_contact: checkedValue(settingBillPrintContact),
+    bill_print_kot_references: checkedValue(settingBillPrintKotReferences),
+    bill_print_customer: checkedValue(settingBillPrintCustomer),
+    bill_print_payment: checkedValue(settingBillPrintPayment),
+    bill_print_authorised_signatory: checkedValue(settingBillPrintAuthorisedSignatory),
+    bill_footer_text: settingBillFooterText.value.trim(),
     qr_require_table_pin: checkedValue(settingQrRequireTablePin),
     qr_session_minutes: settingQrSessionMinutes.value || '30',
     upi_id: settingUpiId.value,
@@ -976,6 +989,7 @@ const SETTINGS_KEYS_BY_SECTION = {
   profile: ["restaurant_display_name", "legal_name", "gstin", "fssai_license_no", "state_code", "address_line_1", "address_line_2", "city", "state", "country", "phone", "email", "currency", "timezone", "logo_path"],
   pos: ["default_order_type", "allow_non_invoice_orders", "allow_discount", "allow_manual_price_override", "allow_refund", "allow_order_cancel", "require_manager_pin_for_discount", "require_manager_pin_for_refund", "require_manager_pin_for_void", "require_clock_in_before_order"],
   billing: ["invoice_prefix", "invoice_reset_frequency", "show_tax_on_bill", "tax_name", "tax_rate", "sac_code", "show_qr_on_bill", "qr_require_table_pin", "qr_session_minutes", "upi_id", "service_charge_enabled", "service_charge_percent", "round_off_enabled"],
+  "bill-print": ["bill_print_contact", "bill_print_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text"],
   kot: ["auto_print_kot", "print_kot_on_save", "print_kot_on_submit", "allow_kot_reprint", "kot_header_text", "kot_footer_text"],
   online: ["mobile_app_enabled", "online_order_enabled", "online_storefront_slug", "online_theme", "online_primary_color", "online_accent_color", "online_logo_path", "online_payment_methods", "online_require_otp", "online_allow_loyalty_credit", "online_delivery_enabled", "online_takeaway_enabled", "online_min_order_amount"]
 };
@@ -1027,6 +1041,7 @@ function showSettingsSection(section = "profile") {
     promos: "Promo Codes",
     pos: "POS Behaviour",
     kot: "Kitchen / KOT",
+    "bill-print": "Bill Configuration",
     online: "Online Ordering"
   };
   document.querySelectorAll("[data-settings-panel]").forEach((panel) => {

@@ -13,6 +13,7 @@ const billing = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/billi
 const adminDashboard = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/admin-dashboard.js'), 'utf8');
 const electronMain = fs.readFileSync(path.join(root, 'pos-app/electron/main.js'), 'utf8');
 const electronPreload = fs.readFileSync(path.join(root, 'pos-app/electron/preload.js'), 'utf8');
+const adminHtml = fs.readFileSync(path.join(root, 'pos-app/backend/public/admin.html'), 'utf8');
 
 assert.match(live, /activeTableId/);
 assert.match(live, /const isPositiveId/);
@@ -94,6 +95,10 @@ assert.match(electronMain, /SGST @/);
 assert.match(electronMain, /Total GST/);
 assert.match(electronMain, /Reverse charge/);
 assert.match(electronMain, /Authorised Signatory/);
+assert.match(adminHtml, /Printer Configuration/);
+assert.match(adminHtml, /data-settings-section="bill-print"/);
+assert.match(adminDashboard, /bill_print_kot_references/);
+assert.match(electronMain, /profile\.printKotReferences/);
 assert.match(electronMain, /kotReferences/);
 assert.match(electronMain, /win\.maximize\(\)/);
 assert.match(electronMain, /setZoomFactor\(initialZoom\)/);

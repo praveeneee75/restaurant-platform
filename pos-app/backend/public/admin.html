@@ -51,9 +51,10 @@
       </div>
 
       <div class="nav-group">
-        <p class="nav-group-title">System</p>
+        <p class="nav-group-title">Printer Configuration</p>
         <button class="nav-btn" data-view="printers">Printers</button>
         <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="kot">Kitchen / KOT</button>
+        <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="bill-print">Bill Configuration</button>
         <p class="nav-subtitle">Settings</p>
         <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="profile">Restaurant Profile</button>
         <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="billing">Billing</button>
@@ -491,6 +492,17 @@
             <label class="check-row"><input id="settingAllowKotReprint" type="checkbox"> Allow KOT reprint</label>
             <label>KOT header text<input id="settingKotHeaderText"></label>
             <label>KOT footer text<input id="settingKotFooterText"></label>
+          </article>
+
+          <article class="settings-section" data-settings-panel="bill-print" hidden>
+            <h3>Bill Configuration</h3>
+            <p class="settings-help">Supplier identity, GSTIN, FSSAI, invoice number/date, SAC, place of supply and statutory tax breakup are always printed on GST tax invoices.</p>
+            <label class="check-row"><input id="settingBillPrintContact" type="checkbox"> Print restaurant phone and email</label>
+            <label class="check-row"><input id="settingBillPrintKotReferences" type="checkbox"> Print KOT reference numbers</label>
+            <label class="check-row"><input id="settingBillPrintCustomer" type="checkbox"> Print customer name</label>
+            <label class="check-row"><input id="settingBillPrintPayment" type="checkbox"> Print payment method</label>
+            <label class="check-row"><input id="settingBillPrintAuthorisedSignatory" type="checkbox"> Print authorised-signatory line</label>
+            <label>Bill footer text<input id="settingBillFooterText" maxlength="120" placeholder="THANK YOU. VISIT AGAIN."></label>
           </article>
 
           <article class="settings-section" data-settings-panel="online" hidden>

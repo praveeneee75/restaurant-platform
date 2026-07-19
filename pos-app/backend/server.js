@@ -5867,6 +5867,7 @@ function invoicePdfText(value) {
 
 function buildInvoicePdf(invoice, items) {
   const printableItems = groupPrintableItems(items);
+  const billOption = (key) => !['0', 'false', 'off'].includes(String(invoice[key] ?? '1').toLowerCase());
   const total = Number(invoice.total_amount || 0);
   const taxRate = Number(invoice.tax_rate || 0);
   const taxIncluded = taxRate > 0 ? total * taxRate / (100 + taxRate) : 0;
@@ -5880,7 +5881,7 @@ function buildInvoicePdf(invoice, items) {
     '',
     `Date: ${invoice.settled_at || ''}`,
     invoice.invoice_no || `Invoice #${invoice.id}`,
-    `Customer: ${invoice.customer_name || 'Walk-in customer'}`,
+    ...(billOption('bill_print_customer') ? [`Customer: ${invoice.customer_name || 'Walk-in customer'}`] : []),
     `Table: ${invoice.table_no || invoice.order_type || ''}`,
     invoice.gstin ? `Place of supply: ${invoice.state || 'Tamil Nadu'} (${invoice.state_code || '33'})` : '',
     invoice.gstin ? `SAC: ${invoice.sac_code || '996331'}` : '',
@@ -5892,8 +5893,8 @@ function buildInvoicePdf(invoice, items) {
     ...(taxRate > 0 ? [`CGST (${(taxRate / 2).toFixed(2)}%): ${(taxIncluded / 2).toFixed(2)}`, `SGST (${(taxRate / 2).toFixed(2)}%): ${(taxIncluded / 2).toFixed(2)}`, `TOTAL GST: ${taxIncluded.toFixed(2)}`] : []),
     `TOTAL: ${total.toFixed(2)}`,
     '',
-    'THANK YOU. VISIT AGAIN.',
-    'Authorised Signatory'
+    invoice.bill_footer_text || '',
+    ...(billOption('bill_print_authorised_signatory') ? ['Authorised Signatory'] : [])
   ];
   const stream = ['BT', '/F1 11 Tf', '50 780 Td', ...lines.map((line, index) => `${index ? '0 -18 Td ' : ''}(${invoicePdfText(line)}) Tj`), 'ET'].join('\n');
   const objects = [
@@ -5926,6 +5927,7 @@ app.get('/orders/invoices/:id/pdf', (req, res) => {
       address_line_2: getConfigValue(db, 'address_line_2', ''),
       city: getConfigValue(db, 'city', ''), state: getConfigValue(db, 'state', ''), state_code: getConfigValue(db, 'state_code', '33'), country: getConfigValue(db, 'country', 'India'),
       gstin: getConfigValue(db, 'gstin', ''), fssai_license_no: getConfigValue(db, 'fssai_license_no', ''), sac_code: getConfigValue(db, 'sac_code', '996331'),
+      bill_print_customer: getConfigValue(db, 'bill_print_customer', '1'), bill_print_authorised_signatory: getConfigValue(db, 'bill_print_authorised_signatory', '1'), bill_footer_text: getConfigValue(db, 'bill_footer_text', 'THANK YOU. VISIT AGAIN.'),
       tax_rate: getNumberConfig(db, 'tax_rate', 0)
     });
     const items = db.prepare(`SELECT i.name, oi.quantity, oi.price FROM order_items oi LEFT JOIN items i ON i.id = oi.item_id WHERE oi.order_id = ? ORDER BY oi.id`).all(invoiceId);
@@ -6489,7 +6491,13 @@ app.post('/orders/settle', (req, res) => {
           currency: getConfigValue(db, 'currency', 'INR'),
           upiId: getConfigValue(db, 'upi_id', ''),
           showTaxOnBill: getBooleanConfig(db, 'show_tax_on_bill', true),
-          showQrOnBill: getBooleanConfig(db, 'show_qr_on_bill', false)
+          showQrOnBill: getBooleanConfig(db, 'show_qr_on_bill', false),
+          printContact: getBooleanConfig(db, 'bill_print_contact', true),
+          printKotReferences: getBooleanConfig(db, 'bill_print_kot_references', true),
+          printCustomer: getBooleanConfig(db, 'bill_print_customer', true),
+          printPayment: getBooleanConfig(db, 'bill_print_payment', true),
+          printAuthorisedSignatory: getBooleanConfig(db, 'bill_print_authorised_signatory', true),
+          footerText: getConfigValue(db, 'bill_footer_text', 'THANK YOU. VISIT AGAIN.')
         },
         payments,
         customerId: linkedCustomerId || null,
