@@ -834,7 +834,7 @@ async function savePartnerBranding() {
 
 async function createPartnerRestaurant() {
   try {
-    const profileInputs = [partnerRestaurantName, partnerRestaurantLegalName, partnerRestaurantGstin, partnerRestaurantFssai,
+    const profileInputs = [partnerRestaurantName, partnerRestaurantLegalName, partnerRestaurantGstin, partnerRestaurantFssai, partnerRestaurantSacCode, partnerRestaurantTaxRate,
       partnerRestaurantStateCode, partnerRestaurantAddress1, partnerRestaurantAddress2, partnerRestaurantCity,
       partnerRestaurantState, partnerRestaurantCountry, partnerRestaurantPhone, partnerRestaurantEmail,
       partnerRestaurantCurrency, partnerRestaurantTimezone];
@@ -847,6 +847,8 @@ async function createPartnerRestaurant() {
         legalName: partnerRestaurantLegalName.value.trim(),
         gstin: partnerRestaurantGstin.value.trim().toUpperCase(),
         fssaiLicenseNo: partnerRestaurantFssai.value.trim(),
+        sacCode: partnerRestaurantSacCode.value.trim(),
+        taxRate: partnerRestaurantTaxRate.value,
         stateCode: partnerRestaurantStateCode.value.trim(),
         addressLine1: partnerRestaurantAddress1.value.trim(),
         addressLine2: partnerRestaurantAddress2.value.trim(),
@@ -1086,7 +1088,7 @@ function updateCreateReview() {
 
 async function createRestaurant() {
   try {
-    if (!restaurantName.value.trim() || !restaurantLegalName.value.trim() || !restaurantGstin.value.trim() || !restaurantFssai.value.trim() || !restaurantContact.value.trim() || !restaurantOwnerEmail.value.trim() || !restaurantOwnerPhone.value.trim()) {
+    if (!restaurantName.value.trim() || !restaurantLegalName.value.trim() || !restaurantGstin.value.trim() || !restaurantFssai.value.trim() || !restaurantSacCode.value.trim() || !restaurantTaxRate.value.trim() || !restaurantContact.value.trim() || !restaurantOwnerEmail.value.trim() || !restaurantOwnerPhone.value.trim()) {
       showCreateStep(1);
       createMsg.innerText = "All restaurant identity and owner contact fields are required.";
       return;
@@ -1104,6 +1106,8 @@ async function createRestaurant() {
         legalName: restaurantLegalName.value.trim(),
         gstin: restaurantGstin.value.trim().toUpperCase(),
         fssaiLicenseNo: restaurantFssai.value.trim(),
+        sacCode: restaurantSacCode.value.trim(),
+        taxRate: restaurantTaxRate.value,
         stateCode: restaurantStateCode.value.trim(),
         addressLine1: restaurantAddress1.value.trim(),
         addressLine2: restaurantAddress2.value.trim(),

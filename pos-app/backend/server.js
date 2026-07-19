@@ -1010,7 +1010,7 @@ function applyCloudRestaurantProfile(db, licenseData) {
   const profile = licenseData?.restaurantProfile;
   if (!profile || typeof profile !== 'object') return;
   const allowed = [
-    'restaurant_display_name', 'legal_name', 'gstin', 'fssai_license_no', 'state_code',
+    'restaurant_display_name', 'legal_name', 'gstin', 'fssai_license_no', 'sac_code', 'tax_rate', 'state_code',
     'address_line_1', 'address_line_2', 'city', 'state', 'country', 'phone', 'email',
     'currency', 'timezone', 'logo_path'
   ];
@@ -5874,19 +5874,26 @@ function buildInvoicePdf(invoice, items) {
     invoice.restaurant_display_name || invoice.legal_name || 'RESTAURANT',
     invoice.address_line_1 || '',
     invoice.address_line_2 || '',
+    [invoice.city, invoice.state, invoice.state_code ? `Code ${invoice.state_code}` : '', invoice.country].filter(Boolean).join(', '),
+    invoice.gstin ? `GSTIN: ${invoice.gstin}` : '',
+    invoice.fssai_license_no ? `FSSAI: ${invoice.fssai_license_no}` : '',
     '',
     `Date: ${invoice.settled_at || ''}`,
     invoice.invoice_no || `Invoice #${invoice.id}`,
     `Customer: ${invoice.customer_name || 'Walk-in customer'}`,
     `Table: ${invoice.table_no || invoice.order_type || ''}`,
+    invoice.gstin ? `Place of supply: ${invoice.state || 'Tamil Nadu'} (${invoice.state_code || '33'})` : '',
+    invoice.gstin ? `SAC: ${invoice.sac_code || '996331'}` : '',
+    invoice.gstin ? 'Reverse charge: No' : '',
     '',
     ...printableItems.map((item) => `${item.name} x ${item.quantity}    ${(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}`),
     '',
     `SUBTOTAL: ${(total - taxIncluded).toFixed(2)}`,
-    ...(taxRate > 0 ? [`CGST (${(taxRate / 2).toFixed(2)}%): ${(taxIncluded / 2).toFixed(2)}`, `SGST (${(taxRate / 2).toFixed(2)}%): ${(taxIncluded / 2).toFixed(2)}`] : []),
+    ...(taxRate > 0 ? [`CGST (${(taxRate / 2).toFixed(2)}%): ${(taxIncluded / 2).toFixed(2)}`, `SGST (${(taxRate / 2).toFixed(2)}%): ${(taxIncluded / 2).toFixed(2)}`, `TOTAL GST: ${taxIncluded.toFixed(2)}`] : []),
     `TOTAL: ${total.toFixed(2)}`,
     '',
-    'THANK YOU. VISIT AGAIN.'
+    'THANK YOU. VISIT AGAIN.',
+    'Authorised Signatory'
   ];
   const stream = ['BT', '/F1 11 Tf', '50 780 Td', ...lines.map((line, index) => `${index ? '0 -18 Td ' : ''}(${invoicePdfText(line)}) Tj`), 'ET'].join('\n');
   const objects = [
@@ -5917,6 +5924,8 @@ app.get('/orders/invoices/:id/pdf', (req, res) => {
       legal_name: getConfigValue(db, 'legal_name', ''),
       address_line_1: getConfigValue(db, 'address_line_1', ''),
       address_line_2: getConfigValue(db, 'address_line_2', ''),
+      city: getConfigValue(db, 'city', ''), state: getConfigValue(db, 'state', ''), state_code: getConfigValue(db, 'state_code', '33'), country: getConfigValue(db, 'country', 'India'),
+      gstin: getConfigValue(db, 'gstin', ''), fssai_license_no: getConfigValue(db, 'fssai_license_no', ''), sac_code: getConfigValue(db, 'sac_code', '996331'),
       tax_rate: getNumberConfig(db, 'tax_rate', 0)
     });
     const items = db.prepare(`SELECT i.name, oi.quantity, oi.price FROM order_items oi LEFT JOIN items i ON i.id = oi.item_id WHERE oi.order_id = ? ORDER BY oi.id`).all(invoiceId);
@@ -6387,6 +6396,8 @@ app.post('/orders/settle', (req, res) => {
       ), 0);
       const payableBeforeRoundOff = Math.max(grossAmount + serviceCharge - Math.min(discountAmount, grossAmount + serviceCharge) - Math.min(redeem * pointValue, grossAmount + serviceCharge), 0);
       const payable = applyRoundOff(db, payableBeforeRoundOff);
+      const configuredTaxRate = getNumberConfig(db, 'tax_rate', 0);
+      const taxAmount = configuredTaxRate > 0 ? payable * configuredTaxRate / (100 + configuredTaxRate) : 0;
       const roundOff = payable - payableBeforeRoundOff;
       const loyaltyDiscount = Math.min(redeem * pointValue, grossAmount + serviceCharge);
       const paid = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
@@ -6419,10 +6430,10 @@ app.post('/orders/settle', (req, res) => {
       });
       db.prepare(`
         UPDATE orders
-        SET total_amount = ?, paid_amount = ?, payment_status = 'PAID', status = 'PAID', invoice_no = ?, is_invoice = ?, settled_at = CURRENT_TIMESTAMP,
+        SET total_amount = ?, tax_amount = ?, paid_amount = ?, payment_status = 'PAID', status = 'PAID', invoice_no = ?, is_invoice = ?, settled_at = CURRENT_TIMESTAMP,
             customer_id = COALESCE(?, customer_id), redeemed_points = ?, loyalty_discount = ?
         WHERE id = ?
-      `).run(payable, paid, invoiceNo, isInvoice === false ? 0 : 1, linkedCustomerId || null, redeem, loyaltyDiscount, orderId);
+      `).run(payable, taxAmount, paid, invoiceNo, isInvoice === false ? 0 : 1, linkedCustomerId || null, redeem, loyaltyDiscount, orderId);
       if (linkedCustomerId) {
         db.prepare('INSERT INTO customer_visits (customer_id, order_id, amount) VALUES (?, ?, ?)')
           .run(linkedCustomerId, orderId, paid);

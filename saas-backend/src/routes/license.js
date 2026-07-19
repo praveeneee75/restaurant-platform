@@ -14,6 +14,8 @@ function restaurantProfile(row) {
     legal_name: row.legal_name || '',
     gstin: row.gstin || '',
     fssai_license_no: row.fssai_license_no || '',
+    sac_code: row.sac_code || '996331',
+    tax_rate: row.tax_rate ?? '5',
     state_code: row.state_code || '',
     address_line_1: row.address_line_1 || '',
     address_line_2: row.address_line_2 || '',
@@ -54,7 +56,7 @@ router.post('/validate', async (req, res) => {
         restaurantName: 'KMaster White Label Demo Restaurant',
         restaurantProfile: {
           restaurant_display_name: 'KMaster White Label Demo Restaurant', legal_name: 'KMaster Demo Foods',
-          gstin: '33ABCDE1234F1Z5', fssai_license_no: '12345678901234', state_code: '33',
+          gstin: '33ABCDE1234F1Z5', fssai_license_no: '12345678901234', sac_code: '996331', tax_rate: '5', state_code: '33',
           address_line_1: 'Demo High Street', address_line_2: 'Near Central Bus Stand', city: 'Chennai',
           state: 'Tamil Nadu', country: 'India', phone: '+91 98765 43210', email: 'demo@kmasterpos.com',
           currency: 'INR', timezone: 'Asia/Kolkata', logo_path: ''
@@ -77,7 +79,7 @@ router.post('/validate', async (req, res) => {
       `
       SELECT l.status, l.expires_at, l.sync_token,
              t.id AS tenant_id, t.name AS restaurant_name, t.legal_name, t.gstin,
-             t.fssai_license_no, t.state_code, t.address_line_1, t.address_line_2,
+             t.fssai_license_no, t.sac_code, t.tax_rate, t.state_code, t.address_line_1, t.address_line_2,
              t.city, t.state, t.country, t.phone, t.email, t.currency, t.timezone, t.logo_path,
              p.code AS package_code, p.name AS package_name
       FROM licenses l

@@ -12,7 +12,7 @@ const adminJs = read('saas-backend/public/js/admin.js');
 const pos = read('pos-app/backend/server.js');
 
 const requiredKeys = [
-  'legal_name', 'gstin', 'fssai_license_no', 'state_code', 'address_line_1', 'address_line_2',
+  'legal_name', 'gstin', 'fssai_license_no', 'sac_code', 'tax_rate', 'state_code', 'address_line_1', 'address_line_2',
   'city', 'state', 'country', 'phone', 'email', 'currency', 'timezone'
 ];
 const migratedKeys = requiredKeys.filter((key) => !['country', 'currency'].includes(key));
@@ -29,9 +29,12 @@ for (const source of [tenants, partners]) {
   if (!source.includes('All restaurant profile')) throw new Error('An onboarding API does not enforce the full profile');
   if (!source.includes('15-character GSTIN')) throw new Error('An onboarding API lacks GSTIN validation');
   if (!source.includes('14 digits')) throw new Error('An onboarding API lacks FSSAI validation');
+  if (!source.includes('SAC code must contain 6 to 8 digits')) throw new Error('An onboarding API lacks SAC validation');
+  if (!source.includes('GST rate must be between 0 and 100')) throw new Error('An onboarding API lacks GST-rate validation');
 }
 
 if (!adminHtml.includes('Logo path (optional)')) throw new Error('Logo is not identified as optional');
+if (!adminHtml.includes('restaurantSacCode') || !adminHtml.includes('restaurantTaxRate')) throw new Error('SaaS onboarding is missing invoice-tax fields');
 if (!adminJs.includes('restaurantProfile')) {
   // The client sends individual profile fields; this guard ensures the onboarding implementation remains present.
   if (!adminJs.includes('fssaiLicenseNo') || !adminJs.includes('addressLine2') || !adminJs.includes('timezone')) {

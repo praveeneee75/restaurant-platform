@@ -26,6 +26,8 @@ async function migrate() {
   await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS gstin TEXT');
   await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS fssai_license_no TEXT');
   await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS state_code TEXT');
+  await pool.query("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS sac_code TEXT DEFAULT '996331'");
+  await pool.query("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,2) DEFAULT 5");
   await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS address_line_1 TEXT');
   await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS address_line_2 TEXT');
   await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS city TEXT');

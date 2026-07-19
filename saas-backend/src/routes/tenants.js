@@ -24,14 +24,14 @@ async function enablePlanModules(client, tenantId, planId) {
 
 router.post('/create', authenticate, async (req, res) => {
   const {
-    name, legalName, gstin, fssaiLicenseNo, stateCode, addressLine1, addressLine2,
+    name, legalName, gstin, fssaiLicenseNo, sacCode, taxRate, stateCode, addressLine1, addressLine2,
     city, state, country, phone, email, currency, timezone, logoPath,
     ownerName, ownerEmail, ownerPhone, expiryDate,
     planCode, startsAt, paymentAmount, paymentMode, referenceNo
   } = req.body;
 
   const requiredProfile = {
-    name, legalName, gstin, fssaiLicenseNo, stateCode, addressLine1, addressLine2,
+    name, legalName, gstin, fssaiLicenseNo, sacCode, taxRate, stateCode, addressLine1, addressLine2,
     city, state, country, phone, email, currency, timezone
   };
   const missingProfile = Object.entries(requiredProfile).filter(([, value]) => !String(value || '').trim()).map(([key]) => key);
@@ -43,6 +43,8 @@ router.post('/create', authenticate, async (req, res) => {
   const normalizedFssai = String(fssaiLicenseNo).replace(/\D/g, '');
   if (!/^\d{14}$/.test(normalizedFssai)) return res.status(400).json({ success: false, message: 'FSSAI licence / registration number must contain 14 digits' });
   if (!/^\d{2}$/.test(String(stateCode).trim())) return res.status(400).json({ success: false, message: 'State code must contain 2 digits' });
+  if (!/^\d{6,8}$/.test(String(sacCode).trim())) return res.status(400).json({ success: false, message: 'SAC code must contain 6 to 8 digits' });
+  if (!Number.isFinite(Number(taxRate)) || Number(taxRate) < 0 || Number(taxRate) > 100) return res.status(400).json({ success: false, message: 'GST rate must be between 0 and 100' });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return res.status(400).json({ success: false, message: 'Enter a valid restaurant email address' });
   if (!/^\+?[\d ()-]{8,20}$/.test(String(phone).trim())) return res.status(400).json({ success: false, message: 'Enter a valid restaurant phone number' });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(ownerEmail).trim())) {
@@ -65,12 +67,12 @@ router.post('/create', authenticate, async (req, res) => {
     await client.query('BEGIN');
     await client.query(
       `INSERT INTO tenants (
-         id, restaurant_code, name, legal_name, gstin, fssai_license_no, state_code,
+         id, restaurant_code, name, legal_name, gstin, fssai_license_no, sac_code, tax_rate, state_code,
          address_line_1, address_line_2, city, state, country, phone, email, currency,
          timezone, logo_path, contact_name, contact_email, contact_phone
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
       [tenantId, restaurantCode, String(name).trim(), String(legalName).trim(), normalizedGstin, normalizedFssai,
-        String(stateCode).trim(), String(addressLine1).trim(), String(addressLine2).trim(), String(city).trim(),
+        String(sacCode).trim(), Number(taxRate), String(stateCode).trim(), String(addressLine1).trim(), String(addressLine2).trim(), String(city).trim(),
         String(state).trim(), String(country).trim(), String(phone).trim(), String(email).trim().toLowerCase(),
         String(currency).trim().toUpperCase(), String(timezone).trim(), String(logoPath || '').trim() || null,
         ownerName.trim(), ownerEmail.trim().toLowerCase(), normalizedPhone]
