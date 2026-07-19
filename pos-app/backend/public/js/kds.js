@@ -68,7 +68,7 @@ async function postJson(url, body) {
 }
 
 function renderKitchenOptions() {
-  kitchenSelectOptions.innerHTML = state.kitchens.map((kitchen) => `<label><input type="checkbox" data-kitchen-id="${kitchen.id}" ${state.kitchenIds.includes(Number(kitchen.id))?'checked':''}> ${esc(kitchen.name)}</label>`).join("");
+  kitchenSelectOptions.innerHTML = state.kitchens.map((kitchen) => `<label><input type="checkbox" data-kitchen-id="${kitchen.id}" ${state.kitchenIds.includes(Number(kitchen.id))?'checked':''}><span>${esc(kitchen.name)}</span></label>`).join("");
   const selected = state.kitchens.filter((kitchen) => state.kitchenIds.includes(Number(kitchen.id))).map((kitchen) => kitchen.name);
   kitchenSelectLabel.textContent = selected.length === state.kitchens.length ? 'All kitchens' : selected.length ? selected.join(', ') : 'Select kitchens';
 }
@@ -180,6 +180,7 @@ document.addEventListener("click", async (event) => {
 kitchenSelectOptions.addEventListener("change", async () => {
   state.kitchenIds = [...kitchenSelectOptions.querySelectorAll('[data-kitchen-id]:checked')].map(input=>Number(input.dataset.kitchenId));
   renderKitchenOptions();
+  kitchenSelect.open = false;
   state.firstLoad = true;
   await loadOrders();
 });

@@ -77,7 +77,7 @@ router.get('/storefronts', async (req, res) => {
     `, [organizationId || null]);
     res.json({ success: true, storefronts: result.rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: publicError(err) });
+    res.status(err.statusCode || 500).json({ success: false, message: publicError(err) });
   }
 });
 
@@ -109,7 +109,7 @@ router.get('/storefront/:slug/menu', async (req, res) => {
       menuSyncedAt: menu.rows[0]?.synced_at || null
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: publicError(err) });
+    res.status(err.statusCode || 500).json({ success: false, message: publicError(err) });
   }
 });
 

@@ -1659,3 +1659,9 @@ body.saas-shell {
     grid-template-columns: 1fr;
   }
 }
+
+.qr-order-fields { display:grid; grid-template-columns:minmax(220px,360px); gap:8px; justify-items:stretch; align-items:start; text-align:left; }
+.qr-order-fields label { display:grid; grid-template-columns:1fr; gap:6px; margin:0; text-align:left; }
+.qr-order-fields input, .qr-order-fields textarea { width:100%; margin:0; box-sizing:border-box; }
+.qr-order-fields button { justify-self:start; }
+.qr-order-fields .field-error { min-height:18px; margin:0; color:#b91c1c; text-align:left; }

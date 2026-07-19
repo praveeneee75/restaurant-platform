@@ -16,6 +16,12 @@ const canSettleAndPrint = privilegedBillingRoles.has(String(sessionUser.role || 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = v => `INR ${Number(v || 0).toFixed(2)}`;
 async function getJson(url) { const r = await fetch(url); const d = await r.json(); if (!r.ok) throw Error(d.message || 'Unable to load billing data'); return d; }
+async function loadBillingQrSettings() {
+  const data = await getJson(`/settings?restaurantId=${encodeURIComponent(restaurantId)}`);
+  const settings = data.settings || {};
+  billingQrEnabled.checked = !['0', 0, false, 'false'].includes(settings.qr_ordering_enabled);
+  billingQrPendingLimit.value = settings.qr_pending_order_limit || 25;
+}
 function visibleOrders() { const q = (billingSearch.value || '').toLowerCase().trim(); return state.orders.filter(o => o.has_submitted_kot && (!q || `${o.id} ${o.table_no || ''} ${o.customer_name || ''} ${o.order_reference || ''}`.toLowerCase().includes(q))).map(o => ({ ...o, total_amount: Number(o.submitted_total ?? o.total_amount ?? 0) })); }
 function normalizeTableName(value) { return String(value || '').trim().toLowerCase().replace(/\s+/g, ' '); }
 function billingAmount(order) { return order.has_submitted_kot ? (order.submitted_total ?? order.total_amount) : 0; }
@@ -34,9 +40,22 @@ async function load() { const [boot, live, pendingQr] = await Promise.all([getJs
 document.addEventListener('click', e => { const order = e.target.closest('[data-order-id]'); if (order?.dataset.orderId) showOrder(order.dataset.orderId); const filter = e.target.closest('[data-recent-filter]'); if (filter) { state.filter = filter.dataset.recentFilter; document.querySelectorAll('[data-recent-filter]').forEach(x => x.classList.toggle('active', x === filter)); renderRecent(); } });
 document.addEventListener('click', async e => { const button = e.target.closest('[data-settle-order]'); if (!button) return; const amount = Number(document.getElementById('billingPaymentAmount').value); const method = document.getElementById('billingPaymentMethod').value; const redeemPoints = Number(document.getElementById('billingRedeemPoints')?.value || 0); const printBill = button.dataset.printBill === 'true'; if (!Number.isFinite(amount) || amount <= 0) return alert('Enter a valid payment amount'); if (!Number.isInteger(redeemPoints) || redeemPoints < 0) return alert('Redeem points must be a whole number'); button.disabled = true; try { const user = JSON.parse(localStorage.getItem('user') || '{}'); const r = await fetch('/orders/settle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ restaurantId, actor: { id: user.id, role: user.role || 'CASHIER' }, orderId: Number(button.dataset.settleOrder), redeemPoints, payments: [{ method, amount }], printBill }) }); const d = await r.json(); if (!r.ok || d.success === false) throw Error(d.message || 'Settlement failed'); alert(printBill ? `${d.printMessage} Invoice ${d.invoiceNo}` : `Invoice ${d.invoiceNo} created`); await load(); billingDetail.innerHTML = '<div class="billing-empty">Bill settled. Select another open customer bill.</div>'; } catch (err) { alert(err.message); button.disabled = false; } });
 billingSearch.addEventListener('input', () => { renderTables(); renderRecent(); });
-refreshBilling.addEventListener('click', () => load().catch(e => billingStatus.textContent = e.message));
+refreshBilling.addEventListener('click', () => Promise.all([load(), loadBillingQrSettings()]).catch(e => billingStatus.textContent = e.message));
+saveBillingQrSettings.addEventListener('click', async () => {
+  const limit = Number(billingQrPendingLimit.value);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 500) { billingQrSettingsStatus.textContent = 'Enter a maximum between 1 and 500.'; billingQrPendingLimit.focus(); return; }
+  saveBillingQrSettings.disabled = true;
+  try {
+    const response = await fetch('/settings/update', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ restaurantId, actor:{ id:sessionUser.id, role:sessionUser.role }, settings:{ qr_ordering_enabled:billingQrEnabled.checked?'1':'0', qr_pending_order_limit:String(limit) } }) });
+    const data = await response.json();
+    if (!response.ok || data.success === false) throw Error(data.message || 'Unable to save QR settings');
+    billingQrSettingsStatus.textContent = billingQrEnabled.checked ? 'QR ordering is enabled.' : 'QR ordering is disabled. Customers will be asked to order through the waiter.';
+    await load();
+  } catch (error) { billingQrSettingsStatus.textContent = error.message; }
+  finally { saveBillingQrSettings.disabled = false; }
+});
 document.addEventListener('click', async (event) => { const button=event.target.closest('[data-approve-qr],[data-reject-qr]'); if(!button)return; const rejecting=Boolean(button.dataset.rejectQr); const orderId=Number(button.dataset.rejectQr||button.dataset.approveQr); button.disabled=true; try { const response=await fetch(rejecting?'/qr/orders/reject':'/qr/orders/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({restaurantId,actor:{id:sessionUser.id,role:sessionUser.role},orderId,reason:rejecting?'Rejected from billing':undefined})}); const data=await response.json(); if(!response.ok||data.success===false)throw Error(data.message||'QR order action failed'); billingStatus.textContent=data.message; window.dispatchEvent(new Event('pos:notifications-changed')); await load(); } catch(error){billingStatus.textContent=error.message;button.disabled=false;} });
-load().catch(e => billingStatus.textContent = e.message);
+Promise.all([load(), loadBillingQrSettings()]).catch(e => billingStatus.textContent = e.message);
 
 // Billing must show only kitchen-submitted lines; saved draft lines stay in POS.
 async function showSubmittedOrder(orderId) {

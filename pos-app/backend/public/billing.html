@@ -21,7 +21,15 @@
   <main class="billing-main">
     <header class="billing-topbar"><div><h1>Table View</h1><p id="billingStatus">Loading billing data...</p></div><div class="billing-actions"><button id="refreshBilling" class="secondary-btn">Refresh</button></div></header>
     <section class="billing-toolbar"><div class="billing-legend"><span><i class="legend blank"></i>Available</span><span><i class="legend running"></i>Running</span><span><i class="legend paid"></i>Paid</span><span><i class="legend kot"></i>Running KOT</span></div><input id="billingSearch" type="search" placeholder="Search table, order or customer"></section>
-    <section class="billing-summary-panel"><div style="grid-column:1/-1"><span>QR orders waiting for approval</span><div id="pendingQrApprovals"></div></div></section>
+    <section class="billing-summary-panel"><div style="grid-column:1/-1">
+      <div class="billing-qr-controls">
+        <label class="billing-qr-toggle"><input id="billingQrEnabled" type="checkbox"><span>Enable QR ordering</span></label>
+        <label for="billingQrPendingLimit"><span>Maximum QR orders waiting for approval</span><input id="billingQrPendingLimit" type="number" min="1" max="500" step="1"></label>
+        <button id="saveBillingQrSettings" type="button" class="secondary-btn">Save QR settings</button>
+      </div>
+      <p id="billingQrSettingsStatus" role="status" aria-live="polite"></p>
+      <span>QR orders waiting for approval</span><div id="pendingQrApprovals"></div>
+    </div></section>
     <section id="tableMap" class="billing-table-map"></section>
     <section class="billing-summary-panel"><div><span>Open bills</span><strong id="openBills">0</strong></div><div><span>Paid today</span><strong id="paidToday">0</strong></div><div><span>Today's collection</span><strong id="collectionTotal">INR 0.00</strong></div></section>
   </main>
