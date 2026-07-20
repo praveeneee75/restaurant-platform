@@ -103,13 +103,14 @@
         <label>Printer name<input id="printerName" placeholder="Kitchen thermal printer" required></label>
         <label>Type<select id="printerType"><option>KITCHEN</option><option>BILL</option><option>BAR</option><option>TOKEN</option></select></label>
         <label>Connection<select id="printerConnection"><option>USB</option><option>NETWORK</option><option>WINDOWS</option><option>BLUETOOTH</option></select></label>
+        <label>Paper width<select id="printerPaperWidth"><option value="58">58 mm</option><option value="80">80 mm</option></select></label>
         <label>Address<input id="printerAddress" placeholder="Selected printer address or system name"></label>
         <div class="printer-discovery"><button type="button" class="secondary-btn" id="discoverPrinters">Search nearby printers</button><span id="printerDiscoveryStatus" class="form-hint">Network search uses the local restaurant network.</span></div>
         <label id="printerDiscoveryResultsLabel" hidden>Discovered printer<select id="printerDiscoveryResults"><option value="">Select a printer</option></select></label>
         <label class="check-row"><input id="printerActive" type="checkbox" checked> Active</label>
         <button>Save Printer</button><button type="button" class="secondary-btn" data-reset-form="printerForm">Clear</button>
       </form>
-      <div class="table-panel"><table class="printers-table"><thead><tr><th>Printer</th><th>Type</th><th>Connection</th><th>Address</th><th>Status</th><th>Actions</th></tr></thead><tbody id="printersTable"></tbody></table></div>
+      <div class="table-panel"><table class="printers-table"><thead><tr><th>Printer</th><th>Type</th><th>Connection</th><th>Paper</th><th>Address</th><th>Status</th><th>Actions</th></tr></thead><tbody id="printersTable"></tbody></table></div>
     </section>
 
     <section class="admin-view" id="view-categories">

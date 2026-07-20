@@ -311,7 +311,7 @@ function renderAdmin() {
   fillSelect(comboItem, items);
   fillSelect(reservationTable, tables, "table_name");
   kitchensTable.innerHTML = kitchens.map((k) => `<tr><td>${esc(k.name)}</td><td>${esc(k.printer_name || "Not assigned")}</td><td>${k.active ? "Active" : "Inactive"}</td><td>${actions("kitchen", k.id)}</td></tr>`).join("");
-  printersTable.innerHTML = printers.map((printer) => `<tr><td>${esc(printer.name)}</td><td>${esc(printer.type)}</td><td>${esc(printer.connection)}</td><td>${esc(printer.address || "")}</td><td>${printer.active ? "Active" : "Inactive"}</td><td><span class="action-cell"><button type="button" class="secondary-btn" data-test-printer="${printer.id}">Test Print</button><button class="mini-btn" data-edit-printer="${printer.id}" type="button">Edit</button><button class="danger-btn" data-delete-printer="${printer.id}" type="button">Delete</button></span></td></tr>`).join("");
+  printersTable.innerHTML = printers.map((printer) => `<tr><td>${esc(printer.name)}</td><td>${esc(printer.type)}</td><td>${esc(printer.connection)}</td><td>${esc(printer.paper_width_mm || 58)} mm</td><td>${esc(printer.address || "")}</td><td>${printer.active ? "Active" : "Inactive"}</td><td><span class="action-cell"><button type="button" class="secondary-btn" data-test-printer="${printer.id}">Test Print</button><button class="mini-btn" data-edit-printer="${printer.id}" type="button">Edit</button><button class="danger-btn" data-delete-printer="${printer.id}" type="button">Delete</button></span></td></tr>`).join("");
   categoriesTable.innerHTML = categories.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.kitchen_name || "Unassigned")}${Number(c.kitchen_active) === 0 ? " (inactive kitchen)" : ""}</td><td>${c.active ? "Active" : "Inactive"}</td><td>${actions("category", c.id)}</td></tr>`).join("");
   const term = (itemSearch?.value || "").toLowerCase();
   itemsTable.innerHTML = items.filter((i) => !term || i.name.toLowerCase().includes(term)).map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td><td>${i.active ? "Active" : "Inactive"}${Number(i.online_enabled ?? 1) ? "" : " / Hidden online"}</td><td>${actions("item", i.id)}</td></tr>`).join("");
@@ -733,6 +733,7 @@ function editPrinter(id) {
   printerName.value = row.name || "";
   printerType.value = row.type || "KITCHEN";
   printerConnection.value = row.connection || "USB";
+  printerPaperWidth.value = String(row.paper_width_mm || 58);
   printerAddress.value = row.address || "";
   printerActive.checked = Number(row.active) !== 0;
   focusFirstInput(printerForm);
@@ -1167,7 +1168,7 @@ runDemoReset.addEventListener("click", async () => {
 });
 
 kitchenForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/kitchens/save", { id: kitchenId.value || null, name: kitchenName.value, printerId: kitchenPrinterId.value || null, active: kitchenActive.checked }); kitchenForm.reset(); kitchenActive.checked = true; await loadAdmin(); });
-printerForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/printers/save", { id: printerId.value || null, name: printerName.value, type: printerType.value, connection: printerConnection.value, address: printerAddress.value, active: printerActive.checked }); printerForm.reset(); printerActive.checked = true; await loadAdmin(); });
+printerForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/printers/save", { id: printerId.value || null, name: printerName.value, type: printerType.value, connection: printerConnection.value, address: printerAddress.value, paperWidthMm: Number(printerPaperWidth.value || 58), active: printerActive.checked }); printerForm.reset(); printerPaperWidth.value = "58"; printerActive.checked = true; await loadAdmin(); });
 discoverPrinters?.addEventListener('click', async () => {
   discoverPrinters.disabled = true;
   printerDiscoveryStatus.textContent = 'Searching nearby printers...';

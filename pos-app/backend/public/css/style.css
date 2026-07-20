@@ -672,6 +672,7 @@ button:hover,
 .parcel-item-entry .item-grid:empty { display:none; }
 .pos-mode-parcel .pos-menu .item-tile { min-height:0; padding:10px 12px; border:0; border-bottom:1px solid var(--border); border-radius:0; display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:10px; align-items:center; }
 .pos-mode-parcel .pos-menu .item-tile:last-child { border-bottom:0; }
+.pos-mode-parcel .pos-menu .item-tile.keyboard-active { background:#dbeafe; box-shadow:inset 4px 0 #2563eb; }
 .pos-mode-parcel .pos-menu .item-tile strong { overflow-wrap:anywhere; }
 .pos-mode-parcel .pos-menu .item-tile .item-price { margin:0; white-space:nowrap; }
 .pos-mode-parcel .pos-cart { padding:14px; background:#fff; overflow:auto; }

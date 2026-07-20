@@ -2967,7 +2967,8 @@ app.get('/print-jobs/pending', (req, res) => {
 
   try {
     const jobs = db.prepare(`
-      SELECT pj.*, p.name AS printer_name, p.connection AS printer_connection, p.address AS printer_address
+      SELECT pj.*, p.name AS printer_name, p.connection AS printer_connection,
+             p.address AS printer_address, COALESCE(p.paper_width_mm, 58) AS paper_width_mm
       FROM print_jobs pj
       LEFT JOIN printers p ON p.id = pj.printer_id AND p.active = 1
       WHERE pj.status = 'PENDING'
@@ -3582,7 +3583,7 @@ app.get('/admin/bootstrap', (req, res) => {
         id: db.__restaurantId || restaurantId,
         name: getConfigValue(db, 'restaurant_display_name', db.__restaurantId || restaurantId)
       },
-      printers: db.prepare("SELECT id, name, type, connection, address, active, created_at FROM printers WHERE (? = 'true' OR active = 1) ORDER BY type, name").all(includeInactive),
+      printers: db.prepare("SELECT id, name, type, connection, address, COALESCE(paper_width_mm, 58) AS paper_width_mm, active, created_at FROM printers WHERE (? = 'true' OR active = 1) ORDER BY type, name").all(includeInactive),
       kitchens: db.prepare("SELECT id, name, printer_name, printer_id, active FROM kitchens WHERE (? = 'true' OR active = 1) ORDER BY name").all(includeInactive),
       categories: db.prepare(`
         SELECT c.id, c.name, c.kitchen_id, c.active, k.name AS kitchen_name,
@@ -3704,11 +3705,12 @@ app.post('/admin/promo-codes/delete', (req, res) => {
 });
 
 app.post('/admin/printers/save', (req, res) => {
-  const { restaurantId, actor, id, name, type, connection, address, active } = req.body;
+  const { restaurantId, actor, id, name, type, connection, address, active, paperWidthMm } = req.body;
   const printerTypes = ['KITCHEN', 'BILL', 'BAR', 'TOKEN'];
   const connections = ['USB', 'NETWORK', 'WINDOWS', 'BLUETOOTH'];
   const cleanType = String(type || 'KITCHEN').toUpperCase();
   const cleanConnection = String(connection || 'USB').toUpperCase();
+  const cleanPaperWidth = Number(paperWidthMm) === 80 ? 80 : 58;
   if (!restaurantId || !hasText(name) || !printerTypes.includes(cleanType) || !connections.includes(cleanConnection) || !canManage(actor?.role)) {
     return res.status(400).json({ success: false, message: 'Printer name, type, connection and manager permission are required' });
   }
@@ -3718,10 +3720,10 @@ app.post('/admin/printers/save', (req, res) => {
     if (activeNameExists(db, 'printers', 'name', name, id)) throw new Error('Printer name already exists');
     const oldValue = id ? db.prepare('SELECT * FROM printers WHERE id = ?').get(id) : null;
     const result = id
-      ? db.prepare('UPDATE printers SET name = ?, type = ?, connection = ?, address = ?, active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-        .run(normaliseText(name), cleanType, cleanConnection, normaliseText(address) || null, active === false ? 0 : 1, id)
-      : db.prepare('INSERT INTO printers (name, type, connection, address, active) VALUES (?, ?, ?, ?, 1)')
-        .run(normaliseText(name), cleanType, cleanConnection, normaliseText(address) || null);
+      ? db.prepare('UPDATE printers SET name = ?, type = ?, connection = ?, address = ?, paper_width_mm = ?, active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(normaliseText(name), cleanType, cleanConnection, normaliseText(address) || null, cleanPaperWidth, active === false ? 0 : 1, id)
+      : db.prepare('INSERT INTO printers (name, type, connection, address, paper_width_mm, active) VALUES (?, ?, ?, ?, ?, 1)')
+        .run(normaliseText(name), cleanType, cleanConnection, normaliseText(address) || null, cleanPaperWidth);
     const printerId = id || result.lastInsertRowid;
     const newValue = db.prepare('SELECT * FROM printers WHERE id = ?').get(printerId);
     writeAudit(db, actor, id ? 'UPDATE' : 'CREATE', 'PRINTER', printerId, oldValue, newValue);

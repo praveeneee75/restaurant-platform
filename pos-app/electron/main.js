@@ -34,7 +34,7 @@ const desktopIconPath = path.join(__dirname, '..', 'build', 'icon.png');
 const preloadPath = path.join(__dirname, 'preload.js');
 
 function printableWindow(html) {
-  const fitGuard = `<style data-kmaster-paper-fit>@media print{@page{size:auto;margin:1.5mm}html,body{width:auto!important;max-width:100%!important;margin-left:0!important;margin-right:0!important;padding-left:0!important;padding-right:0!important;overflow:visible!important}*,*::before,*::after{box-sizing:border-box!important;max-width:100%!important}table{width:100%!important;max-width:100%!important}img,svg,canvas{max-width:100%!important;height:auto!important}th,td,p,span,strong,b{overflow-wrap:anywhere}}</style>`;
+  const fitGuard = `<style data-kmaster-paper-fit>@media print{@page{margin:0}html{width:100%!important;max-width:100%!important;margin:0!important;padding:0!important;overflow:visible!important}body{width:100%!important;max-width:100%!important;margin:0!important;padding:3mm!important;overflow:visible!important}*,*::before,*::after{box-sizing:border-box!important;max-width:100%!important}table{width:100%!important;max-width:100%!important}img,svg,canvas{max-width:100%!important;height:auto!important}th,td,p,span,strong,b{overflow-wrap:anywhere}}</style>`;
   const source = String(html || '');
   const fittedHtml = source.includes('</head>') ? source.replace('</head>', `${fitGuard}</head>`) : `${fitGuard}${source}`;
   const win = new BrowserWindow({
@@ -167,7 +167,7 @@ function thermalPrintHtml(job) {
   const payload = typeof job.payload === 'string' ? JSON.parse(job.payload || '{}') : (job.payload || {});
   // Use the printer driver's real printable area. A hard-coded 76 mm body is wider
   // than many nominal 80 mm devices (and every 58 mm device), which clips both edges.
-  const thermalPageCss = '@page{size:auto;margin:1.5mm}html,body{width:auto;max-width:100%;margin:0;padding:0;overflow:hidden}*{box-sizing:border-box;max-width:100%}';
+  const thermalPageCss = '@page{margin:0}html{width:100%;margin:0;padding:0}body{width:100%;max-width:100%;margin:0;padding:3mm;overflow:hidden}*{box-sizing:border-box;max-width:100%}';
   if (job.type === 'KOT') {
     const orderType = String(payload.orderType || 'DINE_IN').toUpperCase();
     const orderLabel = orderType === 'DINE_IN' ? 'Dine In' : orderType === 'PARCEL' || orderType === 'TAKEAWAY' ? 'Parcel' : orderType.replaceAll('_', ' ');
@@ -204,7 +204,22 @@ async function printToConfiguredPrinter(job) {
       || printers.find((item) => String(item.name).toLowerCase() === configuredName)
       || printers.find((item) => item.isDefault);
     if (!printer) throw new Error('Configured printer was not found in Windows. Search printers again in Admin > Printers.');
-    await new Promise((resolve, reject) => win.webContents.print({ silent: true, deviceName: printer.name, printBackground: true, margins: { marginType: 'none' } }, (success, reason) => success ? resolve() : reject(new Error(reason || 'Printer rejected the job'))));
+    const paperWidthMm = Number(job.paper_width_mm) === 80 ? 80 : 58;
+    const contentHeightPx = await win.webContents.executeJavaScript('Math.ceil(Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))');
+    const contentHeightMicrons = Math.ceil(Number(contentHeightPx || 0) * 25400 / 96);
+    const pageSize = {
+      width: paperWidthMm * 1000,
+      height: Math.max(40000, Math.min(contentHeightMicrons + 6000, 1000000))
+    };
+    await new Promise((resolve, reject) => win.webContents.print({
+      silent: true,
+      deviceName: printer.name,
+      printBackground: true,
+      landscape: false,
+      scaleFactor: 100,
+      pageSize,
+      margins: { marginType: 'none' }
+    }, (success, reason) => success ? resolve() : reject(new Error(reason || 'Printer rejected the job'))));
   } finally {
     if (!win.isDestroyed()) win.destroy();
   }
@@ -218,6 +233,7 @@ ipcMain.handle('pos:test-printer', async (_event, printer = {}) => {
     created_at: new Date().toISOString(),
     printer_name: String(printer.name || ''),
     printer_address: String(printer.address || ''),
+    paper_width_mm: Number(printer.paper_width_mm) === 80 ? 80 : 58,
     payload: isBill ? {
       invoiceNo: 'TEST PRINT', orderReference: 'TEST', tableNumber: 'Printer setup', payable: 0,
       restaurantProfile: { displayName: "K'Master POS Printer Test", currency: 'INR' },

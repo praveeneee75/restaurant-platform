@@ -283,6 +283,7 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'printers', "type TEXT DEFAULT 'KITCHEN'");
   addColumn(db, 'printers', "connection TEXT DEFAULT 'USB'");
   addColumn(db, 'printers', 'address TEXT');
+  addColumn(db, 'printers', 'paper_width_mm INTEGER DEFAULT 58');
   addColumn(db, 'printers', 'active INTEGER DEFAULT 1');
   addColumn(db, 'printers', 'created_at DATETIME');
   addColumn(db, 'printers', 'updated_at DATETIME');

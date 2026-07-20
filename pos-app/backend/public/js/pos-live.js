@@ -55,6 +55,7 @@ const state = {
   ,reviewBaselineQuantities: {}
   ,parcelTableId: null
   ,parcelDraftItem: null
+  ,parcelSuggestionIndex: -1
   ,pendingParcelDraft: null
 };
 const qrApprovalPanel = document.getElementById("qrApprovalPanel");
@@ -611,6 +612,7 @@ function filteredMenuItems() {
 
 function selectParcelDraftItem(item) {
   state.parcelDraftItem = item;
+  state.parcelSuggestionIndex = -1;
   itemSearch.value = `${displayItemCode(item)} · ${item.name}`;
   items.innerHTML = "";
   parcelItemNote.focus();
@@ -618,6 +620,7 @@ function selectParcelDraftItem(item) {
 
 function resetParcelItemEntry() {
   state.parcelDraftItem = null;
+  state.parcelSuggestionIndex = -1;
   state.pendingParcelDraft = null;
   itemSearch.value = "";
   parcelItemNote.value = "";
@@ -1302,11 +1305,27 @@ orderType.addEventListener("change", () => { if (state.cart.length) state.dirty 
 });
 let itemSearchTimer;
 itemSearch.addEventListener("input", () => {
-  if (posMode === "PARCEL") state.parcelDraftItem = null;
+  if (posMode === "PARCEL") {
+    state.parcelDraftItem = null;
+    state.parcelSuggestionIndex = -1;
+  }
   clearTimeout(itemSearchTimer);
   itemSearchTimer = setTimeout(() => renderItems(state.selectedCategoryId), 120);
 });
 itemSearch.addEventListener("keydown", (event) => {
+  if (posMode === "PARCEL" && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+    if (!(itemSearch.value || "").trim()) return;
+    event.preventDefault();
+    clearTimeout(itemSearchTimer);
+    renderItems(state.selectedCategoryId);
+    const suggestions = [...items.querySelectorAll("[data-item]")];
+    if (!suggestions.length) return;
+    const direction = event.key === "ArrowDown" ? 1 : -1;
+    state.parcelSuggestionIndex = (state.parcelSuggestionIndex + direction + suggestions.length) % suggestions.length;
+    suggestions.forEach((suggestion, index) => suggestion.classList.toggle("keyboard-active", index === state.parcelSuggestionIndex));
+    suggestions[state.parcelSuggestionIndex].scrollIntoView({ block: "nearest" });
+    return;
+  }
   const parcelSelectKey = posMode === "PARCEL" && (event.key === "Tab" || event.key === "Enter");
   if ((!parcelSelectKey && event.key !== "Enter") || event.isComposing) return;
   if (posMode === "PARCEL" && !(itemSearch.value || "").trim()) return;
@@ -1314,8 +1333,9 @@ itemSearch.addEventListener("keydown", (event) => {
   clearTimeout(itemSearchTimer);
   renderItems(state.selectedCategoryId);
   if (posMode === "PARCEL") {
-    const firstMatch = filteredMenuItems()[0];
-    if (firstMatch) selectParcelDraftItem(firstMatch);
+    const matches = filteredMenuItems();
+    const selectedMatch = state.parcelSuggestionIndex >= 0 ? matches[state.parcelSuggestionIndex] : (event.key === "Tab" ? matches[0] : (matches.length === 1 ? matches[0] : null));
+    if (selectedMatch) selectParcelDraftItem(selectedMatch);
     else alert("No matching item found");
     return;
   }
@@ -1390,8 +1410,12 @@ moveTableBtn.addEventListener("click", async () => {
   }
 });
 splitBillBtn.addEventListener("click", openSplitBillModal);
-newCheckBtn.addEventListener("click", () => {
+newCheckBtn.addEventListener("click", async () => {
   if (posMode === "DINE_IN" && !state.selectedTable) return alert("Select a table first");
+  if (state.cart.length && state.dirty && !state.billingReady) {
+    const saved = await saveCurrentOrder();
+    if (!saved) return;
+  }
   state.orderId = null;
   state.parcelTableId = null;
   state.orderReference = null;
