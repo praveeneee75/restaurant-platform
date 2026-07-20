@@ -172,7 +172,9 @@ function thermalPrintHtml(job) {
     const orderType = String(payload.orderType || 'DINE_IN').toUpperCase();
     const orderLabel = orderType === 'DINE_IN' ? 'Dine In' : orderType === 'PARCEL' || orderType === 'TAKEAWAY' ? 'Parcel' : orderType.replaceAll('_', ' ');
     const rows = (payload.items || []).map((item) => `<tr><td>${printEsc(item.name || item.combo_name || 'Item')}</td><td>${printEsc(item.notes || '--')}</td><td>${printEsc(item.quantity || 0)}</td></tr>`).join('');
-    return `<!doctype html><html><head><style>${thermalPageCss}body{color:#000;font:14px 'Arial Narrow',Arial,sans-serif}.head{text-align:center;overflow-wrap:anywhere}.head h1{font-size:20px;margin:0}.head p{margin:2px 0;font-size:15px}.mode{font-size:19px!important;font-weight:800}.table{font-size:20px!important;font-weight:900}.rule{border-top:2px dashed #000;margin:5px 0}table{width:100%;max-width:100%;border-collapse:collapse;table-layout:fixed}th{font-size:13px;border-bottom:1px solid #000;padding:3px 1px;overflow-wrap:anywhere}td{padding:4px 1px;vertical-align:top;font-size:15px;overflow-wrap:anywhere;word-break:break-word}th:first-child,td:first-child{width:49%;text-align:left;font-weight:800}th:nth-child(2),td:nth-child(2){width:35%;text-align:center}th:last-child,td:last-child{width:16%;text-align:right;font-weight:800}.footer{text-align:center;border-top:2px dashed #000;margin-top:5px;padding-top:4px;overflow-wrap:anywhere}</style></head><body><div class="head">${payload.headerText ? `<p>${printEsc(payload.headerText)}</p>` : ''}<h1>KOT</h1><p>${printEsc(new Date(job.created_at || Date.now()).toLocaleString('en-IN'))}</p><p>KOT - ${printEsc(payload.kotReference || payload.kotId || job.ref_id)}</p><p class="mode">${printEsc(orderLabel)}</p>${orderType === 'DINE_IN' ? `<p class="table">Table No: ${printEsc(payload.tableName || '--')}</p>` : ''}</div><div class="rule"></div><table><thead><tr><th>Item</th><th>Special Note</th><th>Qty.</th></tr></thead><tbody>${rows}</tbody></table>${payload.footerText ? `<div class="footer">${printEsc(payload.footerText)}</div>` : ''}</body></html>`;
+    const compact = payload.compactSpacing !== false;
+    const borderless = String(payload.template || 'CLASSIC').toUpperCase() === 'BORDERLESS';
+    return `<!doctype html><html><head><style>${thermalPageCss}html,body{height:auto!important;min-height:0!important}body{color:#000;font:14px 'Arial Narrow',Arial,sans-serif;padding-top:${compact ? '1mm' : '3mm'}}.head{text-align:center;overflow-wrap:anywhere}.head h1{font-size:20px;margin:0}.head p{margin:${compact ? '1px' : '2px'} 0;font-size:15px}.mode{font-size:19px!important;font-weight:800}.table{font-size:20px!important;font-weight:900}.rule{${borderless ? '' : 'border-top:2px dashed #000;'}margin:4px 0}table{width:100%;max-width:100%;border-collapse:collapse;table-layout:fixed}th{font-size:13px;${borderless ? '' : 'border-bottom:1px solid #000;'}padding:2px 1px;overflow-wrap:anywhere}td{padding:${compact ? '2px' : '4px'} 1px;vertical-align:top;font-size:15px;overflow-wrap:anywhere;word-break:break-word}th:first-child,td:first-child{width:49%;text-align:left;font-weight:800}th:nth-child(2),td:nth-child(2){width:35%;text-align:center}th:last-child,td:last-child{width:16%;text-align:right;font-weight:800}.footer{text-align:center;${borderless ? '' : 'border-top:2px dashed #000;'}margin-top:4px;padding-top:3px;overflow-wrap:anywhere}</style></head><body><div class="head">${payload.headerText ? `<p>${printEsc(payload.headerText)}</p>` : ''}<h1>KOT</h1><p>${printEsc(new Date(job.created_at || Date.now()).toLocaleString('en-IN'))}</p><p>KOT - ${printEsc(payload.kotReference || payload.kotId || job.ref_id)}</p><p class="mode">${printEsc(orderLabel)}</p>${orderType === 'DINE_IN' && payload.printTable !== false ? `<p class="table">Table No: ${printEsc(payload.tableName || 'Table not assigned')}</p>` : ''}${payload.printCustomer && payload.customerName ? `<p>Customer: ${printEsc(payload.customerName)}</p>` : ''}${payload.printKitchen && payload.kitchen ? `<p>Kitchen: ${printEsc(payload.kitchen)}</p>` : ''}</div><div class="rule"></div><table><thead><tr><th>Item</th><th>Special Note</th><th>Qty.</th></tr></thead><tbody>${rows}</tbody></table>${payload.footerText ? `<div class="footer">${printEsc(payload.footerText)}</div>` : ''}</body></html>`;
   }
   const profile = payload.restaurantProfile || {};
   const printableItems = groupPrintableItems(payload.items);
@@ -205,11 +207,19 @@ async function printToConfiguredPrinter(job) {
       || printers.find((item) => item.isDefault);
     if (!printer) throw new Error('Configured printer was not found in Windows. Search printers again in Admin > Printers.');
     const paperWidthMm = Number(job.paper_width_mm) === 80 ? 80 : 58;
-    const contentHeightPx = await win.webContents.executeJavaScript('Math.ceil(Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))');
+    // BrowserWindow has a tall viewport; scrollHeight therefore measured the window rather
+    // than the receipt and some thermal drivers bottom-aligned the content on that blank page.
+    // Measure the actual rendered children so continuous-roll jobs start immediately.
+    const contentHeightPx = await win.webContents.executeJavaScript(`(() => {
+      const body = document.body;
+      const top = body.getBoundingClientRect().top;
+      const bottoms = [...body.children].map((node) => node.getBoundingClientRect().bottom - top);
+      return Math.ceil(Math.max(1, ...bottoms));
+    })()`);
     const contentHeightMicrons = Math.ceil(Number(contentHeightPx || 0) * 25400 / 96);
     const pageSize = {
       width: paperWidthMm * 1000,
-      height: Math.max(40000, Math.min(contentHeightMicrons + 6000, 1000000))
+      height: Math.max(20000, Math.min(contentHeightMicrons + 3000, 1000000))
     };
     await new Promise((resolve, reject) => win.webContents.print({
       silent: true,

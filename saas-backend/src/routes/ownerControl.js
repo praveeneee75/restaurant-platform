@@ -102,6 +102,7 @@ router.get('/owner/dashboard', async (req, res) => {
       executiveSales: json(snap.executive_sales, {}),
       refunds: json(snap.refund_summary, {}),
       promocodes: json(snap.promocode_summary, {}),
+      reprints: json(snap.reprint_summary, {}),
       configurationSnapshot: json(snap.configuration_snapshot, {}),
       dailyReports: reports.rows,
       topItems: items.rows,
@@ -199,16 +200,16 @@ router.post('/pos/push-snapshot', async (req, res) => {
   try {
     const tenant = await posTenant(req);
     if (!tenant) return res.status(401).json({ success: false, message: 'Invalid POS credentials' });
-    const { liveOperations, executiveSales, refundSummary, promocodeSummary, configurationSnapshot } = req.body;
+    const { liveOperations, executiveSales, refundSummary, promocodeSummary, reprintSummary, configurationSnapshot } = req.body;
     await pool.query(`
       INSERT INTO tenant_operational_snapshots
-        (tenant_id, live_operations, executive_sales, refund_summary, promocode_summary, configuration_snapshot, received_at)
-      VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, NOW())
+        (tenant_id, live_operations, executive_sales, refund_summary, promocode_summary, reprint_summary, configuration_snapshot, received_at)
+      VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, NOW())
       ON CONFLICT(tenant_id) DO UPDATE SET
         live_operations = EXCLUDED.live_operations, executive_sales = EXCLUDED.executive_sales,
-        refund_summary = EXCLUDED.refund_summary, promocode_summary = EXCLUDED.promocode_summary,
+        refund_summary = EXCLUDED.refund_summary, promocode_summary = EXCLUDED.promocode_summary, reprint_summary = EXCLUDED.reprint_summary,
         configuration_snapshot = EXCLUDED.configuration_snapshot, received_at = NOW()
-    `, [tenant.id, JSON.stringify(liveOperations || {}), JSON.stringify(executiveSales || {}), JSON.stringify(refundSummary || {}), JSON.stringify(promocodeSummary || {}), JSON.stringify(configurationSnapshot || {})]);
+    `, [tenant.id, JSON.stringify(liveOperations || {}), JSON.stringify(executiveSales || {}), JSON.stringify(refundSummary || {}), JSON.stringify(promocodeSummary || {}), JSON.stringify(reprintSummary || {}), JSON.stringify(configurationSnapshot || {})]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: publicError(err) }); }
 });

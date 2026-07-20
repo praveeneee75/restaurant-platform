@@ -65,6 +65,11 @@ const DEFAULT_SYSTEM_SETTINGS = {
   allow_kot_reprint: '1',
   kot_header_text: '',
   kot_footer_text: '',
+  kot_template: 'CLASSIC',
+  kot_print_table: '1',
+  kot_print_customer: '0',
+  kot_print_kitchen: '0',
+  kot_compact_spacing: '1',
   backup_enabled: '0',
   backup_folder_path: '',
   onedrive_folder_path: '',
@@ -279,7 +284,27 @@ function ensureRestaurantSchema(db) {
       attempts INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS printer_security (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      invoice_reprint_pin_hash TEXT,
+      updated_by INTEGER,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS invoice_reprints (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL,
+      invoice_no TEXT NOT NULL,
+      reprint_number INTEGER NOT NULL,
+      printed_by INTEGER,
+      printed_by_name TEXT,
+      printed_by_role TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(order_id, reprint_number)
+    );
   `);
+  db.prepare('INSERT OR IGNORE INTO printer_security (id) VALUES (1)').run();
   addColumn(db, 'printers', "type TEXT DEFAULT 'KITCHEN'");
   addColumn(db, 'printers', "connection TEXT DEFAULT 'USB'");
   addColumn(db, 'printers', 'address TEXT');

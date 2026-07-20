@@ -616,10 +616,12 @@ async function migrate() {
       executive_sales JSONB NOT NULL DEFAULT '{}'::jsonb,
       refund_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
       promocode_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+      reprint_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
       configuration_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
       received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await pool.query("ALTER TABLE tenant_operational_snapshots ADD COLUMN IF NOT EXISTS reprint_summary JSONB NOT NULL DEFAULT '{}'::jsonb");
   await pool.query(`
     CREATE TABLE IF NOT EXISTS tenant_owner_alerts (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

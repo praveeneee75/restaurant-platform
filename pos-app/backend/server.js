@@ -794,6 +794,10 @@ const SETTINGS_BOOLEAN_KEYS = new Set([
   'print_kot_on_save',
   'print_kot_on_submit',
   'allow_kot_reprint',
+  'kot_print_table',
+  'kot_print_customer',
+  'kot_print_kitchen',
+  'kot_compact_spacing',
   'backup_enabled',
   'require_clock_in_before_order',
   'require_open_register_for_cash_payment',
@@ -4987,7 +4991,12 @@ function createKotJobs(db, orderId) {
   const kotSettings = {
     headerText: getConfigValue(db, 'kot_header_text', ''),
     footerText: getConfigValue(db, 'kot_footer_text', ''),
-    autoPrint: getBooleanConfig(db, 'auto_print_kot', true)
+    autoPrint: getBooleanConfig(db, 'auto_print_kot', true),
+    template: getConfigValue(db, 'kot_template', 'CLASSIC'),
+    printTable: getBooleanConfig(db, 'kot_print_table', true),
+    printCustomer: getBooleanConfig(db, 'kot_print_customer', false),
+    printKitchen: getBooleanConfig(db, 'kot_print_kitchen', false),
+    compactSpacing: getBooleanConfig(db, 'kot_compact_spacing', true)
   };
   const orderMeta = db.prepare(`
     SELECT
@@ -5049,6 +5058,11 @@ function createKotJobs(db, orderId) {
       headerText: kotSettings.headerText,
       footerText: kotSettings.footerText,
       autoPrint: kotSettings.autoPrint,
+      template: kotSettings.template,
+      printTable: kotSettings.printTable,
+      printCustomer: kotSettings.printCustomer,
+      printKitchen: kotSettings.printKitchen,
+      compactSpacing: kotSettings.compactSpacing,
       orderType: orderMeta?.order_type || 'DINE_IN',
       tableName: orderMeta?.table_no || null,
       customerName: orderMeta?.customer_name || null,
@@ -5915,6 +5929,7 @@ app.get('/orders/invoices/:id', (req, res) => {
         WHERE k.order_id = ? ORDER BY COALESCE(k.suborder_no, k.id)
       )
     `).get(invoiceId)?.kot_refs || '';
+    invoice.reprint_count = Number(db.prepare('SELECT COUNT(*) total FROM invoice_reprints WHERE order_id = ?').get(invoiceId)?.total || 0);
     const rawItems = db.prepare(`
       SELECT oi.id AS order_item_id, oi.item_id, oi.combo_id, oi.combo_name, oi.combo_quantity,
              i.name, oi.quantity, oi.price, oi.notes
@@ -6501,6 +6516,52 @@ app.post('/orders/final-bill', (req, res) => {
     res.json({ success:true, billingReady:true, printQueued, message:'Final bill sent to the configured BILL printer. Order marked ready for billing.' });
   } catch (err) { sendError(res, err); }
   finally { db.close(); }
+});
+
+app.get('/printer-security', (req, res) => {
+  const { restaurantId } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const row = db.prepare('SELECT invoice_reprint_pin_hash, updated_at FROM printer_security WHERE id = 1').get() || {};
+    res.json({ success: true, reprintPinConfigured: Boolean(row.invoice_reprint_pin_hash), updatedAt: row.updated_at || null });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
+});
+
+app.post('/printer-security/reprint-pin', (req, res) => {
+  const { restaurantId, actor, pin } = req.body;
+  if (!restaurantId || !/^\d{6}$/.test(String(pin || ''))) return res.status(400).json({ success: false, message: 'Enter a six-digit reprint PIN' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const role = String(actor?.role || '').toUpperCase();
+    if (!['OWNER', 'MANAGER', 'MANAGER_1', 'MANAGER_2'].includes(role)) throw new Error('Only an owner or manager can change the invoice reprint PIN');
+    db.prepare('UPDATE printer_security SET invoice_reprint_pin_hash = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1')
+      .run(bcrypt.hashSync(String(pin), 10), actor?.id || null);
+    writeAudit(db, actor, 'UPDATE', 'PRINTER_SECURITY', 'INVOICE_REPRINT_PIN', null, { configured: true });
+    res.json({ success: true, message: 'Invoice reprint PIN updated' });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
+});
+
+app.post('/orders/invoices/:id/reprint', (req, res) => {
+  const invoiceId = Number(req.params.id);
+  const { restaurantId, actor, pin } = req.body;
+  if (!restaurantId || !isPositiveId(invoiceId)) return res.status(400).json({ success: false, message: 'restaurantId and invoice id are required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const invoice = db.prepare("SELECT id, invoice_no FROM orders WHERE id = ? AND status = 'PAID'").get(invoiceId);
+    if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+    const role = String(actor?.role || '').toUpperCase();
+    if (role === 'CASHIER') {
+      const security = db.prepare('SELECT invoice_reprint_pin_hash FROM printer_security WHERE id = 1').get();
+      if (!security?.invoice_reprint_pin_hash) throw new Error('An owner or manager must configure the six-digit invoice reprint PIN first');
+      if (!/^\d{6}$/.test(String(pin || '')) || !bcrypt.compareSync(String(pin), security.invoice_reprint_pin_hash)) throw new Error('The invoice reprint PIN is incorrect');
+    } else if (!['OWNER', 'MANAGER', 'MANAGER_1', 'MANAGER_2'].includes(role)) throw new Error('Invoice reprint permission is required');
+    const reprintNumber = Number(db.prepare('SELECT COALESCE(MAX(reprint_number), 0) + 1 next_number FROM invoice_reprints WHERE order_id = ?').get(invoiceId).next_number);
+    db.prepare('INSERT INTO invoice_reprints (order_id, invoice_no, reprint_number, printed_by, printed_by_name, printed_by_role) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(invoiceId, invoice.invoice_no || String(invoiceId), reprintNumber, actor?.id || null, actor?.name || null, role);
+    writeAudit(db, actor, 'REPRINT', 'INVOICE', invoiceId, null, { invoiceNo: invoice.invoice_no, reprintNumber });
+    res.json({ success: true, reprintNumber, reprintedAt: new Date().toISOString(), reprintedBy: actor?.name || role });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
 });
 
 app.post('/orders/settle', (req, res) => {
@@ -9665,6 +9726,8 @@ function buildOwnerControlSnapshot(db) {
   const promoRows = safeAll(db, `SELECT COALESCE(promo_code,'UNSPECIFIED') code, COUNT(*) usage_count,
     COALESCE(SUM(CASE WHEN UPPER(value_type) IN ('AMOUNT','FLAT') THEN value ELSE 0 END),0) discount_amount
     FROM discounts WHERE type = 'PROMO' AND DATE(created_at) >= DATE('now','-30 days','localtime') GROUP BY promo_code ORDER BY usage_count DESC`);
+  const reprintRows = safeAll(db, `SELECT invoice_no, COUNT(*) reprint_count, MAX(created_at) last_reprinted_at
+    FROM invoice_reprints WHERE DATE(created_at) >= DATE('now','-30 days','localtime') GROUP BY order_id, invoice_no ORDER BY last_reprinted_at DESC LIMIT 100`);
   const settings = getAllSettings(db);
   return {
     liveOperations,
@@ -9676,6 +9739,7 @@ function buildOwnerControlSnapshot(db) {
     },
     refundSummary: { periodDays: 30, rows: refundRows, total: refundRows.reduce((sum, row) => sum + Number(row.amount || 0), 0) },
     promocodeSummary: { periodDays: 30, rows: promoRows, totalUses: promoRows.reduce((sum, row) => sum + Number(row.usage_count || 0), 0) },
+    reprintSummary: { periodDays: 30, rows: reprintRows, totalReprints: reprintRows.reduce((sum, row) => sum + Number(row.reprint_count || 0), 0) },
     configurationSnapshot: {
       menu: {
         kitchens: safeAll(db, 'SELECT id, name, active FROM kitchens ORDER BY name'),

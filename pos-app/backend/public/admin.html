@@ -53,7 +53,7 @@
       <div class="nav-group">
         <p class="nav-group-title">Printer Configuration</p>
         <button class="nav-btn" data-view="printers">Printers</button>
-        <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="kot">Kitchen / KOT</button>
+        <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="kot">KOT Configuration</button>
         <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="bill-print">Bill Configuration</button>
         <p class="nav-subtitle">Settings</p>
         <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="profile">Restaurant Profile</button>
@@ -491,13 +491,19 @@
           </article>
 
           <article class="settings-section" data-settings-panel="kot" hidden>
-            <h3>Kitchen / KOT</h3>
+            <h3>KOT Configuration</h3>
             <label class="check-row"><input id="settingAutoPrintKot" type="checkbox"> Auto print KOT</label>
             <label class="check-row"><input id="settingPrintKotOnSave" type="checkbox"> Print KOT on save</label>
             <label class="check-row"><input id="settingPrintKotOnSubmit" type="checkbox"> Print KOT on submit</label>
             <label class="check-row"><input id="settingAllowKotReprint" type="checkbox"> Allow KOT reprint</label>
             <label>KOT header text<input id="settingKotHeaderText"></label>
             <label>KOT footer text<input id="settingKotFooterText"></label>
+            <label>KOT template<select id="settingKotTemplate"><option value="CLASSIC">Classic with separators</option><option value="BORDERLESS">Ink-saving borderless</option></select></label>
+            <label class="check-row"><input id="settingKotPrintTable" type="checkbox"> Print table name for dine-in orders</label>
+            <label class="check-row"><input id="settingKotPrintCustomer" type="checkbox"> Print customer name</label>
+            <label class="check-row"><input id="settingKotPrintKitchen" type="checkbox"> Print kitchen name</label>
+            <label class="check-row"><input id="settingKotCompactSpacing" type="checkbox"> Compact spacing to save paper</label>
+            <div id="kotTemplatePreview" class="bill-template-preview" aria-label="KOT template preview"></div>
           </article>
 
           <article class="settings-section" data-settings-panel="bill-print" hidden>
@@ -510,6 +516,7 @@
             <label class="check-row"><input id="settingBillPrintPayment" type="checkbox"> Print payment method</label>
             <label class="check-row"><input id="settingBillPrintAuthorisedSignatory" type="checkbox"> Print authorised-signatory line</label>
             <label>Bill footer text<input id="settingBillFooterText" maxlength="120" placeholder="THANK YOU. VISIT AGAIN."></label>
+            <fieldset><legend>Invoice reprint security</legend><p class="settings-help">Cashiers must enter this six-digit PIN before reprinting a paid invoice. Only owners and managers can change it.</p><label>New six-digit reprint PIN<input id="settingInvoiceReprintPin" type="password" inputmode="numeric" minlength="6" maxlength="6" pattern="[0-9]{6}" autocomplete="new-password" placeholder="Leave blank to keep current PIN"></label><button type="button" class="secondary-btn" id="saveInvoiceReprintPin">Update reprint PIN</button><span id="invoiceReprintPinStatus" class="settings-help"></span></fieldset>
             <div id="billTemplatePreview" class="bill-template-preview" aria-label="Bill template preview"></div>
           </article>
 
