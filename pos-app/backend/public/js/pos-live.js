@@ -39,6 +39,7 @@ const state = {
   orderId: null,
   orderReference: null,
   openOrders: [],
+  orderDetailsCache: new Map(),
   pendingItem: null,
   pendingSplitItems: [],
   customer: null,
@@ -332,6 +333,7 @@ async function loadOpenOrdersForTable(tableId, selectedOrderId = null) {
   state.orderId = requestedOrder?.id || currentOrder?.id || state.openOrders[0]?.id || null;
   state.billingReady = Number((requestedOrder || currentOrder || state.openOrders[0])?.billing_ready) === 1;
   renderOrderSelector();
+  primeOpenOrderCache();
 }
 
 async function loadOpenOrdersForCurrentContext(selectedOrderId = null) {
@@ -343,6 +345,28 @@ async function loadOpenOrdersForCurrentContext(selectedOrderId = null) {
   state.orderId = requestedOrder?.id || currentOrder?.id || state.openOrders[0]?.id || null;
   state.billingReady = Number((requestedOrder || currentOrder || state.openOrders[0])?.billing_ready) === 1;
   renderOrderSelector();
+  primeOpenOrderCache();
+}
+
+function fetchOpenOrderDetails(orderId, { fresh = false } = {}) {
+  const key = Number(orderId);
+  if (!fresh && state.orderDetailsCache.has(key)) return state.orderDetailsCache.get(key);
+  const request = fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(key)}`)
+    .then(async (response) => {
+      const data = await response.json();
+      if (!response.ok || data.success === false) throw new Error(data.message || 'Unable to load customer check');
+      return data;
+    })
+    .catch((error) => {
+      state.orderDetailsCache.delete(key);
+      throw error;
+    });
+  state.orderDetailsCache.set(key, request);
+  return request;
+}
+
+function primeOpenOrderCache() {
+  state.openOrders.forEach((order) => fetchOpenOrderDetails(order.id).catch(() => {}));
 }
 
 async function restoreCurrentContextOrder() {
@@ -924,6 +948,7 @@ async function saveCurrentOrder(force = false) {
       : ({ orderItemId: item.orderItemId || null, itemId: item.id, quantity: item.quantity, notes: item.notes || "", modifiers: (item.modifiers || []).filter((modifier) => modifier.id).map((modifier) => modifier.id) }))
   });
   state.orderId = data.orderId;
+  state.orderDetailsCache.delete(Number(data.orderId));
   state.serverOrderTotal = Number(data.total || 0);
   state.orderReference = data.orderReference || state.orderReference || data.orderId;
   state.dirty = false;
@@ -1083,6 +1108,7 @@ async function requestFinalBillAndPrint() {
   finalBillPrintOrder.disabled = true;
   try {
     const data = await postJson('/orders/final-bill', { orderId: state.orderId });
+    state.orderDetailsCache.delete(Number(state.orderId));
     state.billingReady = true;
     state.dirty = false;
     kotStatus.textContent = data.message;
@@ -1313,24 +1339,30 @@ orderSelector.addEventListener("change", async () => {
   if ((isDineIn() && !state.selectedTable) || !orderSelector.value) return;
   const orderId = Number(orderSelector.value);
   const requestId = ++tableSelectionRequest;
-  state.cart = [];
-  state.selectedCartKey = null;
-  renderCart();
-  const data = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(orderId)}`).then((res) => res.json());
-  if (requestId !== tableSelectionRequest || Number(data.order?.id) !== orderId || (isDineIn() && Number(state.activeTableId) !== Number(state.selectedTable.id))) return;
-  state.orderId = data.order.id;
-  state.orderReference = data.order.order_reference || `${data.order.order_sequence || data.order.id}-${data.order.customer_ref || `A${data.order.id}`}`;
-  state.billingReady = Number(data.order.billing_ready) === 1;
-  state.kotSubmitted = (data.items || []).some((item) => item.kot_id);
-  state.dirty = false;
-  state.customer = data.customer || null;
-  customerPhone.value = state.customer?.phone || "";
-  customerName.value = state.customer?.name || "";
-  state.cart = (data.items || []).map(cartItemFromOrderItem);
-  state.selectedCartKey = state.cart[0]?.key || null;
-  state.reviewBaselineQuantities = reviewBaselineForCart();
-  orderMeta.textContent = `Order ${state.orderReference}`;
-  renderCart();
+  orderSelector.disabled = true;
+  orderMeta.textContent = 'Loading customer check...';
+  try {
+    const data = await fetchOpenOrderDetails(orderId);
+    if (requestId !== tableSelectionRequest || Number(data.order?.id) !== orderId || (isDineIn() && Number(state.activeTableId) !== Number(state.selectedTable.id))) return;
+    state.orderId = data.order.id;
+    state.orderReference = data.order.order_reference || `${data.order.order_sequence || data.order.id}-${data.order.customer_ref || `A${data.order.id}`}`;
+    state.billingReady = Number(data.order.billing_ready) === 1;
+    state.kotSubmitted = (data.items || []).some((item) => item.kot_id);
+    state.dirty = false;
+    state.customer = data.customer || null;
+    customerPhone.value = state.customer?.phone || "";
+    customerName.value = state.customer?.name || "";
+    state.cart = (data.items || []).map(cartItemFromOrderItem);
+    state.selectedCartKey = state.cart[0]?.key || null;
+    state.reviewBaselineQuantities = reviewBaselineForCart();
+    orderMeta.textContent = `Order ${state.orderReference}`;
+    renderCart();
+  } catch (error) {
+    orderMeta.textContent = `Unable to load customer check`;
+    alert(error.message);
+  } finally {
+    orderSelector.disabled = false;
+  }
 });
 searchCustomer.addEventListener("click", searchCustomerByPhone);
 createCustomer.addEventListener("click", createCustomerFromBilling);

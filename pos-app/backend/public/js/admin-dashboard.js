@@ -109,7 +109,10 @@ function fillSelectWithBlank(element, rows, label = "name", blankLabel = "Not as
 }
 
 async function loadAdmin() {
-  state.admin = await fetchJson(`/admin/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}&includeInactive=true`);
+  // Delete actions are implemented as safe deactivation so historical orders
+  // keep their foreign-key references. The normal Admin view must nevertheless
+  // remove those rows immediately instead of presenting them as editable again.
+  state.admin = await fetchJson(`/admin/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`);
   if (window.activeRestaurantName) {
     const restaurantName = state.admin.restaurant?.name || restaurantId;
     activeRestaurantName.textContent = `${restaurantName} active`;
@@ -1413,6 +1416,7 @@ document.addEventListener("click", async (event) => {
     return;
   }
   const pick = (name) => target.dataset[name];
+  const approve = (message, acceptLabel = "Delete") => window.appConfirm(message, { acceptLabel });
   try {
     if (pick("editKitchen")) return editKitchen(pick("editKitchen"));
     if (pick("editPrinter")) return editPrinter(pick("editPrinter"));
@@ -1432,24 +1436,24 @@ document.addEventListener("click", async (event) => {
       }
       return;
     }
-    if (pick("deleteKitchen") && confirm("Delete this kitchen?")) await postJson("/admin/kitchens/delete", { id: pick("deleteKitchen") }).then(loadAdmin);
-    if (pick("deletePrinter") && confirm("Disable this printer?")) await postJson("/admin/printers/delete", { id: pick("deletePrinter") }).then(loadAdmin);
-    if (pick("deleteCategory") && confirm("Delete this category?")) await postJson("/admin/categories/delete", { id: pick("deleteCategory") }).then(loadAdmin);
-    if (pick("deleteItem") && confirm("Delete this item?")) await postJson("/admin/items/delete", { id: pick("deleteItem") }).then(loadAdmin);
-    if (pick("disableUser") && confirm("Disable this user?")) await postJson("/admin/users/disable", { id: pick("disableUser") }).then(loadAdmin);
+    if (pick("deleteKitchen")) { if (await approve("Delete this kitchen?")) await postJson("/admin/kitchens/delete", { id: pick("deleteKitchen") }).then(loadAdmin); return; }
+    if (pick("deletePrinter")) { if (await approve("Disable this printer?", "Disable")) await postJson("/admin/printers/delete", { id: pick("deletePrinter") }).then(loadAdmin); return; }
+    if (pick("deleteCategory")) { if (await approve("Delete this category?")) await postJson("/admin/categories/delete", { id: pick("deleteCategory") }).then(loadAdmin); return; }
+    if (pick("deleteItem")) { if (await approve("Delete this item?")) await postJson("/admin/items/delete", { id: pick("deleteItem") }).then(loadAdmin); return; }
+    if (pick("disableUser")) { if (await approve("Disable this user?", "Disable")) await postJson("/admin/users/disable", { id: pick("disableUser") }).then(loadAdmin); return; }
     if (pick("unlockUser")) await postJson("/admin/users/unlock", { id: pick("unlockUser") }).then(loadAdmin);
-    if (pick("deleteTable") && confirm("Delete this table?")) await postJson("/tables/delete", { id: pick("deleteTable") }).then(loadAdmin);
+    if (pick("deleteTable")) { if (await approve("Delete this table?")) await postJson("/tables/delete", { id: pick("deleteTable") }).then(loadAdmin); return; }
     if (pick("cancelReservation") && confirm("Cancel this reservation?")) await postJson("/reservations/cancel", { id: pick("cancelReservation") }).then(loadReservations);
-    if (pick("deleteSupplier") && confirm("Delete this supplier?")) await postJson("/inventory/suppliers/delete", { id: pick("deleteSupplier") }).then(loadInventory);
-    if (pick("deleteIngredient") && confirm("Delete this ingredient?")) await postJson("/inventory/ingredients/delete", { id: pick("deleteIngredient") }).then(loadInventory);
-    if (pick("deleteRecipe") && confirm("Delete this recipe?")) await postJson("/inventory/recipes/delete", { id: pick("deleteRecipe") }).then(loadInventory);
+    if (pick("deleteSupplier")) { if (await approve("Delete this supplier?")) await postJson("/inventory/suppliers/delete", { id: pick("deleteSupplier") }).then(loadInventory); return; }
+    if (pick("deleteIngredient")) { if (await approve("Delete this ingredient?")) await postJson("/inventory/ingredients/delete", { id: pick("deleteIngredient") }).then(loadInventory); return; }
+    if (pick("deleteRecipe")) { if (await approve("Delete this recipe?")) await postJson("/inventory/recipes/delete", { id: pick("deleteRecipe") }).then(loadInventory); return; }
     if (pick("receivePo") && confirm("Receive this purchase order and increase stock?")) await postJson("/purchase-orders/receive", { id: pick("receivePo") }).then(loadInventory);
     if (pick("cancelPo") && confirm("Cancel this purchase order?")) await postJson("/purchase-orders/cancel", { id: pick("cancelPo") }).then(loadInventory);
-    if (pick("deleteModifierGroup") && confirm("Delete this modifier group?")) await postJson("/modifiers/groups/delete", { id: pick("deleteModifierGroup") }).then(loadModifiers);
-    if (pick("deleteModifierOption") && confirm("Delete this modifier?")) await postJson("/modifiers/options/delete", { id: pick("deleteModifierOption") }).then(loadModifiers);
-    if (pick("deleteModifierAssignment") && confirm("Delete this assignment?")) await postJson("/modifiers/assign/delete", { id: pick("deleteModifierAssignment") }).then(loadModifiers);
-    if (pick("deleteCombo") && confirm("Delete this combo?")) await postJson("/combos/delete", { id: pick("deleteCombo") }).then(loadModifiers);
-    if (pick("deletePromo") && confirm("Disable this promocode?")) await postJson("/admin/promo-codes/delete", { id: pick("deletePromo") }).then(loadPromoCodes);
+    if (pick("deleteModifierGroup")) { if (await approve("Delete this modifier group?")) await postJson("/modifiers/groups/delete", { id: pick("deleteModifierGroup") }).then(loadModifiers); return; }
+    if (pick("deleteModifierOption")) { if (await approve("Delete this modifier?")) await postJson("/modifiers/options/delete", { id: pick("deleteModifierOption") }).then(loadModifiers); return; }
+    if (pick("deleteModifierAssignment")) { if (await approve("Delete this assignment?")) await postJson("/modifiers/assign/delete", { id: pick("deleteModifierAssignment") }).then(loadModifiers); return; }
+    if (pick("deleteCombo")) { if (await approve("Delete this combo?")) await postJson("/combos/delete", { id: pick("deleteCombo") }).then(loadModifiers); return; }
+    if (pick("deletePromo")) { if (await approve("Disable this promocode?", "Disable")) await postJson("/admin/promo-codes/delete", { id: pick("deletePromo") }).then(loadPromoCodes); return; }
     if (pick("restoreBackup") && confirm("Restore this backup?")) await postJson("/backup/restore", { filename: pick("restoreBackup") }).then((data) => alert(data.message));
     if (pick("forceLogout") && confirm("Force logout this device?")) await postJson("/device-sessions/force-logout", { id: pick("forceLogout") }).then(loadDeviceSessions);
   } catch (err) {

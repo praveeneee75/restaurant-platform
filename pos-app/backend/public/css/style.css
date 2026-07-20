@@ -1239,6 +1239,25 @@ button:hover,
   text-align: center;
   pointer-events: none;
 }
+.app-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, .45);
+}
+.app-confirm-dialog {
+  width: min(420px, 100%);
+  padding: 20px;
+  border: 1px solid #cbd9ec;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, .25);
+}
+.app-confirm-dialog p { margin: 0 0 18px; font-weight: 700; }
+.app-confirm-dialog > div { display: flex; justify-content: flex-end; gap: 10px; }
 .kds-item-note { margin: 8px 0; padding: 8px 10px; border-left: 4px solid #f59e0b; background: #fffbeb; color: #7c2d12; }
 
 .selected-item-editor {

@@ -6537,12 +6537,30 @@ app.post('/orders/settle', (req, res) => {
       // The save/reconciliation step is authoritative for the active check.
       // Using a second aggregate here can include stale historical KOT rows and
       // reject the exact payable amount shown in POS/Billing.
-      const submittedTotal = db.prepare(`
-        SELECT COALESCE(SUM(quantity * price), 0) AS total
+      const settlementItems = db.prepare(`
+        SELECT
+          COUNT(*) AS item_count,
+          COALESCE(SUM(CASE WHEN kot_id IS NOT NULL THEN 1 ELSE 0 END), 0) AS submitted_count,
+          COALESCE(SUM(CASE WHEN kot_id IS NULL THEN 1 ELSE 0 END), 0) AS draft_count,
+          COALESCE(SUM(CASE WHEN kot_id IS NOT NULL THEN quantity * price ELSE 0 END), 0) AS submitted_total,
+          COALESCE(SUM(quantity * price), 0) AS all_items_total
         FROM order_items
-        WHERE order_id = ? AND kot_id IS NOT NULL
+        WHERE order_id = ?
       `).get(orderId);
-      const grossAmount = Number(submittedTotal?.total || 0);
+      const itemCount = Number(settlementItems?.item_count || 0);
+      const submittedCount = Number(settlementItems?.submitted_count || 0);
+      const draftCount = Number(settlementItems?.draft_count || 0);
+      if (itemCount === 0) throw new Error('Cannot settle an order without items');
+      if (submittedCount === 0) throw new Error('Submit the order to KOT before settlement');
+      if (draftCount > 0 || submittedCount !== itemCount) {
+        throw new Error('Submit all saved items to KOT before settlement');
+      }
+      const grossAmount = Number(settlementItems?.submitted_total || 0);
+      const allItemsTotal = Number(settlementItems?.all_items_total || 0);
+      if (Math.abs(grossAmount - allItemsTotal) > 0.005) {
+        throw new Error('Order item totals are inconsistent. Reopen the order and submit KOT again');
+      }
+      if (grossAmount <= 0) throw new Error('Cannot settle an order with a zero item total');
       const serviceCharge = serviceChargeForAmount(db, grossAmount);
       const discountRows = tableExists(db, 'discounts')
         ? db.prepare('SELECT value, value_type FROM discounts WHERE order_id = ?').all(orderId)
@@ -6562,6 +6580,7 @@ app.post('/orders/settle', (req, res) => {
       // Allow sub-cent floating point noise while still rejecting a genuinely
       // underpaid settlement.
       if (paid + 0.005 < payable) throw new Error(`Payment is less than payable total (paid ${paid.toFixed(2)}, payable ${payable.toFixed(2)})`);
+      if (paid - 0.005 > payable) throw new Error(`Payment exceeds payable total (paid ${paid.toFixed(2)}, payable ${payable.toFixed(2)})`);
       const invoiceNo = isInvoice === false
         ? (order.invoice_no || `RCP-${crypto.randomBytes(5).toString('hex').toUpperCase()}`)
         : (order.invoice_no || invoiceNumberForOrder(db, orderId));

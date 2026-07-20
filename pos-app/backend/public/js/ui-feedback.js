@@ -27,6 +27,36 @@
   window.appAlert = showAppMessage;
   window.alert = showAppMessage;
 
+  window.appConfirm = function appConfirm(message, options = {}) {
+    return new Promise((resolve) => {
+      const previousFocus = document.activeElement;
+      const backdrop = document.createElement('div');
+      backdrop.className = 'app-confirm-backdrop';
+      backdrop.innerHTML = `<section class="app-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="appConfirmMessage"><p id="appConfirmMessage"></p><div><button type="button" class="secondary-btn" data-confirm-cancel>Cancel</button><button type="button" class="danger-btn" data-confirm-accept>${options.acceptLabel || 'Delete'}</button></div></section>`;
+      backdrop.querySelector('#appConfirmMessage').textContent = String(message || 'Are you sure?');
+      const finish = (answer) => {
+        document.removeEventListener('keydown', onKeyDown, true);
+        backdrop.remove();
+        requestAnimationFrame(() => {
+          if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+          else document.querySelector('main input:not([disabled]), main select:not([disabled]), main button:not([disabled])')?.focus();
+        });
+        resolve(answer);
+      };
+      const onKeyDown = (event) => {
+        if (event.key === 'Escape') { event.preventDefault(); finish(false); }
+        if (event.key === 'Enter') { event.preventDefault(); finish(true); }
+      };
+      backdrop.addEventListener('click', (event) => {
+        if (event.target === backdrop || event.target.closest('[data-confirm-cancel]')) finish(false);
+        if (event.target.closest('[data-confirm-accept]')) finish(true);
+      });
+      document.addEventListener('keydown', onKeyDown, true);
+      document.body.appendChild(backdrop);
+      backdrop.querySelector('[data-confirm-cancel]').focus();
+    });
+  };
+
   const restaurantId = localStorage.getItem('restaurantId');
   if (restaurantId && window.posDesktop?.startPrintWorker) window.posDesktop.startPrintWorker(restaurantId).catch(() => {});
 
