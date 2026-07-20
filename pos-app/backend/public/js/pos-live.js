@@ -49,9 +49,12 @@ const state = {
   expectedCash: 0,
   dirty: false,
   kotSubmitted: false,
+  billingReady: false,
   pendingEditKey: null
   ,reviewBaselineQuantities: {}
   ,parcelTableId: null
+  ,parcelDraftItem: null
+  ,pendingParcelDraft: null
 };
 const qrApprovalPanel = document.getElementById("qrApprovalPanel");
 const qrApprovalList = document.getElementById("qrApprovalList");
@@ -66,7 +69,9 @@ const itemSearch = document.getElementById("itemSearch");
 const posToast = document.getElementById("posToast");
 const availabilityBtn = document.getElementById("availabilityBtn");
 const settlementType = document.getElementById("settlementType");
+const paymentAmount = document.getElementById("paymentAmount");
 const settlePrintOrder = document.getElementById("settlePrintOrder");
+const finalBillPrintOrder = document.getElementById("finalBillPrintOrder");
 const itemNoteEditor = document.getElementById("itemNoteEditor");
 const itemNoteTitle = document.getElementById("itemNoteTitle");
 const itemNoteHelp = document.getElementById("itemNoteHelp");
@@ -76,6 +81,12 @@ const selectedItemMinus = document.getElementById("selectedItemMinus");
 const selectedItemPlus = document.getElementById("selectedItemPlus");
 const selectedItemQuantity = document.getElementById("selectedItemQuantity");
 const removeSelectedItem = document.getElementById("removeSelectedItem");
+const parcelItemEntry = document.getElementById("parcelItemEntry");
+const parcelItemSearchSlot = document.getElementById("parcelItemSearchSlot");
+const parcelItemSuggestionsSlot = document.getElementById("parcelItemSuggestionsSlot");
+const parcelItemNote = document.getElementById("parcelItemNote");
+const parcelItemQuantity = document.getElementById("parcelItemQuantity");
+const addParcelItem = document.getElementById("addParcelItem");
 const posConfirmModal = document.getElementById("posConfirmModal");
 const posConfirmTitle = document.getElementById("posConfirmTitle");
 const posConfirmMessage = document.getElementById("posConfirmMessage");
@@ -140,9 +151,65 @@ function applyRoleAndModeUI() {
   if (settlePrintOrder) settlePrintOrder.hidden = !canSettleAndPrint;
   if (settlementType) settlementType.hidden = role !== "MANAGER_1";
   if (posMode !== "DINE_IN") document.body.classList.add("pos-non-dine-in");
+  else document.body.classList.add("pos-mode-dine-in");
+  if (posMode === "PARTY") document.body.classList.add("pos-mode-party");
+  if (finalBillPrintOrder) finalBillPrintOrder.hidden = posMode !== "DINE_IN";
+  if (posMode === "DINE_IN") {
+    moveTableBtn.hidden = true;
+    settleOrder.hidden = true;
+    settlePrintOrder.hidden = true;
+  }
+  if (posMode === "PARCEL") {
+    const parcelIntake = document.getElementById("parcelIntake");
+    const parcelPhoneSlot = document.getElementById("parcelPhoneSlot");
+    const parcelNameSlot = document.getElementById("parcelNameSlot");
+    const parcelDeliverySlot = document.getElementById("parcelDeliverySlot");
+    const parcelCustomerStatusSlot = document.getElementById("parcelCustomerStatusSlot");
+    document.body.classList.add("pos-mode-parcel");
+    orderType.value = "TAKEAWAY";
+    const parcelOption = orderType.querySelector('option[value="TAKEAWAY"]');
+    if (parcelOption) parcelOption.textContent = "Parcel";
+    parcelIntake.hidden = false;
+    parcelItemEntry.hidden = false;
+    parcelItemSearchSlot.appendChild(document.querySelector(".item-search"));
+    parcelItemSuggestionsSlot.appendChild(items);
+    categories.hidden = true;
+    splitBillBtn.hidden = true;
+    parcelCheckBtn.hidden = true;
+    parcelPhoneSlot.appendChild(document.querySelector(".customer-search-row"));
+    parcelNameSlot.append(customerName, createCustomer);
+    parcelDeliverySlot.appendChild(deliveryFields);
+    parcelCustomerStatusSlot.appendChild(customerSummary);
+    document.querySelector(".customer-panel").classList.add("parcel-payment-customer-panel");
+    const parcelBillHeader = document.createElement("div");
+    parcelBillHeader.className = "parcel-bill-header";
+    parcelBillHeader.innerHTML = "<strong>Item</strong><strong>Special Note</strong><strong>Qty.</strong><strong>Price</strong><strong>Amount</strong>";
+    cartItems.before(parcelBillHeader);
+  }
 }
 
 document.querySelectorAll("[data-logout]").forEach((button) => button.addEventListener("click", () => { localStorage.clear(); window.location.href = "/login.html"; }));
+let autosaveNavigationInProgress = false;
+document.querySelector('.app-home-nav')?.addEventListener('click', async (event) => {
+  const link = event.target.closest('a[href]');
+  if (!link || autosaveNavigationInProgress || link.getAttribute('href')?.startsWith('#')) return;
+  const needsOrderSave = state.cart.length > 0 && (state.dirty || !state.orderId);
+  if (!needsOrderSave) return;
+  event.preventDefault();
+  autosaveNavigationInProgress = true;
+  link.setAttribute('aria-busy', 'true');
+  const previousStatus = kotStatus.textContent;
+  kotStatus.textContent = 'Saving order before navigation...';
+  try {
+    const saved = await saveCurrentOrder(true);
+    if (!saved) throw new Error('Order could not be saved');
+    window.location.assign(link.href);
+  } catch (error) {
+    kotStatus.textContent = error.message || previousStatus || 'Order autosave failed';
+    link.removeAttribute('aria-busy');
+    autosaveNavigationInProgress = false;
+  }
+});
 
 function deliveryFeeValue() {
   return orderType.value === "DELIVERY" ? Math.max(Number(deliveryFee.value || 0), 0) : 0;
@@ -263,6 +330,7 @@ async function loadOpenOrdersForTable(tableId, selectedOrderId = null) {
   const requestedOrder = state.openOrders.find((order) => Number(order.id) === Number(selectedOrderId));
   const currentOrder = state.openOrders.find((order) => Number(order.id) === Number(state.orderId));
   state.orderId = requestedOrder?.id || currentOrder?.id || state.openOrders[0]?.id || null;
+  state.billingReady = Number((requestedOrder || currentOrder || state.openOrders[0])?.billing_ready) === 1;
   renderOrderSelector();
 }
 
@@ -273,6 +341,7 @@ async function loadOpenOrdersForCurrentContext(selectedOrderId = null) {
   const requestedOrder = state.openOrders.find((order) => Number(order.id) === Number(selectedOrderId));
   const currentOrder = state.openOrders.find((order) => Number(order.id) === Number(state.orderId));
   state.orderId = requestedOrder?.id || currentOrder?.id || state.openOrders[0]?.id || null;
+  state.billingReady = Number((requestedOrder || currentOrder || state.openOrders[0])?.billing_ready) === 1;
   renderOrderSelector();
 }
 
@@ -284,6 +353,7 @@ async function restoreCurrentContextOrder() {
   if (!orderId) {
     state.orderId = null;
     state.orderReference = null;
+    state.billingReady = false;
     state.cart = [];
     state.selectedCartKey = null;
     renderCart();
@@ -293,6 +363,7 @@ async function restoreCurrentContextOrder() {
   if (!data.order || (isDineIn() && Number(state.activeTableId) !== Number(state.selectedTable.id))) return;
   state.orderId = data.order.id;
   state.orderReference = data.order.order_reference || `${data.order.order_sequence || data.order.id}-${data.order.customer_ref || `A${data.order.id}`}`;
+  state.billingReady = Number(data.order.billing_ready) === 1;
   state.kotSubmitted = (data.items || []).some((item) => item.kot_id);
   state.dirty = false;
   state.customer = data.customer || null;
@@ -361,6 +432,7 @@ async function reloadCurrentOrderCart() {
   const data = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(state.orderId)}`).then((res) => res.json());
   if (!data.order || Number(data.order.id) !== Number(state.orderId)) throw new Error('Saved order could not be reloaded');
   state.orderReference = data.order.order_reference || state.orderReference;
+  state.billingReady = Number(data.order.billing_ready) === 1;
   state.kotSubmitted = (data.items || []).some((item) => item.kot_id);
   state.cart = (data.items || []).map(cartItemFromOrderItem);
   state.selectedCartKey = state.cart.find((item) => Number(item.orderItemId) === Number(selectedOrderItemId))?.key || state.cart[0]?.key || null;
@@ -473,12 +545,16 @@ function renderCategories() {
 
 function renderItems(categoryId) {
   const query = (itemSearch?.value || "").trim().toLowerCase();
+  if (posMode === "PARCEL" && !query) {
+    items.innerHTML = "";
+    return;
+  }
   const itemTiles = state.items.filter((item) => (categoryId === "ALL" || item.category_id === categoryId) && (!query || `${item.item_code || ""} ${item.name}`.toLowerCase().includes(query))).map((item) => {
     const matchingLines = state.cart.filter((line) => line.id === item.id && !line.comboId);
     const quantity = matchingLines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
     const stateClass = matchingLines.some((line) => line.sentToKitchen) ? "saved" : matchingLines.some((line) => line.savedLocally) ? "pending-save" : quantity > 0 ? "new-item" : "";
     return `
-      <button class="item-tile ${quantity > 0 ? "selected" : ""} ${stateClass}" data-item="${item.id}">
+      <button class="item-tile ${quantity > 0 ? "selected" : ""} ${stateClass}" data-item="${item.id}" ${state.billingReady ? 'disabled title="Final bill requested for this order"' : ''}>
         <strong>${esc(displayItemCode(item))} · ${esc(item.name)}</strong>
         <span class="item-price">${money(item.price)}</span>
         ${quantity > 0 ? `<span class="tile-quantity-controls"><span data-item-minus="${item.id}" role="button">-</span><em>${quantity}</em><span data-item-plus="${item.id}" role="button">+</span></span>` : ""}
@@ -490,7 +566,7 @@ function renderItems(categoryId) {
     const quantity = matchingLines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
     const stateClass = matchingLines.some((line) => line.sentToKitchen) ? "saved" : matchingLines.some((line) => line.savedLocally) ? "pending-save" : quantity > 0 ? "new-item" : "";
     return `
-      <button class="item-tile combo-tile ${quantity > 0 ? "selected" : ""} ${stateClass}" data-combo="${combo.id}">
+      <button class="item-tile combo-tile ${quantity > 0 ? "selected" : ""} ${stateClass}" data-combo="${combo.id}" ${state.billingReady ? 'disabled title="Final bill requested for this order"' : ''}>
         <strong>${esc(combo.name)}</strong>
         <span>${money(combo.price)}</span>
         ${quantity > 0 ? `<span class="tile-quantity-controls"><span data-combo-minus="${combo.id}" role="button">-</span><em>${quantity}</em><span data-combo-plus="${combo.id}" role="button">+</span></span>` : ""}
@@ -500,10 +576,72 @@ function renderItems(categoryId) {
   items.innerHTML = itemTiles + comboTiles;
 }
 
+function filteredMenuItems() {
+  const query = (itemSearch?.value || "").trim().toLowerCase();
+  if (!query) return [];
+  return state.items.filter((item) =>
+    (state.selectedCategoryId === "ALL" || item.category_id === state.selectedCategoryId)
+    && `${item.item_code || ""} ${item.name}`.toLowerCase().includes(query)
+  );
+}
+
+function selectParcelDraftItem(item) {
+  state.parcelDraftItem = item;
+  itemSearch.value = `${displayItemCode(item)} · ${item.name}`;
+  items.innerHTML = "";
+  parcelItemNote.focus();
+}
+
+function resetParcelItemEntry() {
+  state.parcelDraftItem = null;
+  state.pendingParcelDraft = null;
+  itemSearch.value = "";
+  parcelItemNote.value = "";
+  parcelItemQuantity.value = "1";
+  items.innerHTML = "";
+  itemSearch.focus();
+}
+
+function commitParcelDraft() {
+  if (state.billingReady) return alert("Final bill has been requested for this order. Start a new customer check to add items.");
+  const item = state.parcelDraftItem;
+  const quantity = Math.max(Math.trunc(Number(parcelItemQuantity.value || 0)), 0);
+  if (!item) return alert("Select an item from the suggestions first");
+  if (quantity < 1) return alert("Quantity must be at least 1");
+  const options = { quantity, notes: parcelItemNote.value.trim(), forceNew: true };
+  if (itemGroups(item.id).length > 0) {
+    state.pendingParcelDraft = options;
+    openModifierModal(Number(item.id));
+    return;
+  }
+  addItemToCart(item, [], options);
+  resetParcelItemEntry();
+}
+
+function addSingleSearchResult() {
+  const matchingItems = filteredMenuItems();
+  const query = itemSearch.value.trim().toLowerCase();
+  const matchingCombos = state.combos.filter((combo) =>
+    (state.selectedCategoryId === "ALL" || !combo.category_id || Number(combo.category_id) === Number(state.selectedCategoryId))
+    && combo.name.toLowerCase().includes(query)
+  );
+  if (matchingItems.length !== 1 || matchingCombos.length !== 0) return false;
+  if (posMode === "PARCEL") selectParcelDraftItem(matchingItems[0]);
+  else openModifierModal(Number(matchingItems[0].id));
+  return true;
+}
+
 function renderCart() {
   cartTitle.textContent = isDineIn() ? (state.selectedTable ? state.selectedTable.table_name : "Select a table") : orderType.options[orderType.selectedIndex].text;
   orderMeta.textContent = state.orderId ? `Order ${state.orderReference || state.orderId}` : "New order";
-  cartItems.innerHTML = state.cart.map((item) => `
+  cartItems.innerHTML = state.cart.map((item) => posMode === "PARCEL" ? `
+    <div class="cart-line parcel-cart-row ${state.selectedCartKey === item.key ? "selected" : ""} ${item.sentToKitchen ? "saved" : item.savedLocally ? "pending-save" : "new-item"}" data-cart-line="${item.key}" role="button" tabindex="0" aria-label="Edit ${esc(item.name)}">
+      <div><strong>${esc(item.name)}</strong>${(item.modifiers || []).map((modifier) => `<small>+ ${esc(modifier.name)}</small>`).join("")}</div>
+      <span class="parcel-line-note">${item.notes ? esc(item.notes) : "--"}</span>
+      <span class="cart-line-quantity">${item.quantity}</span>
+      <span>${money(item.price)}</span>
+      <strong>${money(Number(item.price || 0) * Number(item.quantity || 0))}</strong>
+    </div>` : `
     <div class="cart-line ${state.selectedCartKey === item.key ? "selected" : ""} ${item.sentToKitchen ? "saved" : item.savedLocally ? "pending-save" : "new-item"}" data-cart-line="${item.key}" role="button" tabindex="0" aria-label="Edit ${esc(item.name)}">
       <div>
         <strong>${esc(item.name)}</strong>
@@ -520,17 +658,20 @@ function renderCart() {
   customerSummary.textContent = state.customer ? `${state.customer.name} - ${state.customer.phone} - ${state.customer.loyaltyBalance || 0} pts` : "No customer attached";
   redeemPoints.max = state.customer?.loyaltyBalance || 0;
   payableTotal.textContent = `Payable: ${money(payableAmount())}`;
-  moveTableBtn.disabled = !isDineIn() || !state.selectedTable || !state.orderId;
+  moveTableBtn.disabled = state.billingReady || !isDineIn() || !state.selectedTable || !state.orderId;
   // A new order has no ID until it is saved, so it must still be possible to send its first KOT.
   const baseline = state.reviewBaselineQuantities || {};
   const hasNewKotItems = state.cart.some((item) => !item.sentToKitchen && Number(item.quantity || 0) > Number(baseline[item.key] || 0));
-  submitKot.disabled = !(state.cart.length > 0 && (!state.orderId || state.dirty || hasNewKotItems));
-  submitKot.title = submitKot.disabled ? "Save or add an item before submitting a KOT" : "Submit new items to the kitchen";
-  if (paymentMode.value !== "SPLIT") {
-    cashAmount.value = paymentMode.value === "CASH" ? amount(payableAmount()) : "";
-    cardAmount.value = paymentMode.value === "CARD" ? amount(payableAmount()) : "";
-    upiAmount.value = paymentMode.value === "UPI" ? amount(payableAmount()) : "";
+  submitKot.disabled = state.billingReady || !(state.cart.length > 0 && (!state.orderId || state.dirty || hasNewKotItems));
+  submitKot.title = state.billingReady ? "Final bill requested; this order is locked" : (submitKot.disabled ? "Save or add an item before submitting a KOT" : "Submit new items to the kitchen");
+  saveOrder.disabled = state.billingReady;
+  finalBillPrintOrder.disabled = state.billingReady;
+  itemSearch.disabled = state.billingReady;
+  if (state.billingReady) {
+    kotStatus.textContent = "Final bill requested — this order is locked. Start a new customer check for additional items.";
+    kotStatus.className = "success-message";
   }
+  paymentAmount.value = amount(payableAmount());
 }
 
 function cartItemFromOrderItem(item) {
@@ -703,15 +844,17 @@ function openEditSelectedItem() {
   modifierModal.hidden = false;
 }
 
-function addItemToCart(menuItem, modifiers) {
+function addItemToCart(menuItem, modifiers, options = {}) {
+  if (state.billingReady) return alert("Final bill has been requested for this order. Start a new customer check to add items.");
   const modifierIds = modifiers.map((modifier) => modifier.id).sort((a, b) => a - b);
   const key = `item-${menuItem.id}-${modifierIds.join(".") || "none"}`;
   const unitPrice = Number(menuItem.price || 0) + modifiers.reduce((sum, modifier) => sum + Number(modifier.price_delta || 0), 0);
-  const line = state.cart.find((item) => item.key === key && !item.sentToKitchen);
-  if (line) line.quantity += 1;
+  const requestedQuantity = Math.max(Math.trunc(Number(options.quantity || 1)), 1);
+  const line = options.forceNew ? null : state.cart.find((item) => item.key === key && !item.sentToKitchen);
+  if (line) line.quantity += requestedQuantity;
   else {
-    const nextKey = state.cart.some((item) => item.key === key) ? `${key}-new-${Date.now()}` : key;
-    state.cart.push({ ...menuItem, key: nextKey, price: unitPrice, quantity: 1, modifiers, savedLocally: false });
+    const nextKey = state.cart.some((item) => item.key === key) || options.forceNew ? `${key}-new-${Date.now()}` : key;
+    state.cart.push({ ...menuItem, key: nextKey, price: unitPrice, quantity: requestedQuantity, notes: options.notes || "", modifiers, savedLocally: false });
     state.selectedCartKey = nextKey;
   }
   if (line) state.selectedCartKey = line.key;
@@ -745,6 +888,7 @@ function openSplitBillModal() {
 }
 
 function addCombo(comboId) {
+  if (state.billingReady) return alert("Final bill has been requested for this order. Start a new customer check to add items.");
   if (isDineIn() && !state.selectedTable) return alert("Select a table first");
   const combo = state.combos.find((row) => row.id === comboId);
   if (!combo) return;
@@ -759,6 +903,7 @@ function addCombo(comboId) {
 }
 
 async function saveCurrentOrder(force = false) {
+  if (state.billingReady) return alert("Final bill has been requested for this order. It cannot be edited.");
   if (isDineIn() && !state.selectedTable) return alert("Select a table and add items");
   if (state.cart.length === 0) return alert("Add items first");
   if (state.orderId && !state.dirty && !force) return true;
@@ -803,23 +948,24 @@ function renderItemNoteEditor() {
     ? "Already sent to kitchen. Add a new item to send an additional instruction."
     : "This item-level note prints in the Special Note column on the next KOT.";
   if (document.activeElement !== itemNoteInput) itemNoteInput.value = line.notes || "";
-  itemNoteInput.disabled = line.sentToKitchen;
+  itemNoteInput.disabled = state.billingReady || line.sentToKitchen;
   selectedItemQuantity.textContent = String(line.quantity);
-  selectedItemMinus.disabled = line.sentToKitchen;
-  selectedItemPlus.disabled = line.sentToKitchen;
-  removeSelectedItem.disabled = line.sentToKitchen;
-  editItemOptions.disabled = line.sentToKitchen || Boolean(line.comboId);
+  selectedItemMinus.disabled = state.billingReady || line.sentToKitchen;
+  selectedItemPlus.disabled = state.billingReady || line.sentToKitchen;
+  removeSelectedItem.disabled = state.billingReady || line.sentToKitchen;
+  editItemOptions.disabled = state.billingReady || line.sentToKitchen || Boolean(line.comboId);
 }
 
 function updateSelectedItemNote(value) {
   const line = state.cart.find((item) => item.key === state.selectedCartKey);
-  if (!line || line.sentToKitchen) return;
+  if (!line || state.billingReady || line.sentToKitchen) return;
   line.notes = String(value || "").slice(0, 300);
   line.savedLocally = false;
   state.dirty = true;
 }
 
 function removeSelectedCartItem() {
+  if (state.billingReady) return alert("Final bill has been requested for this order. It cannot be edited.");
   const index = state.cart.findIndex((item) => item.key === state.selectedCartKey);
   const line = state.cart[index];
   if (!line) return;
@@ -831,6 +977,7 @@ function removeSelectedCartItem() {
 }
 
 function changeSelectedItemQuantity(delta) {
+  if (state.billingReady) return alert("Final bill has been requested for this order. It cannot be edited.");
   const line = state.cart.find((item) => item.key === state.selectedCartKey);
   if (!line || line.sentToKitchen) return;
   line.quantity = Number(line.quantity || 0) + Number(delta || 0);
@@ -900,16 +1047,9 @@ async function settleCurrentOrder(printBill = false) {
   // stale client-side amount in the settlement request.
   const serverTotal = Number(saved.total || state.serverOrderTotal || 0);
   const serverPayable = Math.max(serverTotal + serviceChargeValue() - redeemPointsValue() - Number(state.discountAmount || 0), 0);
-  if (Number(cashAmount.value) > 0 && Number(cardAmount.value || 0) === 0 && Number(upiAmount.value || 0) === 0) {
-    const displayedPayable = payableAmount();
-    if (Math.abs(Number(cashAmount.value) - displayedPayable) < 0.01 || Math.abs(Number(cashAmount.value) - serverPayable) < 0.01) {
-      cashAmount.value = amount(serverPayable);
-    }
-  }
-  const payments = [];
-  if (Number(cashAmount.value) > 0) payments.push({ method: "CASH", amount: Number(cashAmount.value) });
-  if (Number(cardAmount.value) > 0) payments.push({ method: "CARD", amount: Number(cardAmount.value) });
-  if (Number(upiAmount.value) > 0) payments.push({ method: "UPI", amount: Number(upiAmount.value) });
+  const displayedPayable = payableAmount();
+  if (Math.abs(Number(paymentAmount.value) - displayedPayable) < 0.01 || Math.abs(Number(paymentAmount.value) - serverPayable) < 0.01) paymentAmount.value = amount(serverPayable);
+  const payments = [{ method: paymentMode.value, amount: Number(paymentAmount.value) }];
   const isInvoice = settlementType?.value !== "NON_INVOICE";
   const data = await postJson("/orders/settle", { orderId: state.orderId, customerId: state.customer?.id || null, redeemPoints: Math.floor(redeemPointsValue()), payments, isInvoice, printBill });
   alert(isInvoice ? `${printBill ? `${data.printMessage} Invoice ${data.invoiceNo}` : `Invoice ${data.invoiceNo}`}` : `Order settled without invoice. Reference ${data.invoiceNo}`);
@@ -934,6 +1074,23 @@ async function settleCurrentOrder(printBill = false) {
     await refreshLiveState({ updateCart: true });
     refreshCartAndMenu();
   }
+}
+
+async function requestFinalBillAndPrint() {
+  if (!state.orderId) return alert("Save the order and submit its KOT first");
+  if (state.dirty || state.cart.some((item) => !item.sentToKitchen)) return alert("Submit all new items to KOT before requesting the final bill");
+  if (!await askPosConfirmation(`Print the final bill and mark ${state.selectedTable?.table_name || 'this table'} ready for billing?`, "Final bill")) return;
+  finalBillPrintOrder.disabled = true;
+  try {
+    const data = await postJson('/orders/final-bill', { orderId: state.orderId });
+    state.billingReady = true;
+    state.dirty = false;
+    kotStatus.textContent = data.message;
+    kotStatus.className = 'success-message';
+    refreshCartAndMenu();
+    window.dispatchEvent(new Event('pos:notifications-changed'));
+    alert(data.message);
+  } finally { finalBillPrintOrder.disabled = state.billingReady; }
 }
 
 async function searchCustomerByPhone() {
@@ -981,7 +1138,14 @@ document.addEventListener("click", async (event) => {
     renderCategories();
     renderItems(state.selectedCategoryId);
   }
-  if (target.dataset.item) openModifierModal(Number(target.dataset.item));
+  if (target.dataset.item) {
+    const selectedItem = state.items.find((item) => Number(item.id) === Number(target.dataset.item));
+    if (posMode === "PARCEL" && selectedItem) {
+      selectParcelDraftItem(selectedItem);
+      return;
+    }
+    else openModifierModal(Number(target.dataset.item));
+  }
   if (target.dataset.combo) addCombo(Number(target.dataset.combo));
   if (target.dataset.plus) {
     const line = state.cart.find((item) => item.key === target.dataset.plus);
@@ -1028,6 +1192,7 @@ selectedItemPlus.addEventListener("click", () => changeSelectedItemQuantity(1));
 removeSelectedItem.addEventListener("click", removeSelectedCartItem);
 
 items.addEventListener("click", (event) => {
+  if (state.billingReady) return alert("Final bill has been requested for this order. Start a new customer check to add items.");
   const target = event.target.closest("[data-item-plus], [data-item-minus]");
   if (!target) return;
   event.preventDefault();
@@ -1092,20 +1257,57 @@ addModifiedItem.addEventListener("click", () => {
       refreshCartAndMenu();
     }
   } else {
-    addItemToCart(state.pendingItem, modifiers);
+    addItemToCart(state.pendingItem, modifiers, state.pendingParcelDraft || {});
   }
   modifierModal.hidden = true;
   state.pendingItem = null;
   state.pendingEditKey = null;
+  if (state.pendingParcelDraft) resetParcelItemEntry();
 });
 
 paymentMode.addEventListener("change", renderCart);
 redeemPoints.addEventListener("input", renderCart);
 applyPromoCode.addEventListener("click", () => applyPosDiscount("PROMO", 1, "FLAT", promoCode.value.trim().toUpperCase()));
 applyDiscountAmount.addEventListener("click", () => applyPosDiscount("MANUAL", Number(discountAmount.value || 0), "FLAT", null));
-orderType.addEventListener("change", updateOrderTypeView);
+orderType.addEventListener("change", () => { if (state.cart.length) state.dirty = true; updateOrderTypeView(); });
+[deliveryAddress, deliveryPhone, deliveryFee, deliveryPartner, expectedDeliveryTime].forEach((control) => {
+  control?.addEventListener('input', () => { if (state.cart.length) state.dirty = true; });
+  control?.addEventListener('change', () => { if (state.cart.length) state.dirty = true; });
+});
 let itemSearchTimer;
-itemSearch.addEventListener("input", () => { clearTimeout(itemSearchTimer); itemSearchTimer = setTimeout(() => renderItems(state.selectedCategoryId), 120); });
+itemSearch.addEventListener("input", () => {
+  if (posMode === "PARCEL") state.parcelDraftItem = null;
+  clearTimeout(itemSearchTimer);
+  itemSearchTimer = setTimeout(() => renderItems(state.selectedCategoryId), 120);
+});
+itemSearch.addEventListener("keydown", (event) => {
+  const parcelSelectKey = posMode === "PARCEL" && (event.key === "Tab" || event.key === "Enter");
+  if ((!parcelSelectKey && event.key !== "Enter") || event.isComposing) return;
+  if (posMode === "PARCEL" && !(itemSearch.value || "").trim()) return;
+  event.preventDefault();
+  clearTimeout(itemSearchTimer);
+  renderItems(state.selectedCategoryId);
+  if (posMode === "PARCEL") {
+    const firstMatch = filteredMenuItems()[0];
+    if (firstMatch) selectParcelDraftItem(firstMatch);
+    else alert("No matching item found");
+    return;
+  }
+  addSingleSearchResult();
+});
+parcelItemNote?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.isComposing) return;
+  event.preventDefault();
+  parcelItemQuantity.focus();
+  parcelItemQuantity.select();
+});
+parcelItemQuantity?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.isComposing) return;
+  event.preventDefault();
+  commitParcelDraft();
+});
+addParcelItem?.addEventListener("click", commitParcelDraft);
+
 deliveryFee.addEventListener("input", renderCart);
 orderSelector.addEventListener("change", async () => {
   if ((isDineIn() && !state.selectedTable) || !orderSelector.value) return;
@@ -1118,6 +1320,7 @@ orderSelector.addEventListener("change", async () => {
   if (requestId !== tableSelectionRequest || Number(data.order?.id) !== orderId || (isDineIn() && Number(state.activeTableId) !== Number(state.selectedTable.id))) return;
   state.orderId = data.order.id;
   state.orderReference = data.order.order_reference || `${data.order.order_sequence || data.order.id}-${data.order.customer_ref || `A${data.order.id}`}`;
+  state.billingReady = Number(data.order.billing_ready) === 1;
   state.kotSubmitted = (data.items || []).some((item) => item.kot_id);
   state.dirty = false;
   state.customer = data.customer || null;
@@ -1135,6 +1338,7 @@ saveOrder.addEventListener("click", () => saveCurrentOrder());
 submitKot.addEventListener("click", submitCurrentKot);
 settleOrder.addEventListener("click", settleCurrentOrder);
 settlePrintOrder?.addEventListener("click", () => settleCurrentOrder(true));
+finalBillPrintOrder?.addEventListener("click", requestFinalBillAndPrint);
 moveTableBtn.addEventListener("click", async () => {
   if (!isDineIn() || !state.selectedTable) return alert("Select a dine-in table first");
   const destinations = state.tables
@@ -1159,6 +1363,7 @@ newCheckBtn.addEventListener("click", () => {
   state.orderId = null;
   state.parcelTableId = null;
   state.orderReference = null;
+  state.billingReady = false;
   state.openOrders = [];
   state.cart = [];
   state.selectedCartKey = null;
@@ -1178,6 +1383,7 @@ parcelCheckBtn.addEventListener("click", () => {
   const parcelCustomer = state.customer;
   state.orderId = null;
   state.orderReference = null;
+  state.billingReady = false;
   state.openOrders = [];
   state.cart = [];
   state.selectedCartKey = null;
@@ -1257,6 +1463,7 @@ cancelOrder.addEventListener("click", async () => {
   state.selectedCartKey = null;
   state.orderId = null;
   state.orderReference = null;
+  state.billingReady = false;
   state.dirty = false;
   state.kotSubmitted = false;
   await refreshLiveState({ updateCart: true });

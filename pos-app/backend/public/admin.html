@@ -10,7 +10,7 @@
   <header class="app-home-nav">
     <div class="app-home-brand"><strong>K'MASTER</strong> <span>POS</span><small>Administration <b id="headerAppVersion">POS --</b></small></div>
     <nav aria-label="POS home sections">
-      <a href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a href="/pos-live.html?mode=PARCEL">POS Parcel</a><a href="/pos-live.html?mode=PARTY">POS Party Order</a><a href="/billing.html">Billing</a><a href="/admin.html?view=invoices&standalone=1#invoices">Invoices</a><a href="/kds.html">KDS</a><a href="/admin.html?view=items&standalone=1">Availability</a><a href="/orders.html">Live Orders</a><a class="active" href="/admin.html">Admin</a><button id="notificationButton" data-notification-center type="button" title="Notifications">Notifications <span id="notificationCount" data-notification-count>0</span></button><button data-logout type="button">Logout</button>
+      <a data-pos-shortcut="F1" href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a data-pos-shortcut="F2" href="/pos-live.html?mode=PARCEL">POS Parcel</a><a data-pos-shortcut="F3" href="/pos-live.html?mode=PARTY">POS Party Order</a><a data-pos-shortcut="F4" href="/billing.html">Billing</a><a data-pos-shortcut="F5" href="/admin.html?view=invoices&standalone=1#invoices">Invoices</a><a data-pos-shortcut="F6" href="/kds.html">KDS</a><a data-pos-shortcut="F8" href="/admin.html?view=items&standalone=1">Availability</a><a data-pos-shortcut="F9" href="/orders.html">Live Orders</a><a class="active" href="/admin.html">Admin</a><button data-pos-shortcut="F10" id="notificationButton" data-notification-center type="button" title="Notifications">Notifications <span id="notificationCount" data-notification-count>0</span></button><button data-logout type="button">Logout</button>
     </nav>
   </header>
   <aside class="admin-sidebar">
@@ -109,7 +109,7 @@
         <label class="check-row"><input id="printerActive" type="checkbox" checked> Active</label>
         <button>Save Printer</button><button type="button" class="secondary-btn" data-reset-form="printerForm">Clear</button>
       </form>
-      <div class="table-panel"><table><thead><tr><th>Printer</th><th>Type</th><th>Connection</th><th>Address</th><th>Status</th><th></th></tr></thead><tbody id="printersTable"></tbody></table></div>
+      <div class="table-panel"><table class="printers-table"><thead><tr><th>Printer</th><th>Type</th><th>Connection</th><th>Address</th><th>Status</th><th>Actions</th></tr></thead><tbody id="printersTable"></tbody></table></div>
     </section>
 
     <section class="admin-view" id="view-categories">

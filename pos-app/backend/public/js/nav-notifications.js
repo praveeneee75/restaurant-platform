@@ -22,10 +22,13 @@
   async function refresh() {
     const restaurantId = await activeRestaurantId();
     if (!restaurantId) return;
-    const [latest, activation, qr] = await Promise.all([
+    const currentUser = JSON.parse(localStorage.getItem('user') || 'null');
+    const currentRole = String(currentUser?.role || '').toUpperCase();
+    const [latest, activation, qr, inApp] = await Promise.all([
       json(`/updates/check?restaurantId=${encodeURIComponent(restaurantId)}`).catch(() => ({})),
       json('/activation/status').catch(() => ({})),
-      json(`/qr/orders/pending?restaurantId=${encodeURIComponent(restaurantId)}`).catch(() => ({ orders: [] }))
+      json(`/qr/orders/pending?restaurantId=${encodeURIComponent(restaurantId)}`).catch(() => ({ orders: [] })),
+      currentRole ? json(`/notifications/in-app?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(currentRole)}`).catch(() => ({ notifications: [] })) : { notifications: [] }
     ]);
     messages = [];
     let notificationTotal = 0;
@@ -36,6 +39,9 @@
     }
     const pendingQr = (qr.orders || []).length;
     if (pendingQr) { messages.push(`${pendingQr} QR order${pendingQr === 1 ? '' : 's'} waiting for approval.`); notificationTotal += pendingQr; }
+    const finalBills = (inApp.notifications || []).filter((notification) => notification.event_type === 'FINAL_BILL_READY');
+    finalBills.forEach((notification) => messages.push(notification.payload?.message || 'An order is ready for billing.'));
+    notificationTotal += finalBills.length;
     count.textContent = String(notificationTotal);
     count.hidden = false;
     button.title = messages.join(' | ') || 'No new notifications';

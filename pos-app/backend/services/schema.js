@@ -171,6 +171,7 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'orders', 'order_sequence INTEGER');
   addColumn(db, 'orders', 'customer_ref TEXT');
   addColumn(db, 'orders', 'order_reference TEXT');
+  addColumn(db, 'orders', 'billing_ready INTEGER DEFAULT 0');
 
   addColumn(db, 'order_items', 'price REAL DEFAULT 0');
   addColumn(db, 'order_items', "status TEXT DEFAULT 'PLACED'");

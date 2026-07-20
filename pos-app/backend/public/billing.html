@@ -10,7 +10,7 @@
   <header class="app-home-nav">
     <div class="app-home-brand"><strong>K'MASTER</strong> <span>POS</span><small id="billingRestaurantName">Billing workspace</small></div>
     <nav aria-label="POS home sections">
-      <a href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a href="/pos-live.html?mode=PARCEL">POS Parcel</a><a href="/pos-live.html?mode=PARTY">POS Party Order</a><a class="active" href="/billing.html">Billing</a><a data-role-nav="invoices" href="/admin.html?view=invoices&standalone=1#invoices">Invoices</a><a data-role-nav="kds" href="/kds.html">KDS</a><a data-role-nav="availability" href="/admin.html?view=items&standalone=1">Availability</a><a data-role-nav="live-orders" href="/orders.html">Live Orders</a><a data-role-nav="admin" href="/admin.html">Admin</a><button data-role-nav="notifications" data-notification-center type="button">Notifications <span data-notification-count>0</span></button><button data-logout type="button">Logout</button>
+      <a data-pos-shortcut="F1" href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a data-pos-shortcut="F2" href="/pos-live.html?mode=PARCEL">POS Parcel</a><a data-pos-shortcut="F3" href="/pos-live.html?mode=PARTY">POS Party Order</a><a data-pos-shortcut="F4" class="active" href="/billing.html">Billing</a><a data-pos-shortcut="F5" data-role-nav="invoices" href="/admin.html?view=invoices&standalone=1#invoices">Invoices</a><a data-pos-shortcut="F6" data-role-nav="kds" href="/kds.html">KDS</a><a data-pos-shortcut="F8" data-role-nav="availability" href="/admin.html?view=items&standalone=1">Availability</a><a data-pos-shortcut="F9" data-role-nav="live-orders" href="/orders.html">Live Orders</a><a data-role-nav="admin" href="/admin.html">Admin</a><button data-pos-shortcut="F10" data-role-nav="notifications" data-notification-center type="button">Notifications <span data-notification-count>0</span></button><button data-logout type="button">Logout</button>
     </nav>
   </header>
   <aside class="billing-sidebar">
@@ -20,7 +20,7 @@
   </aside>
   <main class="billing-main">
     <header class="billing-topbar"><div><h1>Table View</h1><p id="billingStatus">Loading billing data...</p></div><div class="billing-actions"><button id="refreshBilling" class="secondary-btn">Refresh</button></div></header>
-    <section class="billing-toolbar"><div class="billing-legend"><span><i class="legend blank"></i>Available</span><span><i class="legend running"></i>Running</span><span><i class="legend paid"></i>Paid</span><span><i class="legend kot"></i>Running KOT</span></div><input id="billingSearch" type="search" placeholder="Search table, order or customer"></section>
+    <section class="billing-toolbar"><div class="billing-legend"><span><i class="legend blank"></i>Available</span><span><i class="legend running"></i>Running</span><span><i class="legend ready-billing"></i>Ready for billing</span><span><i class="legend paid"></i>Paid</span><span><i class="legend kot"></i>Running KOT</span></div><input id="billingSearch" type="search" placeholder="Search table, order or customer"></section>
     <section class="billing-summary-panel"><div style="grid-column:1/-1">
       <div class="billing-qr-controls">
         <label class="billing-qr-toggle"><input id="billingQrEnabled" type="checkbox"><span>Enable QR ordering</span></label>

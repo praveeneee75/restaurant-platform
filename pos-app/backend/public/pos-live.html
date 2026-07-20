@@ -10,19 +10,31 @@
   <header class="app-home-nav">
     <div class="app-home-brand"><strong>K'MASTER</strong> <span>POS</span><small id="activeRestaurantNameTop">Loading restaurant...</small></div>
     <nav aria-label="POS home sections">
-      <a data-pos-mode="DINE_IN" href="/pos-live.html?mode=DINE_IN">POS Dine In</a>
-      <a data-pos-mode="PARCEL" href="/pos-live.html?mode=PARCEL">POS Parcel</a>
-      <a data-pos-mode="PARTY" href="/pos-live.html?mode=PARTY">POS Party Order</a>
-      <a data-role-nav="billing" href="/billing.html">Billing</a>
-      <a data-role-nav="invoices" href="/admin.html?view=invoices#invoices">Invoices</a>
-      <a data-role-nav="kds" href="/kds.html">KDS</a>
+      <a data-pos-mode="DINE_IN" data-pos-shortcut="F1" href="/pos-live.html?mode=DINE_IN">POS Dine In</a>
+      <a data-pos-mode="PARCEL" data-pos-shortcut="F2" href="/pos-live.html?mode=PARCEL">POS Parcel</a>
+      <a data-pos-mode="PARTY" data-pos-shortcut="F3" href="/pos-live.html?mode=PARTY">POS Party Order</a>
+      <a data-role-nav="billing" data-pos-shortcut="F4" href="/billing.html">Billing</a>
+      <a data-role-nav="invoices" data-pos-shortcut="F5" href="/admin.html?view=invoices#invoices">Invoices</a>
+      <a data-role-nav="kds" data-pos-shortcut="F6" href="/kds.html">KDS</a>
       <a data-role-nav="admin" href="/admin.html">Admin</a>
-      <a data-role-nav="availability" href="/admin.html?view=items&standalone=1">Availability</a>
-      <a data-role-nav="live-orders" href="/orders.html">Live Orders</a>
-      <a data-role-nav="qr-notifications" data-notification-center id="qrNotifications" href="#qrApprovalPanel">Notifications <span id="qrNotificationCount" class="notification-count" data-notification-count>0</span></a>
+      <a data-role-nav="availability" data-pos-shortcut="F8" href="/admin.html?view=items&standalone=1">Availability</a>
+      <a data-role-nav="live-orders" data-pos-shortcut="F9" href="/orders.html">Live Orders</a>
+      <a data-role-nav="qr-notifications" data-pos-shortcut="F10" data-notification-center id="qrNotifications" href="#qrApprovalPanel">Notifications <span id="qrNotificationCount" class="notification-count" data-notification-count>0</span></a>
       <button data-logout type="button">Logout</button>
     </nav>
   </header>
+  <section class="parcel-intake" id="parcelIntake" aria-labelledby="parcelIntakeTitle" hidden>
+    <div class="parcel-intake-heading">
+      <div><span class="eyebrow">Parcel order</span><h2 id="parcelIntakeTitle">Customer &amp; fulfilment</h2></div>
+      <small>Search an existing customer or capture the order details before adding items.</small>
+    </div>
+    <div class="parcel-intake-grid">
+      <label class="parcel-field"><span>Mobile number</span><div id="parcelPhoneSlot"></div></label>
+      <label class="parcel-field parcel-name"><span>Customer name</span><div id="parcelNameSlot"></div></label>
+      <div class="parcel-field parcel-delivery" id="parcelDeliverySlot"></div>
+      <div class="parcel-customer-status" id="parcelCustomerStatusSlot"></div>
+    </div>
+  </section>
   <aside class="pos-tables">
     <header>
       <div>
@@ -38,6 +50,12 @@
   </aside>
 
   <main class="pos-menu">
+    <section class="parcel-item-entry" id="parcelItemEntry" hidden>
+      <label class="parcel-item-lookup"><span>Item</span><div id="parcelItemSearchSlot"></div><div id="parcelItemSuggestionsSlot"></div></label>
+      <label><span>Special note</span><input id="parcelItemNote" maxlength="300" placeholder="No onion, less spicy, allergy information"></label>
+      <label class="parcel-item-quantity-field"><span>Quantity</span><input id="parcelItemQuantity" type="number" min="1" step="1" value="1"></label>
+      <button id="addParcelItem" type="button">Add item</button>
+    </section>
     <div class="category-strip" id="categories"><button data-category="ALL" class="active">All</button></div>
     <label class="item-search"><span>Find an item</span><input id="itemSearch" type="search" placeholder="Search products"></label>
     <div class="item-grid" id="items"></div>
@@ -112,15 +130,12 @@
         <option value="CASH">Cash</option>
         <option value="CARD">Card</option>
         <option value="UPI">UPI</option>
-        <option value="SPLIT">Split Payment</option>
       </select>
       <select id="settlementType" hidden>
         <option value="INVOICE">Create invoice</option>
         <option value="NON_INVOICE">Settle without invoice</option>
       </select>
-      <input id="cashAmount" type="number" step="0.01" placeholder="Cash amount">
-      <input id="cardAmount" type="number" step="0.01" placeholder="Card amount">
-      <input id="upiAmount" type="number" step="0.01" placeholder="UPI amount">
+      <input id="paymentAmount" type="number" min="0" step="0.01" placeholder="Payment amount" aria-label="Payment amount">
       <div class="order-state-legend" aria-label="Order item status">
         <span><i class="legend saved"></i>Saved / sent</span>
         <span><i class="legend pending"></i>Saved locally, not sent</span>
@@ -129,9 +144,10 @@
       <div class="cart-actions">
         <button id="moveTableBtn" type="button" class="secondary-btn">Move Table</button>
       </div>
-      <div class="cart-actions">
+      <div class="cart-actions pos-primary-actions">
         <button id="saveOrder">Save</button>
-        <button id="submitKot">Submit KOT</button>
+        <button id="submitKot" data-action-shortcut="F11">Submit KOT</button>
+        <button id="finalBillPrintOrder" data-action-shortcut="F12" type="button" class="primary-btn">Final Bill &amp; Print</button>
         <button id="settleOrder">Settle</button>
         <button id="settlePrintOrder" type="button" class="primary-btn" hidden>Settle &amp; Print</button>
       </div>

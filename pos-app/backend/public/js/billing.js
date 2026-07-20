@@ -31,7 +31,8 @@ function renderTables() {
   tableMap.innerHTML = state.tables.map(table => {
     const orders = tableOrders(table);
     const bills = orders.length ? orders.map(order => `<button class="billing-open-bill" data-order-id="${order.id}"><strong>${esc(order.order_reference || `${order.order_sequence || order.id}-${order.customer_ref || `A${order.id}`}`)}</strong><span><b>${esc(order.customer_name || `Customer ${order.customer_ref || ''}`)}</b><em>${money(order.total_amount)}</em></span></button>`).join('') : '<span>Available</span>';
-    return `<section class="billing-table-card ${orders.length ? 'running' : 'blank'}"><strong>${esc(table.table_name)}</strong><div class="billing-open-bills">${bills}</div></section>`;
+    const readyForBilling = orders.some(order => Number(order.billing_ready) === 1);
+    return `<section class="billing-table-card ${readyForBilling ? 'ready-billing' : (orders.length ? 'running' : 'blank')}"><strong>${esc(table.table_name)}</strong>${readyForBilling ? '<span class="billing-ready-label">Ready for billing</span>' : ''}<div class="billing-open-bills">${bills}</div></section>`;
   }).join('');
 }
 function renderRecent() { const rows = visibleOrders().filter(o => state.filter === 'ALL' || (state.filter === 'TAKEAWAY' ? o.order_type !== 'DINE_IN' : o.order_type === state.filter)).slice(0, 12); recentOrders.innerHTML = rows.map(o => `<button class="recent-order" data-order-id="${o.id}"><strong>${esc(o.order_reference || `#${o.id}`)}</strong><span>${esc(o.table_no || o.order_type)} · ${money(o.total_amount)}</span><small>${esc(o.customer_name || 'No customer')} · ${esc(o.payment_status || 'UNPAID')}</small></button>`).join('') || '<p>No orders found.</p>'; }
@@ -56,6 +57,7 @@ saveBillingQrSettings.addEventListener('click', async () => {
 });
 document.addEventListener('click', async (event) => { const button=event.target.closest('[data-approve-qr],[data-reject-qr]'); if(!button)return; const rejecting=Boolean(button.dataset.rejectQr); const orderId=Number(button.dataset.rejectQr||button.dataset.approveQr); button.disabled=true; try { const response=await fetch(rejecting?'/qr/orders/reject':'/qr/orders/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({restaurantId,actor:{id:sessionUser.id,role:sessionUser.role},orderId,reason:rejecting?'Rejected from billing':undefined})}); const data=await response.json(); if(!response.ok||data.success===false)throw Error(data.message||'QR order action failed'); billingStatus.textContent=data.message; window.dispatchEvent(new Event('pos:notifications-changed')); await load(); } catch(error){billingStatus.textContent=error.message;button.disabled=false;} });
 Promise.all([load(), loadBillingQrSettings()]).catch(e => billingStatus.textContent = e.message);
+setInterval(() => load().catch(e => { billingStatus.textContent = e.message; }), 10000);
 
 // Billing must show only kitchen-submitted lines; saved draft lines stay in POS.
 async function showSubmittedOrder(orderId) {
@@ -70,7 +72,7 @@ async function showSubmittedOrder(orderId) {
   }, new Map());
   const kotSections = [...kotGroups.entries()].map(([reference, kotItems]) => `<section class="bill-kot-group"><h3>KOT ${esc(reference)}</h3>${kotItems.map(i => `<div><span>${esc(i.name)} × ${i.quantity}</span><strong>${money(i.price * i.quantity)}</strong></div>`).join('')}</section>`).join('');
   const submittedTotal = items.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
-  billingDetail.innerHTML = `<header><div><h2>${esc(d.order.order_reference || `Order ${d.order.id}`)}</h2><p>${esc(d.order.table_no || d.order.order_type)} · ${esc(d.customer?.name || 'No customer')}</p></div><a class="primary-btn" href="/pos-live.html?restaurantId=${encodeURIComponent(restaurantId)}">Open POS</a></header><div class="bill-lines">${kotSections || '<p>No submitted items</p>'}</div><div class="bill-total"><span>Submitted total</span><strong>${money(submittedTotal)}</strong></div><div class="billing-payment"><h3>Payment</h3><p class="billing-hint">Only KOT-submitted items are shown here. Save additional items in POS and submit a new KOT before billing them.</p><select id="billingPaymentMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></select><input id="billingPaymentAmount" type="number" step="0.01" value="${submittedTotal.toFixed(2)}"><button id="settleBilling" class="primary-btn" data-settle-order="${d.order.id}">Settle and create invoice</button></div>`;
+  billingDetail.innerHTML = `<header><div><h2>${esc(d.order.order_reference || `Order ${d.order.id}`)}</h2><p>${esc(d.order.table_no || d.order.order_type)} · ${esc(d.customer?.name || 'No customer')}</p></div><a class="primary-btn" href="/pos-live.html?restaurantId=${encodeURIComponent(restaurantId)}">Open POS</a></header><div class="bill-lines">${kotSections || '<p>No submitted items</p>'}</div><div class="bill-total"><span>Submitted total</span><strong>${money(submittedTotal)}</strong></div><div class="billing-payment"><h3>Payment</h3><p class="billing-hint">Only KOT-submitted items are shown here. Save additional items in POS and submit a new KOT before billing them.</p><select id="billingPaymentMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></select><input id="billingPaymentAmount" type="number" step="0.01" value="${submittedTotal.toFixed(2)}"><button id="settleBilling" class="primary-btn" data-action-shortcut="F11" data-settle-order="${d.order.id}">Settle and create invoice</button></div>`;
   const adjustments = document.createElement('section');
   adjustments.className = 'billing-adjustments';
   adjustments.innerHTML = '<h3>Discounts and rewards</h3>'
@@ -90,6 +92,7 @@ async function showSubmittedOrder(orderId) {
       const print = settle.cloneNode(true);
       print.id = 'settlePrintBilling';
       print.textContent = 'Settle & Print';
+      print.dataset.actionShortcut = 'F12';
       print.dataset.printBill = 'true';
       settle.insertAdjacentElement('afterend', print);
     }

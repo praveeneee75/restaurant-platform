@@ -5255,6 +5255,25 @@ app.post('/qr/orders/approve', async (req, res) => {
   }
 });
 
+app.get('/notifications/in-app', (req, res) => {
+  const { restaurantId, role } = req.query;
+  const cleanRole = String(role || '').trim().toUpperCase();
+  if (!restaurantId || !cleanRole) return res.status(400).json({ success: false, message: 'restaurantId and role required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const notifications = db.prepare(`
+      SELECT id, event_type, payload, created_at
+      FROM notification_logs
+      WHERE channel = 'IN_APP' AND status = 'QUEUED'
+        AND (recipient IS NULL OR recipient = ?)
+        AND created_at >= datetime('now', '-1 day')
+      ORDER BY id DESC LIMIT 25
+    `).all(`ROLE:${cleanRole}`).map((row) => ({ ...row, payload: JSON.parse(row.payload || '{}') }));
+    res.json({ success: true, notifications });
+  } catch (err) { sendError(res, err); }
+  finally { db.close(); }
+});
+
 app.post('/qr/orders/reject', async (req, res) => {
   const { restaurantId, actor, orderId, reason } = req.body;
   if (!restaurantId || !isPositiveId(orderId) || !canSell(actor?.role)) return res.status(400).json({ success: false, message: 'Order and waiter approval permission are required' });
@@ -5607,9 +5626,10 @@ app.post('/orders/save', (req, res) => {
     }
     if (lockId || latestUpdatedAt) verifyOrderLock(db, actor, tableId, orderId, lockId);
     if (orderId) {
-      const existingOrder = db.prepare('SELECT id, status, payment_status, updated_at FROM orders WHERE id = ?').get(orderId);
+      const existingOrder = db.prepare('SELECT id, status, payment_status, billing_ready, updated_at FROM orders WHERE id = ?').get(orderId);
       if (!existingOrder) throw new Error('Order not found');
       if (existingOrder.payment_status === 'PAID' || existingOrder.status === 'PAID') throw new Error('Settled order cannot be edited');
+      if (Number(existingOrder.billing_ready) === 1) throw new Error('Final bill has been requested for this order. Create a new customer check to add more items.');
       if (latestUpdatedAt && existingOrder.updated_at && String(existingOrder.updated_at) !== String(latestUpdatedAt)) {
         throw new Error('This order changed on another device. Refresh before saving.');
       }
@@ -5642,7 +5662,7 @@ app.post('/orders/save', (req, res) => {
           db.prepare('UPDATE orders SET order_sequence = ?, customer_ref = ?, order_reference = ? WHERE id = ?')
             .run(oldValue?.order_sequence || identity.orderSequence, oldValue?.customer_ref || identity.customerRef, oldValue?.order_reference || identity.orderReference, id);
         }
-        db.prepare("UPDATE orders SET order_type = ?, table_id = ?, table_no = ?, total_amount = ?, status = 'OPEN', customer_id = COALESCE(?, customer_id), delivery_fee = ?, order_source = COALESCE(order_source, 'POS'), updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        db.prepare("UPDATE orders SET order_type = ?, table_id = ?, table_no = ?, total_amount = ?, status = 'OPEN', billing_ready = 0, customer_id = COALESCE(?, customer_id), delivery_fee = ?, order_source = COALESCE(order_source, 'POS'), updated_at = CURRENT_TIMESTAMP WHERE id = ?")
           .run(selectedOrderType, safeTableId || null, safeTableName || null, 0, isPositiveId(customerId) ? customerId : null, safeDeliveryFee, id);
         // KOT-submitted lines are historical kitchen records. Preserve them so the next
         // submission contains only newly added lines, rather than reprinting the full order.
@@ -5850,6 +5870,7 @@ app.get('/orders/invoices', (req, res) => {
         o.total_amount,
         o.paid_amount,
         o.payment_status,
+        o.billing_ready,
         o.status,
         o.settled_at,
         o.created_at,
@@ -6026,7 +6047,7 @@ app.get('/orders/open-list', (req, res) => {
     const contextClause = hasTable ? 'o.table_id = ?' : 'o.table_id IS NULL AND o.order_type = ?';
     const contextValue = hasTable ? Number(tableId) : cleanOrderType;
     const orders = db.prepare(`
-      SELECT o.id, o.table_id, o.table_no, o.order_type, o.total_amount, o.payment_status, o.status, o.created_at, o.updated_at, o.order_sequence, o.customer_ref, o.order_reference, c.name AS customer_name
+      SELECT o.id, o.table_id, o.table_no, o.order_type, o.total_amount, o.payment_status, o.status, o.billing_ready, o.created_at, o.updated_at, o.order_sequence, o.customer_ref, o.order_reference, c.name AS customer_name
       FROM orders o
       LEFT JOIN customers c ON c.id = o.customer_id
       WHERE ${contextClause} AND o.status NOT IN ('PAID', 'CANCELLED') AND o.payment_status != 'PAID'
@@ -6379,6 +6400,9 @@ app.post('/orders/submit-kot', (req, res) => {
 
   const db = openRestaurantDatabase(restaurantId);
   try {
+    const orderState = db.prepare('SELECT billing_ready FROM orders WHERE id = ?').get(orderId);
+    if (!orderState) throw new Error('Order not found');
+    if (Number(orderState.billing_ready) === 1) throw new Error('Final bill has been requested for this order. It cannot accept another KOT.');
     let kotResult = null;
     db.transaction(() => {
       kotResult = createKotJobs(db, orderId);
@@ -6422,6 +6446,59 @@ app.post('/orders/cancel', (req, res) => {
   } finally {
     db.close();
   }
+});
+
+app.post('/orders/final-bill', (req, res) => {
+  const { restaurantId, actor, orderId } = req.body;
+  if (!restaurantId || !isPositiveId(orderId) || !canSell(actor?.role)) {
+    return res.status(400).json({ success: false, message: 'Order and sales permission are required' });
+  }
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'orders.create', 'Order permission required');
+    const order = db.prepare("SELECT * FROM orders WHERE id = ? AND payment_status != 'PAID' AND status != 'CANCELLED'").get(orderId);
+    if (!order) throw new Error('Open order not found');
+    if (Number(order.billing_ready) === 1) throw new Error('Final bill has already been requested for this order');
+    const draftCount = Number(db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE order_id = ? AND kot_id IS NULL').get(orderId)?.count || 0);
+    if (draftCount > 0) throw new Error('Submit all new items to KOT before requesting the final bill');
+    const items = db.prepare('SELECT i.name, oi.quantity, oi.price FROM order_items oi JOIN items i ON i.id = oi.item_id WHERE oi.order_id = ? AND oi.kot_id IS NOT NULL ORDER BY oi.id').all(orderId);
+    if (!items.length) throw new Error('Submit a KOT before requesting the final bill');
+    const grossAmount = items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.price || 0), 0);
+    const serviceCharge = serviceChargeForAmount(db, grossAmount);
+    const discountRows = tableExists(db, 'discounts') ? db.prepare('SELECT value, value_type FROM discounts WHERE order_id = ?').all(orderId) : [];
+    const discountAmount = discountRows.reduce((sum, discount) => sum + (String(discount.value_type || '').toUpperCase() === 'PERCENT' ? grossAmount * Number(discount.value || 0) / 100 : Number(discount.value || 0)), 0);
+    const payableBeforeRoundOff = Math.max(grossAmount + serviceCharge - Math.min(discountAmount, grossAmount + serviceCharge), 0);
+    const payable = applyRoundOff(db, payableBeforeRoundOff);
+    const roundOff = payable - payableBeforeRoundOff;
+    const customer = order.customer_id ? db.prepare('SELECT name, phone FROM customers WHERE id = ?').get(order.customer_id) : null;
+    const billPrinter = db.prepare("SELECT id, name, connection, address FROM printers WHERE type = 'BILL' AND active = 1 ORDER BY id LIMIT 1").get();
+    if (!billPrinter) throw new Error('Configure an active BILL printer before requesting Final Bill & Print');
+    const kotReferences = db.prepare(`SELECT GROUP_CONCAT(kot_ref, ', ') AS kot_refs FROM (SELECT DISTINCT COALESCE(o.order_reference, CAST(o.id AS TEXT)) || '-' || COALESCE(k.suborder_no, k.id) AS kot_ref FROM kots k JOIN orders o ON o.id = k.order_id WHERE k.order_id = ? ORDER BY COALESCE(k.suborder_no, k.id))`).get(orderId)?.kot_refs || '';
+    let printQueued = false;
+    db.transaction(() => {
+    if (billPrinter) {
+      db.prepare("INSERT INTO print_jobs (type, ref_id, kitchen_id, printer_id, payload, status) VALUES ('BILL', ?, NULL, ?, ?, 'PENDING')").run(orderId, billPrinter.id, JSON.stringify({
+        orderId, orderReference: order.order_reference || String(orderId), invoiceNo: `FINAL-${order.order_reference || orderId}`, finalBill: true, items,
+        printer: { name: billPrinter.name, connection: billPrinter.connection, address: billPrinter.address },
+        restaurantProfile: { displayName:getConfigValue(db,'restaurant_display_name',''), legalName:getConfigValue(db,'legal_name',''), gstin:getConfigValue(db,'gstin',''), fssaiLicenseNo:getConfigValue(db,'fssai_license_no',''), stateCode:getConfigValue(db,'state_code','33'), sacCode:getConfigValue(db,'sac_code','996331'), addressLine1:getConfigValue(db,'address_line_1',''), addressLine2:getConfigValue(db,'address_line_2',''), city:getConfigValue(db,'city',''), state:getConfigValue(db,'state',''), country:getConfigValue(db,'country',''), phone:getConfigValue(db,'phone',''), email:getConfigValue(db,'email',''), currency:getConfigValue(db,'currency','INR'), showTaxOnBill:getBooleanConfig(db,'show_tax_on_bill',true), printContact:getBooleanConfig(db,'bill_print_contact',true), printKotReferences:getBooleanConfig(db,'bill_print_kot_references',true), printCustomer:getBooleanConfig(db,'bill_print_customer',true), printPayment:false, printAuthorisedSignatory:getBooleanConfig(db,'bill_print_authorised_signatory',true), footerText:getConfigValue(db,'bill_footer_text','THANK YOU. VISIT AGAIN.'), billTemplate:getConfigValue(db,'bill_template','BORDERED') },
+        customerId:order.customer_id || null, customerName:customer?.name || '', customerPhone:customer?.phone || '', tableNumber:order.table_no || '', orderType:order.order_type || 'DINE_IN', settledAt:new Date().toISOString(), serviceCharge, roundOff, payable, taxName:getConfigValue(db,'tax_name','GST'), taxRate:getNumberConfig(db,'tax_rate',getConfigValue(db,'gstin','') ? 5 : 0), paymentMode:'Pending settlement', kotReferences
+      }));
+      printQueued = true;
+    }
+    db.prepare('UPDATE orders SET billing_ready = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(orderId);
+    const notificationPayload = {
+      title: 'Order ready for billing',
+      message: `${order.order_reference || order.id} / ${order.table_no || order.order_type} is ready for billing.`,
+      orderId: Number(orderId), orderReference: order.order_reference || String(orderId), tableNumber: order.table_no || '', printQueued
+    };
+    ['CASHIER', 'MANAGER_1', 'MANAGER_2', 'OWNER'].forEach((targetRole) => {
+      queueNotification(db, 'FINAL_BILL_READY', 'IN_APP', `ROLE:${targetRole}`, notificationPayload);
+    });
+    })();
+    writeAudit(db, actor, 'FINAL_BILL_REQUEST', 'ORDER', orderId, null, { printQueued, payable });
+    res.json({ success:true, billingReady:true, printQueued, message:'Final bill sent to the configured BILL printer. Order marked ready for billing.' });
+  } catch (err) { sendError(res, err); }
+  finally { db.close(); }
 });
 
 app.post('/orders/settle', (req, res) => {
@@ -6511,7 +6588,7 @@ app.post('/orders/settle', (req, res) => {
       });
       db.prepare(`
         UPDATE orders
-        SET total_amount = ?, tax_amount = ?, service_charge_amount = ?, paid_amount = ?, payment_status = 'PAID', status = 'PAID', invoice_no = ?, is_invoice = ?, settled_at = CURRENT_TIMESTAMP,
+        SET total_amount = ?, tax_amount = ?, service_charge_amount = ?, paid_amount = ?, payment_status = 'PAID', status = 'PAID', billing_ready = 0, invoice_no = ?, is_invoice = ?, settled_at = CURRENT_TIMESTAMP,
             customer_id = COALESCE(?, customer_id), redeemed_points = ?, loyalty_discount = ?
         WHERE id = ?
       `).run(payable, taxAmount, serviceCharge, paid, invoiceNo, isInvoice === false ? 0 : 1, linkedCustomerId || null, redeem, loyaltyDiscount, orderId);
@@ -6750,6 +6827,7 @@ app.get('/orders/live', (req, res) => {
         o.order_reference,
         o.status,
         o.payment_status,
+        o.billing_ready,
         o.total_amount,
         o.delivery_fee,
         EXISTS (SELECT 1 FROM order_items submitted_items WHERE submitted_items.order_id = o.id AND submitted_items.kot_id IS NOT NULL) AS has_submitted_kot,
