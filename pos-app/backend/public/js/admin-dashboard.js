@@ -314,7 +314,7 @@ function renderAdmin() {
   printersTable.innerHTML = printers.map((printer) => `<tr><td>${esc(printer.name)}</td><td>${esc(printer.type)}</td><td>${esc(printer.connection)}</td><td>${esc(printer.paper_width_mm || 58)} mm</td><td>${esc(printer.address || "")}</td><td>${printer.active ? "Active" : "Inactive"}</td><td><span class="action-cell"><button type="button" class="secondary-btn" data-test-printer="${printer.id}">Test Print</button><button class="mini-btn" data-edit-printer="${printer.id}" type="button">Edit</button><button class="danger-btn" data-delete-printer="${printer.id}" type="button">Delete</button></span></td></tr>`).join("");
   categoriesTable.innerHTML = categories.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.kitchen_name || "Unassigned")}${Number(c.kitchen_active) === 0 ? " (inactive kitchen)" : ""}</td><td>${c.active ? "Active" : "Inactive"}</td><td>${actions("category", c.id)}</td></tr>`).join("");
   const term = (itemSearch?.value || "").toLowerCase();
-  itemsTable.innerHTML = items.filter((i) => !term || i.name.toLowerCase().includes(term)).map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td><td>${i.active ? "Active" : "Inactive"}${Number(i.online_enabled ?? 1) ? "" : " / Hidden online"}</td><td>${actions("item", i.id)}</td></tr>`).join("");
+  itemsTable.innerHTML = items.filter((i) => !term || i.name.toLowerCase().includes(term)).map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td>${[['allow_dine_in','Dine In'],['allow_parcel','Parcel'],['allow_party_order','Party'],['online_enabled','Online'],['active','Active']].map(([field,label]) => `<td><label class="availability-toggle" title="${label}"><input type="checkbox" data-item-channel="${field}" data-item-id="${i.id}" ${Number(i[field] ?? 1) === 1 ? 'checked' : ''}><span>${label}</span></label></td>`).join('')}<td>${actions("item", i.id)}</td></tr>`).join("");
   usersTable.innerHTML = users.map((u) => {
     const canUnlock = isFutureDate(u.locked_until) || u.unlock_requested_at || Number(u.failed_login_attempts || 0) > 0;
     return `<tr>
@@ -786,7 +786,9 @@ function editItem(id) {
   itemOnlineDescription.value = row.online_description || "";
   itemImageUrl.value = row.image_url || "";
   itemVeg.checked = Number(row.is_veg ?? 1) === 1;
+  itemDineIn.checked = Number(row.allow_dine_in ?? 1) === 1;
   itemParcel.checked = Number(row.allow_parcel ?? 1) === 1;
+  itemPartyOrder.checked = Number(row.allow_party_order ?? 1) === 1;
   itemOnlineEnabled.checked = Number(row.online_enabled ?? 1) === 1;
   itemActive.checked = Number(row.active) !== 0;
   focusFirstInput(itemForm);
@@ -1222,7 +1224,20 @@ printerDiscoveryResults?.addEventListener('change', () => {
   printerName.value = printer.name; printerConnection.value = printer.connection; printerAddress.value = printer.address;
 });
 categoryForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/categories/save", { id: categoryId.value || null, name: categoryName.value, kitchenId: categoryKitchen.value, active: categoryActive.checked }); categoryForm.reset(); categoryActive.checked = true; await loadAdmin(); });
-itemForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, onlineDescription: itemOnlineDescription.value, imageUrl: itemImageUrl.value, isVeg: itemVeg.checked, allowParcel: itemParcel.checked, onlineEnabled: itemOnlineEnabled.checked, active: itemActive.checked }); itemForm.reset(); itemActive.checked = true; itemOnlineEnabled.checked = true; await loadAdmin(); });
+itemForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, onlineDescription: itemOnlineDescription.value, imageUrl: itemImageUrl.value, isVeg: itemVeg.checked, allowDineIn: itemDineIn.checked, allowParcel: itemParcel.checked, allowPartyOrder: itemPartyOrder.checked, onlineEnabled: itemOnlineEnabled.checked, active: itemActive.checked }); itemForm.reset(); itemDineIn.checked = true; itemParcel.checked = true; itemPartyOrder.checked = true; itemActive.checked = true; itemOnlineEnabled.checked = true; await loadAdmin(); });
+
+itemsTable.addEventListener('change', async (event) => {
+  const input = event.target.closest('[data-item-channel]');
+  if (!input) return;
+  input.disabled = true;
+  try {
+    await postJson('/admin/items/channels', { id: Number(input.dataset.itemId), field: input.dataset.itemChannel, enabled: input.checked });
+    await loadAdmin();
+  } catch (error) {
+    input.checked = !input.checked;
+    adminStatus.textContent = error.message;
+  } finally { input.disabled = false; }
+});
 userForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/users/save", { id: userId.value || null, name: userName.value, username: userUsername.value, pin: userPin.value, role: userRole.value, active: userActive.checked }); userForm.reset(); userActive.checked = true; await loadAdmin(); });
 tableForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/tables/save", { id: tableId.value || null, tableName: tableName.value, status: tableStatus.value }); tableForm.reset(); await loadAdmin(); });
 reservationForm.addEventListener("submit", async (e) => {

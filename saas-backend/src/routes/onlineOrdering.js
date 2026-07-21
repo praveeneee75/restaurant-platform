@@ -171,12 +171,27 @@ router.post('/storefront/:slug/orders', async (req, res) => {
     if (selectedType === 'DELIVERY' && !storefront.rows[0].delivery_enabled) throw new Error('Delivery is not enabled');
     if (selectedType === 'TAKEAWAY' && !storefront.rows[0].takeaway_enabled) throw new Error('Takeaway is not enabled');
 
+    const menuSnapshot = await client.query(`
+      SELECT payload
+      FROM online_menu_snapshots
+      WHERE tenant_id = $1
+      ORDER BY synced_at DESC
+      LIMIT 1
+    `, [storefront.rows[0].tenant_id]);
+    const publishedItems = new Map((menuSnapshot.rows[0]?.payload?.items || []).map((item) => [String(item.id), item]));
+    const requiredChannel = selectedType === 'DINE_IN' ? 'allow_dine_in' : 'allow_parcel';
     const safeItems = items.map((item) => {
+      const published = publishedItems.get(String(item.itemId || item.id || ''));
+      if (!published || Number(published[requiredChannel] ?? 1) !== 1) {
+        const unavailable = new Error('One or more items are no longer available for this order type. Refresh the menu and try again.');
+        unavailable.statusCode = 409;
+        throw unavailable;
+      }
       const quantity = money(item.quantity || item.qty || 1);
-      const unitPrice = money(item.unitPrice || item.price);
+      const unitPrice = money(published.price);
       return {
-        itemId: cleanText(item.itemId || item.id, 100),
-        itemName: cleanText(item.itemName || item.name, 200),
+        itemId: cleanText(published.id, 100),
+        itemName: cleanText(published.name, 200),
         quantity,
         unitPrice,
         notes: cleanText(item.notes, 300),

@@ -247,13 +247,20 @@ async function applyPosDiscount(type, value, valueType, promoCode) {
 function applyBootstrap(data) {
   const selectedTableId = state.selectedTable?.id;
   const selectedPartnerId = deliveryPartner.value || "";
+  const channelField = posMode === 'PARCEL' ? 'allow_parcel' : posMode === 'PARTY' ? 'allow_party_order' : 'allow_dine_in';
+  const channelItems = (data.items || []).filter((item) => Number(item[channelField] ?? 1) === 1);
+  const channelItemIds = new Set(channelItems.map((item) => Number(item.id)));
+  const channelCombos = (data.combos || []).filter((combo) => {
+    const components = (data.comboItems || []).filter((component) => Number(component.combo_id) === Number(combo.id));
+    return components.length > 0 && components.every((component) => channelItemIds.has(Number(component.item_id)));
+  });
   Object.assign(state, {
     tables: data.tables || [],
     categories: data.categories || [],
-    items: data.items || [],
+    items: channelItems,
     modifierGroups: data.modifierGroups || [],
     modifiers: data.modifiers || [],
-    combos: data.combos || [],
+    combos: channelCombos,
     comboItems: data.comboItems || [],
     deliveryPartners: data.deliveryPartners || [],
     enabledModules: data.enabledModules || [],

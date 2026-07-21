@@ -13,6 +13,8 @@ const posHtml = read('pos-app/backend/public/pos-live.html');
 const posJs = read('pos-app/backend/public/js/pos-live.js');
 const uiFeedback = read('pos-app/backend/public/js/ui-feedback.js');
 const billingJs = read('pos-app/backend/public/js/billing.js');
+const orderJs = read('saas-backend/public/js/order.js');
+const qrPublicJs = read('saas-backend/public/js/qr-public.js');
 
 const cases = [
   [server.includes('setInterval(runSaasOrderImportTick, 10 * 1000)') && notifications.includes('10000') && !server.includes('NULLIF(?, "")') && server.includes('matching historical row referenced by the cloud order') && server.includes('(i.id = ? AND LOWER(TRIM(i.name)) = LOWER(TRIM(?)))'), 'QR cloud orders import promptly and an already accepted order survives a retired SaaS menu item'],
@@ -62,6 +64,10 @@ const cases = [
   ,[server.includes("getBooleanConfig(db, 'online_order_enabled', false)") && server.includes("getBooleanConfig(db, 'qr_ordering_enabled', true)") && server.includes('await importSaasOnlineOrders') && billingJs.includes('/qr/orders/pending'), 'cloud QR dine-in orders continue importing into Billing even when the separate storefront channel is disabled']
   ,[server.includes('async function validateCloudSharedSettings') && server.includes('CLOUD_SHARED_SETTING_KEYS') && server.includes("/monitoring/heartbeat") && server.includes('Disabling cloud features must always remain possible during an outage') && cloud.includes('async function assertPosOnline') && cloud.includes('The restaurant POS is currently offline'), 'cloud-shared settings validate live SaaS credentials before enable/change while disable remains available offline, and SaaS refuses orders for offline POS']
   ,[posHtml.includes('id="qrNotifications" href="/billing.html"') && !posHtml.includes('id="qrApprovalPanel"') && !posJs.includes('function refreshQrApprovals()') && billingJs.includes('pendingQrApprovals.innerHTML'), 'QR notifications remain visible in navigation but actionable approval is confined to Billing instead of crowding POS Dine In']
+  ,[schema.includes("allow_dine_in INTEGER DEFAULT 1") && schema.includes("allow_parcel INTEGER DEFAULT 1") && schema.includes("allow_party_order INTEGER DEFAULT 1") && adminHtml.includes('id="itemDineIn"') && adminHtml.includes('id="itemParcel"') && adminHtml.includes('id="itemPartyOrder"') && adminJs.includes('/admin/items/channels'), 'Admin and Availability expose independently persisted Dine In, Parcel and Party Order controls']
+  ,[posJs.includes("posMode === 'PARCEL' ? 'allow_parcel'") && posJs.includes("posMode === 'PARTY' ? 'allow_party_order'") && posJs.includes("'allow_dine_in'") && server.includes('This menu item is not available for the selected order type'), 'each POS screen filters its channel and the save API prevents a hidden item from being submitted']
+  ,[server.includes("online_menu_sync_pending: '1'") && server.includes('await publishOnlineMenuToSaas(restaurantId)') && server.includes('Pending menu sync skipped:') && server.includes('allow_dine_in, allow_parcel, allow_party_order, online_enabled') && server.includes('row.allow_dine_in ?? null') && server.includes('row.allow_party_order ?? null'), 'menu channel changes queue SaaS publication without blocking order import and survive remote owner configuration round trips']
+  ,[qrPublicJs.includes('item.allow_dine_in') && orderJs.includes('function channelField()') && orderJs.includes('allow_parcel') && cloud.includes("const requiredChannel = selectedType === 'DINE_IN' ? 'allow_dine_in' : 'allow_parcel'") && cloud.includes('published.price'), 'SaaS QR/storefront menus honor channel flags and server-side ordering rejects stale or tampered unavailable items and prices']
 ];
 
 let failed = 0;

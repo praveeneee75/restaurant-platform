@@ -541,7 +541,7 @@ function sheetXml(rows, validations = '') {
 function buildMenuInventoryTemplate() {
   const menuRows = [
     ['Validate Template', 'Fill rows below. Click Upload in POS Admin to run strict validation before import.'],
-    ['Item Name', 'Category', 'Kitchen', 'Price', 'Veg', 'Parcel', 'Online Enabled', 'Image URL', 'Online Description', 'Active'],
+    ['Item Name', 'Category', 'Kitchen', 'Price', 'Veg', 'Parcel', 'Online Enabled', 'Image URL', 'Online Description', 'Active', 'Dine In', 'Party Order'],
     ['Masala Tea', 'Beverages', 'Tea Kitchen', '25', 'YES', 'YES', 'YES', '', 'Fresh masala tea', 'YES'],
     ['Chicken Burger', 'Fast Food', 'Fast Food Kitchen', '180', 'NO', 'YES', 'YES', '', 'Chicken burger with bun', 'YES']
   ];
@@ -3623,7 +3623,7 @@ app.get('/admin/bootstrap', (req, res) => {
         ORDER BY c.name
       `).all(includeInactive),
       items: db.prepare(`
-        SELECT i.id, i.name, i.category_id, i.price, i.is_veg, i.allow_parcel, i.active,
+        SELECT i.id, i.name, i.category_id, i.price, i.is_veg, i.allow_dine_in, i.allow_parcel, i.allow_party_order, i.active,
                i.image_url, i.online_description, i.online_enabled,
                c.name AS category_name, k.name AS kitchen_name
         FROM items i
@@ -3860,7 +3860,7 @@ app.post('/imports/menu-inventory/upload', express.raw({ type: '*/*', limit: '10
       let ingredients = 0;
       for (const [index, row] of menuRows.entries()) {
         try {
-          const [itemName, categoryName, kitchenName, price, veg, parcel, onlineEnabled, imageUrl, onlineDescription, active] = row;
+          const [itemName, categoryName, kitchenName, price, veg, parcel, onlineEnabled, imageUrl, onlineDescription, active, dineIn, partyOrder] = row;
           if (!hasText(itemName) || !hasText(categoryName) || !hasText(kitchenName)) throw new Error('Item name, category and kitchen are required');
           const itemPrice = requiredNumber(price, 'Price');
           let kitchen = db.prepare('SELECT id FROM kitchens WHERE LOWER(name) = LOWER(?) AND active = 1 LIMIT 1').get(normaliseText(kitchenName));
@@ -3877,11 +3877,11 @@ app.post('/imports/menu-inventory/upload', express.raw({ type: '*/*', limit: '10
           }
           const existing = db.prepare('SELECT id FROM items WHERE LOWER(name) = LOWER(?) AND active = 1 LIMIT 1').get(normaliseText(itemName));
           if (existing) {
-            db.prepare('UPDATE items SET category_id = ?, price = ?, is_veg = ?, allow_parcel = ?, online_enabled = ?, image_url = ?, online_description = ?, active = ? WHERE id = ?')
-              .run(category.id, itemPrice, yesNo(veg, true), yesNo(parcel, true), yesNo(onlineEnabled, true), normaliseText(imageUrl), normaliseText(onlineDescription), yesNo(active, true), existing.id);
+            db.prepare('UPDATE items SET category_id = ?, price = ?, is_veg = ?, allow_dine_in = ?, allow_parcel = ?, allow_party_order = ?, online_enabled = ?, image_url = ?, online_description = ?, active = ? WHERE id = ?')
+              .run(category.id, itemPrice, yesNo(dineIn, true), yesNo(parcel, true), yesNo(partyOrder, true), yesNo(onlineEnabled, true), normaliseText(imageUrl), normaliseText(onlineDescription), yesNo(active, true), existing.id);
           } else {
-            db.prepare('INSERT INTO items (name, category_id, price, is_veg, allow_parcel, online_enabled, image_url, online_description, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-              .run(normaliseText(itemName), category.id, itemPrice, yesNo(veg, true), yesNo(parcel, true), yesNo(onlineEnabled, true), normaliseText(imageUrl), normaliseText(onlineDescription), yesNo(active, true));
+            db.prepare('INSERT INTO items (name, category_id, price, is_veg, allow_dine_in, allow_parcel, allow_party_order, online_enabled, image_url, online_description, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+              .run(normaliseText(itemName), category.id, itemPrice, yesNo(veg, true), yesNo(dineIn, true), yesNo(parcel, true), yesNo(partyOrder, true), yesNo(onlineEnabled, true), normaliseText(imageUrl), normaliseText(onlineDescription), yesNo(active, true));
           }
           items += 1;
         } catch (err) {
@@ -4606,7 +4606,7 @@ app.post('/admin/categories/delete', (req, res) => {
 });
 
 app.post('/admin/items/save', (req, res) => {
-  const { restaurantId, actor, id, name, categoryId, price, isVeg, allowParcel, active, imageUrl, onlineDescription, onlineEnabled } = req.body;
+  const { restaurantId, actor, id, name, categoryId, price, isVeg, allowDineIn, allowParcel, allowPartyOrder, active, imageUrl, onlineDescription, onlineEnabled } = req.body;
   if (!restaurantId || !hasText(name) || !isPositiveId(categoryId) || !isValidAmount(price) || !canManage(actor?.role)) return res.status(400).json({ success: false, message: 'Item name, category, valid price and manager permission are required' });
 
   const db = openRestaurantDatabase(restaurantId);
@@ -4614,21 +4614,43 @@ app.post('/admin/items/save', (req, res) => {
     if (activeNameExists(db, 'items', 'name', name, id)) throw new Error('Item name already exists');
     const oldValue = id ? db.prepare('SELECT * FROM items WHERE id = ?').get(id) : null;
     const result = id
-      ? db.prepare('UPDATE items SET name = ?, category_id = ?, price = ?, is_veg = ?, allow_parcel = ?, active = ?, image_url = ?, online_description = ?, online_enabled = ? WHERE id = ?')
-          .run(name, categoryId, price, isVeg ? 1 : 0, allowParcel === false ? 0 : 1, active === false ? 0 : 1, normaliseText(imageUrl), normaliseText(onlineDescription), onlineEnabled === false ? 0 : 1, id)
-      : db.prepare('INSERT INTO items (name, category_id, price, is_veg, allow_parcel, active, image_url, online_description, online_enabled) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)')
-          .run(name, categoryId, price, isVeg ? 1 : 0, allowParcel === false ? 0 : 1, normaliseText(imageUrl), normaliseText(onlineDescription), onlineEnabled === false ? 0 : 1);
+      ? db.prepare('UPDATE items SET name = ?, category_id = ?, price = ?, is_veg = ?, allow_dine_in = ?, allow_parcel = ?, allow_party_order = ?, active = ?, image_url = ?, online_description = ?, online_enabled = ? WHERE id = ?')
+          .run(name, categoryId, price, isVeg ? 1 : 0, allowDineIn === false ? 0 : 1, allowParcel === false ? 0 : 1, allowPartyOrder === false ? 0 : 1, active === false ? 0 : 1, normaliseText(imageUrl), normaliseText(onlineDescription), onlineEnabled === false ? 0 : 1, id)
+      : db.prepare('INSERT INTO items (name, category_id, price, is_veg, allow_dine_in, allow_parcel, allow_party_order, active, image_url, online_description, online_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)')
+          .run(name, categoryId, price, isVeg ? 1 : 0, allowDineIn === false ? 0 : 1, allowParcel === false ? 0 : 1, allowPartyOrder === false ? 0 : 1, normaliseText(imageUrl), normaliseText(onlineDescription), onlineEnabled === false ? 0 : 1);
     const newValue = db.prepare('SELECT * FROM items WHERE id = ?').get(id || result.lastInsertRowid);
     writeAudit(db, actor, id ? 'UPDATE' : 'CREATE', 'ITEM', id || result.lastInsertRowid, oldValue, newValue);
     if (id && oldValue && Number(oldValue.price) !== Number(newValue.price)) {
       writeCompliance(db, 'PRICE_CHANGED', 'MEDIUM', `Item price changed from ${oldValue.price} to ${newValue.price}`, 'ITEM', id);
     }
+    setConfigValues(db, { online_menu_sync_pending: '1' });
     res.json({ success: true, id: id || result.lastInsertRowid });
   } catch (err) {
     sendError(res, err);
   } finally {
     db.close();
   }
+});
+
+app.post('/admin/items/channels', (req, res) => {
+  const { restaurantId, actor, id, field, enabled } = req.body || {};
+  const allowedFields = new Set(['allow_dine_in', 'allow_parcel', 'allow_party_order', 'online_enabled', 'active']);
+  const availabilityRoles = ['CAPTAIN', 'CASHIER', 'MANAGER_1', 'MANAGER_2', 'OWNER'];
+  if (!restaurantId || !isPositiveId(id) || !allowedFields.has(field) || !availabilityRoles.includes(String(actor?.role || '').toUpperCase())) {
+    return res.status(403).json({ success: false, message: 'Item channel availability permission is required' });
+  }
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor.role, 'inventory.view', 'Item channel availability permission is required');
+    const oldValue = db.prepare('SELECT * FROM items WHERE id = ?').get(id);
+    if (!oldValue) throw new Error('Menu item not found');
+    db.prepare(`UPDATE items SET ${field} = ? WHERE id = ?`).run(enabled ? 1 : 0, id);
+    const newValue = db.prepare('SELECT * FROM items WHERE id = ?').get(id);
+    writeAudit(db, actor, 'UPDATE_CHANNEL_AVAILABILITY', 'ITEM', id, oldValue, newValue);
+    setConfigValues(db, { online_menu_sync_pending: '1' });
+    res.json({ success: true, item: newValue });
+  } catch (err) { sendError(res, err); }
+  finally { db.close(); }
 });
 
 app.post('/admin/items/delete', (req, res) => {
@@ -4642,6 +4664,7 @@ app.post('/admin/items/delete', (req, res) => {
     const newValue = db.prepare('SELECT * FROM items WHERE id = ?').get(id);
     writeAudit(db, actor, 'DELETE', 'ITEM', id, oldValue, newValue);
     writeCompliance(db, 'DELETED_ITEM', 'HIGH', `Menu item deleted: ${oldValue?.name || id}`, 'ITEM', id);
+    setConfigValues(db, { online_menu_sync_pending: '1' });
     res.json({ success: true });
   } catch (err) {
     sendError(res, err);
@@ -4658,6 +4681,7 @@ app.post('/admin/items/toggle', (req, res) => {
   try {
     db.prepare('UPDATE items SET active = ? WHERE id = ?').run(active ? 1 : 0, id);
     writeAudit(db, actor, active ? 'ACTIVATE' : 'DEACTIVATE', 'ITEM', id);
+    setConfigValues(db, { online_menu_sync_pending: '1' });
     res.json({ success: true });
   } catch (err) {
     sendError(res, err);
@@ -4947,7 +4971,7 @@ app.get('/pos/bootstrap', (req, res) => {
         ORDER BY t.id
       `).all(),
       categories: db.prepare('SELECT id, name FROM categories WHERE active = 1 ORDER BY name').all(),
-      items: db.prepare("SELECT id, printf('ITM-%04d', id) AS item_code, name, category_id, price FROM items WHERE active = 1 ORDER BY name").all(),
+      items: db.prepare("SELECT id, printf('ITM-%04d', id) AS item_code, name, category_id, price, COALESCE(allow_dine_in, 1) AS allow_dine_in, COALESCE(allow_parcel, 1) AS allow_parcel, COALESCE(allow_party_order, 1) AS allow_party_order FROM items WHERE active = 1 ORDER BY name").all(),
       modifierGroups: db.prepare(`
         SELECT img.item_id, mg.id, mg.name, mg.min_select, mg.max_select, mg.required
         FROM item_modifier_groups img
@@ -5005,6 +5029,7 @@ app.post('/pos/item-availability', (req, res) => {
     db.prepare('UPDATE items SET active = ? WHERE id = ?').run(active === false ? 0 : 1, id);
     const newValue = db.prepare('SELECT id, name, active FROM items WHERE id = ?').get(id);
     writeAudit(db, actor, active === false ? 'DEACTIVATE' : 'ACTIVATE', 'ITEM_AVAILABILITY', id, oldValue, newValue);
+    setConfigValues(db, { online_menu_sync_pending: '1' });
     res.json({ success: true, item: newValue });
   } catch (err) {
     sendError(res, err);
@@ -5128,7 +5153,7 @@ app.get('/qr/menu', (req, res) => {
           currency: getConfigValue(db, 'currency', 'INR')
         },
         categories: db.prepare('SELECT id, name FROM categories WHERE active = 1 ORDER BY name').all(),
-        items: db.prepare('SELECT id, name, category_id, price FROM items WHERE active = 1 ORDER BY name').all()
+        items: db.prepare('SELECT id, name, category_id, price FROM items WHERE active = 1 AND COALESCE(allow_dine_in, 1) = 1 ORDER BY name').all()
       });
     }
     if (!/^\d{6}$/.test(String(pin || ''))) return res.status(400).json({ success: false, message: 'Enter the current 6-digit table PIN' });
@@ -5150,7 +5175,7 @@ app.get('/qr/menu', (req, res) => {
         currency: getConfigValue(db, 'currency', 'INR')
       },
       categories: db.prepare('SELECT id, name FROM categories WHERE active = 1 ORDER BY name').all(),
-      items: db.prepare('SELECT id, name, category_id, price FROM items WHERE active = 1 ORDER BY name').all()
+      items: db.prepare('SELECT id, name, category_id, price FROM items WHERE active = 1 AND COALESCE(allow_dine_in, 1) = 1 ORDER BY name').all()
     });
   } catch (err) {
     sendError(res, err);
@@ -5196,7 +5221,7 @@ app.post('/qr/orders/place', (req, res) => {
           SELECT i.id, i.name, i.price, c.kitchen_id
           FROM items i
           JOIN categories c ON c.id = i.category_id
-          WHERE i.id = ? AND i.active = 1
+          WHERE i.id = ? AND i.active = 1 AND COALESCE(i.allow_dine_in, 1) = 1
         `).get(line.itemId);
         if (!item) throw new Error('Menu item not found');
         db.prepare('INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price) VALUES (?, ?, ?, ?, ?)')
@@ -5349,7 +5374,10 @@ app.get('/online/menu', (req, res) => {
         .filter((method) => configuredMethods.has(method.code)),
       categories: db.prepare('SELECT id, name FROM categories WHERE active = 1 ORDER BY name').all(),
       items: db.prepare(`
-        SELECT id, name, category_id, price, is_veg, image_url, online_description
+        SELECT id, name, category_id, price, is_veg, image_url, online_description,
+               COALESCE(allow_dine_in, 1) AS allow_dine_in,
+               COALESCE(allow_parcel, 1) AS allow_parcel,
+               COALESCE(allow_party_order, 1) AS allow_party_order
         FROM items
         WHERE active = 1 AND COALESCE(online_enabled, 1) = 1
         ORDER BY name
@@ -5734,7 +5762,10 @@ app.post('/orders/save', (req, res) => {
           const combo = db.prepare('SELECT * FROM combos WHERE id = ? AND active = 1').get(item.comboId);
           if (!combo) throw new Error('Combo not found');
           const comboItems = db.prepare(`
-            SELECT ci.item_id, ci.quantity, c.kitchen_id
+            SELECT ci.item_id, ci.quantity, c.kitchen_id,
+                   COALESCE(i.allow_dine_in, 1) AS allow_dine_in,
+                   COALESCE(i.allow_parcel, 1) AS allow_parcel,
+                   COALESCE(i.allow_party_order, 1) AS allow_party_order
             FROM combo_items ci
             JOIN items i ON i.id = ci.item_id
             JOIN categories c ON c.id = i.category_id
@@ -5742,6 +5773,12 @@ app.post('/orders/save', (req, res) => {
             ORDER BY ci.id
           `).all(item.comboId);
           if (comboItems.length === 0) throw new Error('Combo has no active items');
+          const comboAllowed = comboItems.every((component) => selectedOrderType === 'DINE_IN'
+            ? Number(component.allow_dine_in) === 1
+            : selectedOrderType === 'PHONE_ORDER'
+              ? Number(component.allow_party_order) === 1
+              : Number(component.allow_parcel) === 1);
+          if (!comboAllowed) throw new Error('This combo is not available for the selected order type');
           comboItems.forEach((comboItem, index) => {
             const componentQuantity = quantity * Number(comboItem.quantity || 1);
             const pricedQuantity = index === 0 ? componentQuantity : 1;
@@ -5755,11 +5792,20 @@ app.post('/orders/save', (req, res) => {
 
         const itemId = item.itemId || item.id;
         const menu = db.prepare(`
-          SELECT i.id, i.price, c.kitchen_id
+          SELECT i.id, i.price, c.kitchen_id,
+                 COALESCE(i.allow_dine_in, 1) AS allow_dine_in,
+                 COALESCE(i.allow_parcel, 1) AS allow_parcel,
+                 COALESCE(i.allow_party_order, 1) AS allow_party_order
           FROM items i JOIN categories c ON c.id = i.category_id
           WHERE i.id = ? AND i.active = 1
         `).get(itemId);
         if (!menu) throw new Error('Menu item not found');
+        const channelAllowed = selectedOrderType === 'DINE_IN'
+          ? Number(menu.allow_dine_in) === 1
+          : selectedOrderType === 'PHONE_ORDER'
+            ? Number(menu.allow_party_order) === 1
+            : Number(menu.allow_parcel) === 1;
+        if (!channelAllowed) throw new Error('This menu item is not available for the selected order type');
         const modifiers = validateSelectedModifiers(db, itemId, selectedModifierIds(item));
         const unitPrice = Number(menu.price) + modifiers.reduce((sum, modifier) => sum + Number(modifier.price_delta || 0), 0);
         const result = db.prepare('INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price, notes) VALUES (?, ?, ?, ?, ?, ?)')
@@ -9437,7 +9483,10 @@ function buildOnlineMenuPayload(db) {
     paymentMethods: db.prepare('SELECT code, label FROM online_payment_methods WHERE active = 1 ORDER BY sort_order, label').all(),
     categories: db.prepare('SELECT id, name FROM categories WHERE active = 1 ORDER BY name').all(),
     items: db.prepare(`
-      SELECT id, name, category_id, price, is_veg, image_url, online_description
+      SELECT id, name, category_id, price, is_veg, image_url, online_description,
+             COALESCE(allow_dine_in, 1) AS allow_dine_in,
+             COALESCE(allow_parcel, 1) AS allow_parcel,
+             COALESCE(allow_party_order, 1) AS allow_party_order
       FROM items
       WHERE active = 1 AND COALESCE(online_enabled, 1) = 1
       ORDER BY name
@@ -9472,7 +9521,7 @@ async function publishOnlineMenuToSaas(restaurantId) {
       menu: buildOnlineMenuPayload(db)
     }, { timeout: 10000 });
     if (!response.data?.success) throw new Error(response.data?.message || 'Online menu sync failed');
-    setConfigValues(db, { online_last_menu_sync_at: new Date().toISOString(), online_storefront_slug: response.data.slug || settings.online_storefront_slug || '' });
+    setConfigValues(db, { online_last_menu_sync_at: new Date().toISOString(), online_menu_sync_pending: '0', online_storefront_slug: response.data.slug || settings.online_storefront_slug || '' });
     return response.data;
   } finally {
     db.close();
@@ -9762,8 +9811,13 @@ async function runSaasOrderImportTick() {
       getBooleanConfig(db, 'online_order_enabled', false)
       || getBooleanConfig(db, 'qr_ordering_enabled', true)
     );
+    const menuSyncPending = getBooleanConfig(db, 'online_menu_sync_pending', false);
     db.close();
     if (!enabled) return;
+    if (menuSyncPending) {
+      try { await publishOnlineMenuToSaas(restaurantId); }
+      catch (err) { console.warn('Pending menu sync skipped:', err.message); }
+    }
     await importSaasOnlineOrders(restaurantId, { id: null, role: 'SYSTEM', name: 'Cloud order sync' });
   } catch (err) {
     console.warn('Online order import skipped:', err.message);
@@ -9844,7 +9898,7 @@ function buildOwnerControlSnapshot(db) {
       menu: {
         kitchens: safeAll(db, 'SELECT id, name, active FROM kitchens ORDER BY name'),
         categories: safeAll(db, 'SELECT id, name, kitchen_id, active FROM categories ORDER BY name'),
-        items: safeAll(db, 'SELECT id, name, category_id, price, is_veg, allow_parcel, online_enabled, active FROM items ORDER BY name'),
+        items: safeAll(db, 'SELECT id, name, category_id, price, is_veg, allow_dine_in, allow_parcel, allow_party_order, online_enabled, active FROM items ORDER BY name'),
         modifierGroups: safeAll(db, 'SELECT id, name, min_select, max_select, required, active FROM modifier_groups ORDER BY name'),
         modifiers: safeAll(db, 'SELECT id, group_id, name, price_delta, active FROM modifiers ORDER BY name'),
         combos: safeAll(db, 'SELECT id, name, price, active FROM combos ORDER BY name'),
@@ -9863,7 +9917,7 @@ function buildOwnerControlSnapshot(db) {
 function applyRemoteMenu(db, payload) {
   const updateKitchen = db.prepare('UPDATE kitchens SET name = COALESCE(?, name), active = COALESCE(?, active) WHERE id = ?');
   const updateCategory = db.prepare('UPDATE categories SET name = COALESCE(?, name), kitchen_id = COALESCE(?, kitchen_id), active = COALESCE(?, active) WHERE id = ?');
-  const updateItem = db.prepare('UPDATE items SET name = COALESCE(?, name), category_id = COALESCE(?, category_id), price = COALESCE(?, price), is_veg = COALESCE(?, is_veg), allow_parcel = COALESCE(?, allow_parcel), online_enabled = COALESCE(?, online_enabled), active = COALESCE(?, active) WHERE id = ?');
+  const updateItem = db.prepare('UPDATE items SET name = COALESCE(?, name), category_id = COALESCE(?, category_id), price = COALESCE(?, price), is_veg = COALESCE(?, is_veg), allow_dine_in = COALESCE(?, allow_dine_in), allow_parcel = COALESCE(?, allow_parcel), allow_party_order = COALESCE(?, allow_party_order), online_enabled = COALESCE(?, online_enabled), active = COALESCE(?, active) WHERE id = ?');
   const updateModifier = db.prepare('UPDATE modifiers SET name = COALESCE(?, name), price_delta = COALESCE(?, price_delta), active = COALESCE(?, active) WHERE id = ?');
   const updateCombo = db.prepare('UPDATE combos SET name = COALESCE(?, name), price = COALESCE(?, price), active = COALESCE(?, active) WHERE id = ?');
   db.transaction(() => {
@@ -9872,11 +9926,12 @@ function applyRemoteMenu(db, payload) {
     (payload.items || []).forEach((row) => {
       const price = row.price == null ? null : Number(row.price);
       if (price != null && (!Number.isFinite(price) || price < 0)) throw new Error(`Invalid price for item ${row.id}`);
-      updateItem.run(row.name ?? null, row.category_id ?? null, price, row.is_veg ?? null, row.allow_parcel ?? null, row.online_enabled ?? null, row.active ?? null, row.id);
+      updateItem.run(row.name ?? null, row.category_id ?? null, price, row.is_veg ?? null, row.allow_dine_in ?? null, row.allow_parcel ?? null, row.allow_party_order ?? null, row.online_enabled ?? null, row.active ?? null, row.id);
     });
     (payload.modifiers || []).forEach((row) => updateModifier.run(row.name ?? null, row.price_delta ?? null, row.active ?? null, row.id));
     (payload.combos || []).forEach((row) => updateCombo.run(row.name ?? null, row.price ?? null, row.active ?? null, row.id));
   })();
+  setConfigValues(db, { online_menu_sync_pending: '1' });
 }
 
 function applyRemoteConfiguration(db, domain, payload) {

@@ -1,6 +1,35 @@
 let storefronts = [];
 let selectedSlug = "";
 let cart = [];
+let publishedItems = [];
+
+function channelField() {
+  return orderType.value === "DINE_IN" ? "allow_dine_in" : "allow_parcel";
+}
+
+function availableItems() {
+  const field = channelField();
+  return publishedItems.filter((item) => Number(item[field] ?? 1) === 1);
+}
+
+function renderMenu() {
+  const items = availableItems();
+  const allowedIds = new Set(items.map((item) => String(item.id)));
+  cart = cart.filter((item) => allowedIds.has(String(item.id)));
+  renderCart();
+  menuItems.innerHTML = items.map((item) => `
+    <div class="card">
+      ${item.name}
+      <strong>${money(item.price)}</strong>
+      <small>${item.online_description || ""}</small>
+      <button type="button" data-item-id="${item.id}">Add</button>
+    </div>
+  `).join("") || `<div class="card">No items available for this order type.</div>`;
+  menuItems.querySelectorAll("button[data-item-id]").forEach((button) => {
+    const item = items.find((row) => String(row.id) === String(button.dataset.itemId));
+    button.addEventListener("click", () => addToCart(item));
+  });
+}
 
 function money(value) {
   return Number(value || 0).toFixed(2);
@@ -42,19 +71,8 @@ async function loadMenu() {
   const res = await fetch(`/online-ordering/storefront/${encodeURIComponent(selectedSlug)}/menu`);
   const data = await res.json();
   if (!res.ok || data.success === false) throw new Error(data.message || "Unable to load menu");
-  const items = data.menu.items || [];
-  menuItems.innerHTML = items.map((item) => `
-    <div class="card">
-      ${item.name}
-      <strong>${money(item.price)}</strong>
-      <small>${item.online_description || ""}</small>
-      <button type="button" data-item-id="${item.id}">Add</button>
-    </div>
-  `).join("") || `<div class="card">No menu synced<strong>Ask the branch to sync menu from POS.</strong></div>`;
-  menuItems.querySelectorAll("button[data-item-id]").forEach((button) => {
-    const item = items.find((row) => String(row.id) === String(button.dataset.itemId));
-    button.addEventListener("click", () => addToCart(item));
-  });
+  publishedItems = data.menu.items || [];
+  renderMenu();
   orderStatus.innerText = `Loaded ${data.storefront.display_name}`;
 }
 
@@ -81,6 +99,7 @@ async function placeOrder() {
 
 loadMenuBtn.addEventListener("click", () => loadMenu().catch((err) => { orderStatus.innerText = err.message; }));
 placeOrderBtn.addEventListener("click", () => placeOrder().catch((err) => { orderStatus.innerText = err.message; }));
+orderType.addEventListener("change", renderMenu);
 
 loadStorefronts()
   .then(loadMenu)

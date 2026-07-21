@@ -336,6 +336,9 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'items', 'image_url TEXT');
   addColumn(db, 'items', 'online_description TEXT');
   addColumn(db, 'items', 'online_enabled INTEGER DEFAULT 1');
+  addColumn(db, 'items', 'allow_dine_in INTEGER DEFAULT 1');
+  addColumn(db, 'items', 'allow_parcel INTEGER DEFAULT 1');
+  addColumn(db, 'items', 'allow_party_order INTEGER DEFAULT 1');
 
   // Phase 6: split payments use the same payments ledger with card/UPI metadata.
   addColumn(db, 'payments', 'reference_no TEXT');

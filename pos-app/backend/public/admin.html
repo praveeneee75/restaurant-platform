@@ -133,13 +133,15 @@
         <label>Online description<input id="itemOnlineDescription" placeholder="Short customer-facing description"></label>
         <label>Online image URL<input id="itemImageUrl" placeholder="Leave blank for automatic food image"></label>
         <label class="check-row"><input id="itemVeg" type="checkbox" checked> Veg</label>
+        <label class="check-row"><input id="itemDineIn" type="checkbox" checked> Dine In</label>
         <label class="check-row"><input id="itemParcel" type="checkbox" checked> Parcel</label>
+        <label class="check-row"><input id="itemPartyOrder" type="checkbox" checked> Party Order</label>
         <label class="check-row"><input id="itemOnlineEnabled" type="checkbox" checked> Show on online ordering page</label>
         <label class="check-row"><input id="itemActive" type="checkbox" checked> Active</label>
         <button>Save Item</button>
       </form>
       <div class="toolbar"><input id="itemSearch" placeholder="Search menu items"></div>
-      <div class="table-panel availability-items-panel"><table class="availability-items-table"><thead><tr><th>Name</th><th>Category</th><th>Kitchen</th><th>Price</th><th>Status</th><th></th></tr></thead><tbody id="itemsTable"></tbody></table></div>
+      <div class="table-panel availability-items-panel"><table class="availability-items-table"><thead><tr><th>Name</th><th>Category</th><th>Kitchen</th><th>Price</th><th>Dine In</th><th>Parcel</th><th>Party</th><th>Online</th><th>Active</th><th>Actions</th></tr></thead><tbody id="itemsTable"></tbody></table></div>
     </section>
 
     <section class="admin-view" id="view-users">

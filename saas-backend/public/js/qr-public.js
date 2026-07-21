@@ -21,7 +21,7 @@ async function loadMenu() {
   const data = await response.json();
   if (!response.ok || !data.success) throw new Error(data.message || 'Unable to load menu');
   state.categories = data.menu?.categories || [];
-  state.items = data.menu?.items || [];
+  state.items = (data.menu?.items || []).filter((item) => Number(item.allow_dine_in ?? 1) === 1);
   state.currency = data.menu?.restaurant?.currency || 'INR';
   state.categoryId = state.categories[0]?.id || null;
   restaurantName.textContent = data.storefront.display_name;

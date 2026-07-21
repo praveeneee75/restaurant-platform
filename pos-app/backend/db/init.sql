@@ -57,7 +57,9 @@ CREATE TABLE items (
   category_id INTEGER NOT NULL,
   price REAL NOT NULL,
   is_veg INTEGER DEFAULT 1,
+  allow_dine_in INTEGER DEFAULT 1,
   allow_parcel INTEGER DEFAULT 1,
+  allow_party_order INTEGER DEFAULT 1,
   active INTEGER DEFAULT 1,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (category_id) REFERENCES categories(id)
