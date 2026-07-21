@@ -33,14 +33,20 @@ let backendStarted = false;
 const desktopIconPath = path.join(__dirname, '..', 'build', 'icon.png');
 const preloadPath = path.join(__dirname, 'preload.js');
 
-function printableWindow(html) {
+function printableWindow(html, paperWidthMm = null) {
   const fitGuard = `<style data-kmaster-paper-fit>@media print{@page{margin:0}html{width:100%!important;max-width:100%!important;margin:0!important;padding:0!important;overflow:visible!important}body{width:100%!important;max-width:100%!important;margin:0!important;padding:3mm!important;overflow:visible!important}*,*::before,*::after{box-sizing:border-box!important;max-width:100%!important}table{width:100%!important;max-width:100%!important}img,svg,canvas{max-width:100%!important;height:auto!important}th,td,p,span,strong,b{overflow-wrap:anywhere}}</style>`;
   const source = String(html || '');
   const fittedHtml = source.includes('</head>') ? source.replace('</head>', `${fitGuard}</head>`) : `${fitGuard}${source}`;
+  // Thermal layout must be rendered at the same physical width that is sent to
+  // the driver. Measuring at the old 520 px preview width under-counted wrapped
+  // lines; Chromium then paginated the narrower receipt and thermal drivers fed
+  // an entire configured page between those fragments.
+  const contentWidthPx = paperWidthMm ? Math.ceil(Number(paperWidthMm) * 96 / 25.4) : 520;
   const win = new BrowserWindow({
     show: false,
-    width: 520,
-    height: 760,
+    width: contentWidthPx,
+    height: 240,
+    useContentSize: true,
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   return win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fittedHtml)}`).then(() => win);
@@ -196,7 +202,8 @@ function thermalPrintHtml(job) {
 
 async function printToConfiguredPrinter(job) {
   const html = thermalPrintHtml(job);
-  const win = await printableWindow(html);
+  const paperWidthMm = Number(job.paper_width_mm) === 80 ? 80 : 58;
+  const win = await printableWindow(html, paperWidthMm);
   try {
     const printers = await win.webContents.getPrintersAsync();
     const address = String(job.printer_address || '').trim().toLowerCase();
@@ -206,20 +213,43 @@ async function printToConfiguredPrinter(job) {
       || printers.find((item) => String(item.name).toLowerCase() === configuredName)
       || printers.find((item) => item.isDefault);
     if (!printer) throw new Error('Configured printer was not found in Windows. Search printers again in Admin > Printers.');
-    const paperWidthMm = Number(job.paper_width_mm) === 80 ? 80 : 58;
     // BrowserWindow has a tall viewport; scrollHeight therefore measured the window rather
     // than the receipt and some thermal drivers bottom-aligned the content on that blank page.
     // Measure the actual rendered children so continuous-roll jobs start immediately.
     const contentHeightPx = await win.webContents.executeJavaScript(`(() => {
       const body = document.body;
+      document.documentElement.style.setProperty('height', 'auto', 'important');
+      document.documentElement.style.setProperty('min-height', '0', 'important');
+      body.style.setProperty('height', 'auto', 'important');
+      body.style.setProperty('min-height', '0', 'important');
+      body.style.setProperty('display', 'block', 'important');
       const top = body.getBoundingClientRect().top;
-      const bottoms = [...body.children].map((node) => node.getBoundingClientRect().bottom - top);
+      const visible = [...body.querySelectorAll('*')].filter((node) => {
+        const style = getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      });
+      const bottoms = visible.map((node) => node.getBoundingClientRect().bottom - top);
       return Math.ceil(Math.max(1, ...bottoms));
     })()`);
     const contentHeightMicrons = Math.ceil(Number(contentHeightPx || 0) * 25400 / 96);
+    // Keep a small cutter allowance only. Explicit CSS page size is required in
+    // addition to Electron's pageSize because several Windows thermal drivers
+    // ignore the latter and fall back to their very long default roll page.
+    const pageHeightMicrons = Math.max(20000, Math.min(contentHeightMicrons + 1200, 1000000));
+    const pageHeightMm = pageHeightMicrons / 1000;
+    await win.webContents.insertCSS(`
+      @media print {
+        @page { size: ${paperWidthMm}mm ${pageHeightMm}mm; margin: 0 !important; }
+        html, body { height: auto !important; min-height: 0 !important; display: block !important; }
+        body { position: static !important; }
+        body > * { break-inside: avoid-page; page-break-inside: avoid; }
+        .footer, .thanks { position: static !important; margin-bottom: 0 !important; }
+      }
+    `);
     const pageSize = {
       width: paperWidthMm * 1000,
-      height: Math.max(20000, Math.min(contentHeightMicrons + 3000, 1000000))
+      height: pageHeightMicrons
     };
     await new Promise((resolve, reject) => win.webContents.print({
       silent: true,

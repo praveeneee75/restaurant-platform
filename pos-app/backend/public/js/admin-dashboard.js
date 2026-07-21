@@ -527,7 +527,15 @@ function renderCommercial() {
 }
 
 function renderInvoices() {
-  invoicesTable.innerHTML = (state.invoices || []).map((invoice) => `
+  const query = String(invoiceSearch?.value || '').trim().toLowerCase();
+  const visibleInvoices = (state.invoices || []).filter((invoice) => !query || [
+    invoice.invoice_no,
+    invoice.customer_name,
+    invoice.customer_phone,
+    invoice.table_no,
+    invoice.order_type
+  ].some((value) => String(value || '').toLowerCase().includes(query)));
+  invoicesTable.innerHTML = visibleInvoices.map((invoice) => `
     <tr>
       <td>${esc(invoice.invoice_no || `#${invoice.id}`)}</td>
       <td>${esc(invoice.customer_name || "")}<br><small>${esc(invoice.customer_phone || "")}</small></td>
@@ -538,7 +546,7 @@ function renderInvoices() {
       <td><button type="button" class="secondary-btn invoice-view" data-invoice-id="${invoice.id}" title="View invoice details">View</button></td>
     </tr>
   `).join("") || `<tr><td colspan="7">No invoices found.</td></tr>`;
-  invoiceStatus.textContent = "Invoices loaded";
+  invoiceStatus.textContent = query ? `${visibleInvoices.length} matching invoice(s)` : "Invoices loaded";
 }
 
 async function showInvoiceDetail(invoiceId) {
@@ -1183,6 +1191,12 @@ loadInvoices.addEventListener("click", () => loadInvoiceList().catch((err) => {
   invoiceStatus.textContent = err.message;
   alert(err.message);
 }));
+searchInvoices?.addEventListener("click", renderInvoices);
+invoiceSearch?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  renderInvoices();
+});
 invoicesTable.addEventListener("click", (event) => {
   const button = event.target.closest("[data-invoice-id]");
   if (!button) return;

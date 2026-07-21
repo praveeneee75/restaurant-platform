@@ -17,6 +17,8 @@ if (!sessionUser || !allowedPosRoles.has(role)) {
 const actor = { id: sessionUser.id, role };
 const modeParam = String(new URLSearchParams(window.location.search).get("mode") || "DINE_IN").toUpperCase();
 const posMode = ["DINE_IN", "PARCEL", "PARTY"].includes(modeParam) ? modeParam : "DINE_IN";
+const cashierDineLayout = posMode === "DINE_IN" && new URLSearchParams(window.location.search).get("layout") === "cashier";
+const requestedTableId = Number(new URLSearchParams(window.location.search).get("tableId") || 0);
 const restaurantId = new URLSearchParams(window.location.search).get("restaurantId") || localStorage.getItem("restaurantId");
 if (restaurantId) localStorage.setItem("restaurantId", restaurantId);
 
@@ -151,30 +153,50 @@ function applyRoleAndModeUI() {
   if (settlementType) settlementType.hidden = role !== "MANAGER_1";
   if (posMode !== "DINE_IN") document.body.classList.add("pos-non-dine-in");
   else document.body.classList.add("pos-mode-dine-in");
-  if (posMode === "PARTY") document.body.classList.add("pos-mode-party");
-  if (finalBillPrintOrder) finalBillPrintOrder.hidden = posMode !== "DINE_IN";
+  if (posMode === "PARTY") {
+    document.body.classList.add("pos-mode-party");
+    saveOrder.hidden = true;
+  }
+  if (finalBillPrintOrder) finalBillPrintOrder.hidden = !["DINE_IN", "PARCEL", "PARTY"].includes(posMode);
   if (posMode === "DINE_IN") {
     moveTableBtn.hidden = true;
     settleOrder.hidden = true;
     settlePrintOrder.hidden = true;
   }
-  if (posMode === "PARCEL") {
+  if (posMode === "PARCEL" || cashierDineLayout) {
     const parcelIntake = document.getElementById("parcelIntake");
     const parcelPhoneSlot = document.getElementById("parcelPhoneSlot");
     const parcelNameSlot = document.getElementById("parcelNameSlot");
     const parcelDeliverySlot = document.getElementById("parcelDeliverySlot");
     const parcelCustomerStatusSlot = document.getElementById("parcelCustomerStatusSlot");
     document.body.classList.add("pos-mode-parcel");
-    orderType.value = "TAKEAWAY";
-    const parcelOption = orderType.querySelector('option[value="TAKEAWAY"]');
-    if (parcelOption) parcelOption.textContent = "Parcel";
+    if (cashierDineLayout) {
+      document.body.classList.add("pos-mode-cashier-dine");
+      document.querySelector('.parcel-intake .eyebrow').textContent = 'Dine-in order';
+      document.getElementById('parcelIntakeTitle').textContent = 'Cashier order entry';
+      document.querySelector('.parcel-intake-heading small').textContent = 'Choose a table, find or create the customer, then add items.';
+      const tableField = document.createElement('label');
+      tableField.className = 'parcel-field cashier-table-field';
+      tableField.innerHTML = '<span>Table</span><select id="cashierDineTable"><option value="">Select table</option></select>';
+      document.querySelector('.parcel-intake-grid').prepend(tableField);
+      tableField.querySelector('select').addEventListener('change', (event) => {
+        if (event.target.value) selectTable(Number(event.target.value), { skipMovePrompt: true });
+      });
+    } else {
+      orderType.value = "TAKEAWAY";
+      const parcelOption = orderType.querySelector('option[value="TAKEAWAY"]');
+      if (parcelOption) parcelOption.textContent = "Parcel";
+    }
     parcelIntake.hidden = false;
     parcelItemEntry.hidden = false;
     parcelItemSearchSlot.appendChild(document.querySelector(".item-search"));
     parcelItemSuggestionsSlot.appendChild(items);
     categories.hidden = true;
-    splitBillBtn.hidden = true;
-    parcelCheckBtn.hidden = true;
+    if (!cashierDineLayout) {
+      splitBillBtn.hidden = true;
+      parcelCheckBtn.hidden = true;
+      saveOrder.hidden = true;
+    }
     parcelPhoneSlot.appendChild(document.querySelector(".customer-search-row"));
     parcelNameSlot.append(customerName, createCustomer);
     parcelDeliverySlot.appendChild(deliveryFields);
@@ -299,6 +321,8 @@ async function boot() {
   applyBootstrap(data);
   await refreshShiftCashStatus();
   renderTables();
+  const cashierTableSelect = document.getElementById('cashierDineTable');
+  if (cashierTableSelect) cashierTableSelect.innerHTML = '<option value="">Select table</option>' + state.tables.map((table) => `<option value="${table.id}">${esc(table.table_name)} · ${esc(table.status || 'AVAILABLE')}</option>`).join('');
   renderCategories();
   if (state.selectedCategoryId) renderItems(state.selectedCategoryId);
   updateOrderTypeView();
@@ -310,10 +334,11 @@ async function boot() {
     renderCart();
     return;
   }
-  const rememberedTableId = Number(localStorage.getItem("posActiveTableId") || 0);
+  const rememberedTableId = requestedTableId || Number(localStorage.getItem("posActiveTableId") || 0);
   const remembered = state.tables.find((table) => Number(table.id) === rememberedTableId && table.status === "OCCUPIED");
+  const requested = state.tables.find((table) => Number(table.id) === requestedTableId);
   const firstOccupied = state.tables.find((table) => table.status === "OCCUPIED");
-  if (remembered || firstOccupied) await selectTable((remembered || firstOccupied).id, { skipMovePrompt: true });
+  if (requested || remembered || firstOccupied) await selectTable((requested || remembered || firstOccupied).id, { skipMovePrompt: true });
 }
 
 async function refreshLiveState({ updateCart = false } = {}) {
@@ -502,6 +527,31 @@ function cartQuantityForCombo(comboId) {
 function refreshCartAndMenu() {
   renderCart();
   if (state.selectedCategoryId) renderItems(state.selectedCategoryId);
+  schedulePosAutosave();
+}
+
+let posAutosaveTimer;
+let posAutosaveRunning = false;
+function schedulePosAutosave() {
+  if (!(["PARCEL", "PARTY"].includes(posMode) || cashierDineLayout) || !state.dirty || !state.cart.length || state.billingReady) return;
+  clearTimeout(posAutosaveTimer);
+  posAutosaveTimer = setTimeout(async () => {
+    if (posAutosaveRunning || !state.dirty || !state.cart.length || state.billingReady) return;
+    posAutosaveRunning = true;
+    try {
+      const saved = await saveCurrentOrder();
+      if (saved) {
+        kotStatus.textContent = "Order autosaved";
+        kotStatus.className = "success-message";
+      }
+    } catch (error) {
+      kotStatus.textContent = `Autosave failed: ${error.message}`;
+      kotStatus.className = "error-message";
+    } finally {
+      posAutosaveRunning = false;
+      if (state.dirty) schedulePosAutosave();
+    }
+  }, 1200);
 }
 
 function renderTables() {
@@ -717,6 +767,8 @@ async function selectTable(tableId, options = {}) {
   customerPhone.value = "";
   customerName.value = "";
   state.selectedTable = state.tables.find((table) => table.id === tableId);
+  const cashierTableSelect = document.getElementById('cashierDineTable');
+  if (cashierTableSelect) cashierTableSelect.value = String(tableId);
   if (isDineIn() && state.selectedTable) {
     try {
       const qrSession = await postJson('/qr/session/start', { tableId });
@@ -962,6 +1014,7 @@ function updateSelectedItemNote(value) {
   line.notes = String(value || "").slice(0, 300);
   line.savedLocally = false;
   state.dirty = true;
+  schedulePosAutosave();
 }
 
 function removeSelectedCartItem() {
@@ -1105,7 +1158,9 @@ async function searchCustomerByPhone() {
   }
   customerName.value = state.customer.name;
   deliveryPhone.value ||= state.customer.phone || "";
+  if (state.cart.length) state.dirty = true;
   renderCart();
+  schedulePosAutosave();
 }
 
 async function createCustomerFromBilling() {
@@ -1113,7 +1168,9 @@ async function createCustomerFromBilling() {
   const data = await postJson("/customers/create", { name: customerName.value, phone: customerPhone.value });
   state.customer = data.customer;
   deliveryPhone.value ||= state.customer.phone || "";
+  if (state.cart.length) state.dirty = true;
   renderCart();
+  schedulePosAutosave();
 }
 
 document.addEventListener("click", async (event) => {

@@ -364,10 +364,11 @@ button:hover,
 .kitchen-multiselect-options label { display:grid; grid-template-columns:24px minmax(0,1fr); gap:8px; align-items:center; justify-items:start; padding:7px; white-space:nowrap; text-align:left; }
 .kitchen-multiselect-options label input { width:20px !important; min-width:20px; min-height:20px; margin:0 !important; }
 .kitchen-multiselect-options label span { min-width:0; text-align:left; }
-.billing-qr-controls { display:grid; grid-template-columns:minmax(190px,260px) minmax(190px,260px) auto; gap:12px; align-items:end; margin-bottom:14px; text-align:left; }
+.billing-qr-controls { display:grid; grid-template-columns:minmax(130px,.7fr) minmax(180px,1fr) max-content; gap:12px; align-items:end; margin-bottom:14px; text-align:left; }
 .billing-qr-controls label { display:grid; gap:6px; justify-items:start; text-align:left; }
 .billing-qr-controls .billing-qr-toggle { grid-template-columns:20px 1fr; align-items:center; align-self:center; }
 .billing-qr-controls .billing-qr-toggle input { width:18px; min-height:18px; margin:0; }
+.billing-qr-controls button { width:auto; min-width:max-content; white-space:nowrap; }
 @media (max-width:900px) { .billing-qr-controls { grid-template-columns:1fr; } }
 @media (max-width:700px) { .qr-approval-row { grid-template-columns:1fr; } .qr-approval-actions { justify-content:flex-end; } }
 
@@ -623,6 +624,10 @@ button:hover,
   grid-template-columns: minmax(0, 1fr) 500px;
   grid-template-rows: auto auto minmax(0, 1fr);
 }
+.pos-mode-cashier-dine .pos-tables { display:none; }
+.pos-shell.pos-mode-cashier-dine { grid-template-columns:minmax(0,1fr) 500px; }
+.pos-mode-cashier-dine .parcel-intake-grid { grid-template-columns:minmax(170px,.55fr) minmax(260px,1.1fr) minmax(280px,1.2fr); }
+.billing-table-card[data-cashier-table-id] { cursor:pointer; }
 .pos-mode-parcel .parcel-intake {
   grid-column: 1 / -1;
   display: grid;
@@ -704,11 +709,15 @@ button:hover,
 .pos-mode-parcel .payment-panel > .pos-primary-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:stretch; gap:10px; }
 .pos-mode-parcel .payment-panel > .pos-primary-actions button { width:100%; min-width:0; min-height:48px; }
 .pos-mode-dine-in .payment-panel > .order-type-panel,
-.pos-mode-dine-in .payment-panel > .customer-panel,
 .pos-mode-dine-in .payment-panel > #paymentMode,
 .pos-mode-dine-in .payment-panel > #settlementType,
 .pos-mode-dine-in .payment-panel > #paymentAmount,
 .pos-mode-dine-in .payment-panel > .order-state-legend { display:none!important; }
+.pos-mode-dine-in .payment-panel > .customer-panel { display:grid!important; }
+.pos-mode-dine-in .customer-panel > label,
+.pos-mode-dine-in .customer-panel > .pos-discount-tools,
+.pos-mode-dine-in .customer-panel > #discountStatus,
+.pos-mode-dine-in .customer-panel > #payableTotal { display:none!important; }
 .pos-mode-dine-in .payment-panel > .pos-primary-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
 .pos-mode-dine-in .payment-panel > .pos-primary-actions button { display:inline-flex; align-items:center; justify-content:center; gap:6px; width:100%; min-width:0; min-height:52px; margin:0; padding:10px 12px; line-height:1.15; text-align:center; }
 .pos-mode-party .payment-panel > .pos-primary-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:stretch; gap:10px; }
@@ -823,11 +832,12 @@ button:hover,
 .billing-table-card { min-height: 132px; display: grid; align-content: start; gap: 8px; padding: 16px; border: 2px solid #d6dfeb; border-radius: 10px; background: #fff; color: var(--text); text-align: left; box-shadow: 0 4px 12px rgba(15,23,42,.05); transition: transform .15s ease, box-shadow .15s ease; }
 .billing-table-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(15,23,42,.1); }
 .billing-table-card strong { font-size: 16px; }.billing-table-card span { color: #526581; font-size: 13px; }.billing-table-card em { font-style: normal; font-weight: 800; font-size: 16px; }
-.billing-table-card.running { background: #eefbf3; border-color: #39a966; }.billing-table-card.ready-billing { background:#f3efff; border-color:#7c3aed; box-shadow:0 0 0 2px rgba(124,58,237,.12); }.billing-ready-label { color:#6d28d9!important; font-weight:850; }.billing-table-card.kot { background: #fff8e6; border-color: #e3ad24; }
+.billing-table-card.running { background: #eefbf3; border-color: #39a966; }.billing-ready-label { color:#6d28d9!important; font-weight:850; }.billing-table-card.kot { background: #fff8e6; border-color: #e3ad24; }
 .billing-open-bills { display: grid; gap: 6px; }.billing-open-bills button { width: 100%; padding: 8px 10px; border: 1px solid #b9c8dc; border-radius: 7px; background: #2563eb; color: #fff; font-size: 12px; text-align: left; }
+.billing-open-bills button.ready-billing { background:#f3efff; color:#17233c; border:2px solid #7c3aed; box-shadow:0 0 0 2px rgba(124,58,237,.12); }.billing-open-bills button.ready-billing span { color:#526581; }.billing-open-bills button.ready-billing small { display:block; margin-top:5px; }
 .order-state-legend { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 12px 0; color: var(--muted); font-size: 12px; }.order-state-legend span { display: inline-flex; align-items: center; gap: 5px; }.legend.pending { background: #fbbf24; }.legend.fresh { background: #60a5fa; }
 .cart-line.saved { border-left: 4px solid #22c55e; }.cart-line.pending-save { border-left: 4px solid #f59e0b; background: #fffbeb; }.cart-line.new-item { border-left: 4px solid #3b82f6; background: #eff6ff; }
-.invoice-filters { display: grid !important; grid-template-columns: repeat(3, minmax(160px, 1fr)); align-items: end; gap: 10px; max-width: 760px; }
+.invoice-filters { display: grid !important; grid-template-columns: minmax(150px,.7fr) minmax(150px,.7fr) minmax(260px,1.4fr) auto auto; align-items: end; gap: 10px; max-width: 1050px; }
 .invoice-filters label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .invoice-filters input, .invoice-filters button { min-height: 44px; }
 .invoice-detail { margin-top: 16px; padding: 20px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
