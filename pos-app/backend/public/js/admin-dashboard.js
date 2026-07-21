@@ -1489,7 +1489,7 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (pick("deleteKitchen")) { if (await approve("Delete this kitchen?")) await postJson("/admin/kitchens/delete", { id: pick("deleteKitchen") }).then(loadAdmin); return; }
-    if (pick("deletePrinter")) { if (await approve("Disable this printer?", "Disable")) await postJson("/admin/printers/delete", { id: pick("deletePrinter") }).then(loadAdmin); return; }
+    if (pick("deletePrinter")) { if (await approve("Delete this printer?")) await postJson("/admin/printers/delete", { id: pick("deletePrinter") }).then(loadAdmin); return; }
     if (pick("deleteCategory")) { if (await approve("Delete this category?")) await postJson("/admin/categories/delete", { id: pick("deleteCategory") }).then(loadAdmin); return; }
     if (pick("deleteItem")) { if (await approve("Delete this item?")) await postJson("/admin/items/delete", { id: pick("deleteItem") }).then(loadAdmin); return; }
     if (pick("disableUser")) { if (await approve("Disable this user?", "Disable")) await postJson("/admin/users/disable", { id: pick("disableUser") }).then(loadAdmin); return; }

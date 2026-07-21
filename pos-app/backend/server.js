@@ -3613,15 +3613,15 @@ app.get('/admin/bootstrap', (req, res) => {
         id: db.__restaurantId || restaurantId,
         name: getConfigValue(db, 'restaurant_display_name', db.__restaurantId || restaurantId)
       },
-      printers: db.prepare("SELECT id, name, type, connection, address, COALESCE(paper_width_mm, 58) AS paper_width_mm, active, created_at FROM printers WHERE (? = 'true' OR active = 1) ORDER BY type, name").all(includeInactive),
-      kitchens: db.prepare("SELECT id, name, printer_name, printer_id, active FROM kitchens WHERE (? = 'true' OR active = 1) ORDER BY name").all(includeInactive),
+      printers: db.prepare("SELECT id, name, type, connection, address, COALESCE(paper_width_mm, 58) AS paper_width_mm, active, created_at FROM printers WHERE deleted_at IS NULL ORDER BY type, name").all(),
+      kitchens: db.prepare("SELECT id, name, printer_name, printer_id, active FROM kitchens WHERE deleted_at IS NULL ORDER BY name").all(),
       categories: db.prepare(`
         SELECT c.id, c.name, c.kitchen_id, c.active, k.name AS kitchen_name,
                COALESCE(k.active, 0) AS kitchen_active
         FROM categories c LEFT JOIN kitchens k ON k.id = c.kitchen_id
-        WHERE (? = 'true' OR (c.active = 1 AND k.active = 1))
+        WHERE c.deleted_at IS NULL
         ORDER BY c.name
-      `).all(includeInactive),
+      `).all(),
       items: db.prepare(`
         SELECT i.id, i.name, i.category_id, i.price, i.is_veg, i.allow_dine_in, i.allow_parcel, i.allow_party_order, i.active,
                i.image_url, i.online_description, i.online_enabled,
@@ -3629,9 +3629,9 @@ app.get('/admin/bootstrap', (req, res) => {
         FROM items i
         LEFT JOIN categories c ON c.id = i.category_id
         LEFT JOIN kitchens k ON k.id = c.kitchen_id
-        WHERE (? = 'true' OR (i.active = 1 AND c.active = 1 AND k.active = 1))
+        WHERE i.deleted_at IS NULL
         ORDER BY i.name
-      `).all(includeInactive),
+      `).all(),
       users: db.prepare(`
         SELECT id, name, username, role, active, created_at,
                failed_login_attempts, locked_until, lock_reason,
@@ -3774,7 +3774,7 @@ app.post('/admin/printers/delete', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     const oldValue = db.prepare('SELECT * FROM printers WHERE id = ?').get(id);
-    db.prepare('UPDATE printers SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+    db.prepare('UPDATE printers SET active = 0, deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
     db.prepare('UPDATE kitchens SET printer_id = NULL WHERE printer_id = ?').run(id);
     const newValue = db.prepare('SELECT * FROM printers WHERE id = ?').get(id);
     writeAudit(db, actor, 'DELETE', 'PRINTER', id, oldValue, newValue);
@@ -4555,7 +4555,7 @@ app.post('/admin/kitchens/delete', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     const oldValue = db.prepare('SELECT * FROM kitchens WHERE id = ?').get(id);
-    db.prepare('UPDATE kitchens SET active = 0 WHERE id = ?').run(id);
+    db.prepare('UPDATE kitchens SET active = 0, deleted_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
     const newValue = db.prepare('SELECT * FROM kitchens WHERE id = ?').get(id);
     writeAudit(db, actor, 'DELETE', 'KITCHEN', id, oldValue, newValue);
     res.json({ success: true });
@@ -4594,7 +4594,7 @@ app.post('/admin/categories/delete', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     const oldValue = db.prepare('SELECT * FROM categories WHERE id = ?').get(id);
-    db.prepare('UPDATE categories SET active = 0 WHERE id = ?').run(id);
+    db.prepare('UPDATE categories SET active = 0, deleted_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
     const newValue = db.prepare('SELECT * FROM categories WHERE id = ?').get(id);
     writeAudit(db, actor, 'DELETE', 'CATEGORY', id, oldValue, newValue);
     res.json({ success: true });
@@ -4660,7 +4660,7 @@ app.post('/admin/items/delete', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     const oldValue = db.prepare('SELECT * FROM items WHERE id = ?').get(id);
-    db.prepare('UPDATE items SET active = 0 WHERE id = ?').run(id);
+    db.prepare('UPDATE items SET active = 0, deleted_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
     const newValue = db.prepare('SELECT * FROM items WHERE id = ?').get(id);
     writeAudit(db, actor, 'DELETE', 'ITEM', id, oldValue, newValue);
     writeCompliance(db, 'DELETED_ITEM', 'HIGH', `Menu item deleted: ${oldValue?.name || id}`, 'ITEM', id);

@@ -310,11 +310,13 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'printers', 'address TEXT');
   addColumn(db, 'printers', 'paper_width_mm INTEGER DEFAULT 58');
   addColumn(db, 'printers', 'active INTEGER DEFAULT 1');
+  addColumn(db, 'printers', 'deleted_at DATETIME');
   addColumn(db, 'printers', 'created_at DATETIME');
   addColumn(db, 'printers', 'updated_at DATETIME');
   addColumn(db, 'print_jobs', 'last_error TEXT');
   addColumn(db, 'print_jobs', 'updated_at DATETIME');
   addColumn(db, 'kitchens', 'active INTEGER DEFAULT 1');
+  addColumn(db, 'kitchens', 'deleted_at DATETIME');
   addColumn(db, 'kitchens', 'printer_id INTEGER');
   const legacyKitchenPrinters = db.prepare(`
     SELECT id, printer_name
@@ -332,7 +334,9 @@ function ensureRestaurantSchema(db) {
     db.prepare('UPDATE kitchens SET printer_id = ? WHERE id = ?').run(printerId, kitchen.id);
   });
   addColumn(db, 'categories', 'active INTEGER DEFAULT 1');
+  addColumn(db, 'categories', 'deleted_at DATETIME');
   addColumn(db, 'items', 'active INTEGER DEFAULT 1');
+  addColumn(db, 'items', 'deleted_at DATETIME');
   addColumn(db, 'items', 'image_url TEXT');
   addColumn(db, 'items', 'online_description TEXT');
   addColumn(db, 'items', 'online_enabled INTEGER DEFAULT 1');

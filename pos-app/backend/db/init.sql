@@ -32,6 +32,7 @@ CREATE TABLE kitchens (
   name TEXT NOT NULL,
   printer_name TEXT,
   active INTEGER DEFAULT 1,
+  deleted_at DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -44,6 +45,7 @@ CREATE TABLE categories (
   name TEXT NOT NULL,
   kitchen_id INTEGER NOT NULL,
   active INTEGER DEFAULT 1,
+  deleted_at DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (kitchen_id) REFERENCES kitchens(id)
 );
@@ -61,6 +63,7 @@ CREATE TABLE items (
   allow_parcel INTEGER DEFAULT 1,
   allow_party_order INTEGER DEFAULT 1,
   active INTEGER DEFAULT 1,
+  deleted_at DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (category_id) REFERENCES categories(id)
 );
@@ -226,7 +229,8 @@ CREATE TABLE printers (
   type TEXT NOT NULL,        -- KITCHEN | BILL
   connection TEXT NOT NULL,  -- USB | NETWORK
   address TEXT,              -- IP or USB path
-  active INTEGER DEFAULT 1
+  active INTEGER DEFAULT 1,
+  deleted_at DATETIME
 );
 
 ALTER TABLE kitchens ADD COLUMN printer_id INTEGER;
