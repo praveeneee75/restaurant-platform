@@ -498,6 +498,12 @@
             <label class="check-row"><input id="settingKotPrintCustomer" type="checkbox"> Print customer name</label>
             <label class="check-row"><input id="settingKotPrintKitchen" type="checkbox"> Print kitchen name</label>
             <label class="check-row"><input id="settingKotCompactSpacing" type="checkbox"> Compact spacing to save paper</label>
+            <fieldset><legend>Thermal paper layout</legend>
+              <p class="settings-help">Recommended for 58/80 mm printers: left margin 10 dots, trailing feed 0, printer-default cut.</p>
+              <label>Left margin (printer dots)<input id="settingKotLeftMarginDots" type="number" min="0" max="255" step="1" value="10"></label>
+              <label>Trailing feed lines<input id="settingKotTrailingFeedLines" type="number" min="0" max="8" step="1" value="0"></label>
+              <label>Cut control<select id="settingKotCutMode"><option value="PRINTER_DEFAULT">Printer / Windows default</option><option value="PARTIAL">Application partial cut</option><option value="FULL">Application full cut</option></select></label>
+            </fieldset>
             <div id="kotTemplatePreview" class="bill-template-preview" aria-label="KOT template preview"></div>
           </article>
 
@@ -511,6 +517,12 @@
             <label class="check-row"><input id="settingBillPrintPayment" type="checkbox"> Print payment method</label>
             <label class="check-row"><input id="settingBillPrintAuthorisedSignatory" type="checkbox"> Print authorised-signatory line</label>
             <label>Bill footer text<input id="settingBillFooterText" maxlength="120" placeholder="THANK YOU. VISIT AGAIN."></label>
+            <fieldset><legend>Thermal paper layout</legend>
+              <p class="settings-help">Recommended for 58/80 mm printers: left margin 10 dots, trailing feed 0, printer-default cut. Application cutting is only for RAW printers that do not cut at the end of a Windows job.</p>
+              <label>Left margin (printer dots)<input id="settingBillLeftMarginDots" type="number" min="0" max="255" step="1" value="10"></label>
+              <label>Trailing feed lines<input id="settingBillTrailingFeedLines" type="number" min="0" max="8" step="1" value="0"></label>
+              <label>Cut control<select id="settingBillCutMode"><option value="PRINTER_DEFAULT">Printer / Windows default</option><option value="PARTIAL">Application partial cut</option><option value="FULL">Application full cut</option></select></label>
+            </fieldset>
             <fieldset><legend>Invoice reprint security</legend><p class="settings-help">Cashiers must enter this six-digit PIN before reprinting a paid invoice. Only owners and managers can change it.</p><label>New six-digit reprint PIN<input id="settingInvoiceReprintPin" type="password" inputmode="numeric" minlength="6" maxlength="6" pattern="[0-9]{6}" autocomplete="new-password" placeholder="Leave blank to keep current PIN"></label><button type="button" class="secondary-btn" id="saveInvoiceReprintPin">Update reprint PIN</button><span id="invoiceReprintPinStatus" class="settings-help"></span></fieldset>
             <div id="billTemplatePreview" class="bill-template-preview" aria-label="Bill template preview"></div>
           </article>

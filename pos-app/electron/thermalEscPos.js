@@ -52,6 +52,10 @@ function calculateBill(payload) {
 function buildThermalEscPos(job, groupedItems) {
   const payload = typeof job.payload === 'string' ? JSON.parse(job.payload || '{}') : (job.payload || {});
   const width = Number(job.paper_width_mm) === 80 ? 48 : 32;
+  const layout = payload.printLayout || {};
+  const leftMarginDots = Math.max(0, Math.min(255, Number(layout.leftMarginDots ?? 10) || 0));
+  const trailingFeedLines = Math.max(0, Math.min(8, Number(layout.trailingFeedLines ?? 0) || 0));
+  const cutMode = String(layout.cutMode || 'PRINTER_DEFAULT').toUpperCase();
   const chunks = [];
   const bytes = (...values) => chunks.push(Buffer.from(values));
   const line = (value = '') => chunks.push(Buffer.from(`${text(value)}\n`, 'ascii'));
@@ -62,6 +66,9 @@ function buildThermalEscPos(job, groupedItems) {
 
   bytes(ESC, 0x40); // Initialise. No leading feed and no page/form mode.
   bytes(ESC, 0x32); // Default line spacing.
+  // Match proven thermal layouts: a small left inset and no top/bottom form margin.
+  // GS L changes the printable origin without introducing a page-sized canvas.
+  bytes(GS, 0x4c, leftMarginDots & 0xff, (leftMarginDots >> 8) & 0xff);
 
   if (String(job.type).toUpperCase() === 'KOT') {
     const orderType = String(payload.orderType || 'DINE_IN').toUpperCase();
@@ -136,8 +143,13 @@ function buildThermalEscPos(job, groupedItems) {
   }
 
   align(0);
-  line(''); line(''); // Only the cutter clearance required by thermal heads.
-  bytes(GS, 0x56, 0x42, 0x00); // Partial cut, zero additional feed.
+  for (let index = 0; index < trailingFeedLines; index += 1) line('');
+  // Windows/printer drivers commonly perform their configured cut at EndDocPrinter.
+  // Sending another ESC/POS cut caused the body/footer to be split on real 58/80 mm
+  // printers. Therefore the safe default emits no cutter command. Explicit modes
+  // remain available for printers whose RAW queue does not perform a cut.
+  if (cutMode === 'PARTIAL') bytes(GS, 0x56, 0x01);
+  if (cutMode === 'FULL') bytes(GS, 0x56, 0x00);
   return Buffer.concat(chunks);
 }
 

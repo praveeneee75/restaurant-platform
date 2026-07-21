@@ -14,7 +14,8 @@ assert(kotText.indexOf('KMaster Demo Kitchen') < kotText.indexOf('KOT'));
 assert(kotText.indexOf('Table No: Table 1') < kotText.indexOf('Butter Naan'));
 assert(kotText.indexOf('Butter Naan') < kotText.indexOf('Demo order - not for billing'));
 assert(kot.length < 1000, 'compact one-item KOT must not contain a page-sized raster or blank feed');
-assert.deepStrictEqual([...kot.subarray(-4)], [0x1d, 0x56, 0x42, 0x00]);
+assert(!kot.includes(Buffer.from([0x1d, 0x56, 0x42])), 'default KOT must let the printer/driver cut once at the end of the RAW job');
+assert(kot.includes(Buffer.from([0x1d, 0x4c, 0x0a, 0x00])), 'KOT must use the proven 10-dot left inset without top feed');
 
 const bill = buildThermalEscPos({
   type: 'BILL', paper_width_mm: 80,
@@ -26,6 +27,8 @@ const billText = bill.toString('ascii');
 for (const marker of ['TAX INVOICE', 'Chapati', 'CGST @ 2.50%', 'SGST @ 2.50%', 'GRAND TOTAL', 'THANK YOU. VISIT AGAIN.', 'Authorised Signatory']) assert(billText.includes(marker), marker);
 assert(billText.indexOf('GRAND TOTAL') < billText.indexOf('THANK YOU. VISIT AGAIN.'));
 assert(bill.length < 2500, 'bill must be compact continuous text rather than a paged bitmap');
-assert.deepStrictEqual([...bill.subarray(-4)], [0x1d, 0x56, 0x42, 0x00]);
+assert(!bill.includes(Buffer.from([0x1d, 0x56, 0x42])), 'default bill must not add a second application-level cutter command');
+const explicitCut = buildThermalEscPos({ type: 'KOT', paper_width_mm: 58, payload: { printLayout: { cutMode: 'PARTIAL' }, items: [] } }, (items) => items);
+assert.deepStrictEqual([...explicitCut.subarray(-3)], [0x1d, 0x56, 0x01]);
 
 console.log('Thermal ESC/POS regression passed (continuous 58/80 mm KOT and bill output)');

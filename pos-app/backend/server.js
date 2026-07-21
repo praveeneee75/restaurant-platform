@@ -3005,7 +3005,18 @@ app.get('/print-jobs/pending', (req, res) => {
          OR (pj.status = 'FAILED' AND COALESCE(pj.attempts, 0) < 3)
       ORDER BY pj.created_at
       LIMIT 10
-    `).all();
+    `).all().map((job) => {
+      let payload;
+      try { payload = JSON.parse(job.payload || '{}'); } catch (_) { payload = {}; }
+      const prefix = String(job.type || '').toUpperCase() === 'KOT' ? 'kot' : 'bill';
+      payload.printLayout = {
+        leftMarginDots: Math.max(0, Math.min(255, Number(getConfigValue(db, `${prefix}_left_margin_dots`, '10')) || 0)),
+        trailingFeedLines: Math.max(0, Math.min(8, Number(getConfigValue(db, `${prefix}_trailing_feed_lines`, '0')) || 0)),
+        cutMode: ['PRINTER_DEFAULT', 'PARTIAL', 'FULL'].includes(String(getConfigValue(db, `${prefix}_cut_mode`, 'PRINTER_DEFAULT')).toUpperCase())
+          ? String(getConfigValue(db, `${prefix}_cut_mode`, 'PRINTER_DEFAULT')).toUpperCase() : 'PRINTER_DEFAULT'
+      };
+      return { ...job, payload: JSON.stringify(payload) };
+    });
 
     res.json({
       success: true,
