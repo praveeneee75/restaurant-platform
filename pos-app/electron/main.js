@@ -240,7 +240,11 @@ async function printToConfiguredPrinter(job) {
   fs.writeFileSync(tempFile, data);
   try {
     await new Promise((resolve, reject) => {
-      const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'rawPrint.ps1'), '-PrinterName', printer.name, '-DataFile', tempFile], { windowsHide: true });
+      const rawPrintScript = app.isPackaged
+        ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'rawPrint.ps1')
+        : path.join(__dirname, 'rawPrint.ps1');
+      if (!fs.existsSync(rawPrintScript)) throw new Error(`Windows RAW print helper is missing: ${rawPrintScript}`);
+      const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', rawPrintScript, '-PrinterName', printer.name, '-DataFile', tempFile], { windowsHide: true });
       let errorText = '';
       child.stderr.on('data', (chunk) => { errorText += chunk; });
       child.once('error', reject);

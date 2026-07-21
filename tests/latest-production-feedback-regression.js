@@ -9,6 +9,7 @@ const kds = read('pos-app/backend/public/js/kds.js');
 const electron = read('pos-app/electron/main.js');
 const thermalEscPos = read('pos-app/electron/thermalEscPos.js');
 const rawPrint = read('pos-app/electron/rawPrint.ps1');
+const desktopPackage = JSON.parse(read('pos-app/package.json'));
 const notifications = read('pos-app/backend/public/js/nav-notifications.js');
 const cloud = read('saas-backend/src/routes/onlineOrdering.js');
 const posHtml = read('pos-app/backend/public/pos-live.html');
@@ -82,6 +83,7 @@ const cases = [
   ,[server.includes('Repair orders imported by older builds') && server.includes('original.customer_phone || original.customerPhone') && server.includes('UPDATE orders SET customer_id = ?, updated_at = CURRENT_TIMESTAMP') && server.includes("INSERT INTO customers (name, phone)"), 'QR cloud import upserts loyalty customers, attaches customer_id, and repairs earlier imported orders that lost their customer link']
   ,[qrPublicJs.includes('item.allow_dine_in') && orderJs.includes('function channelField()') && orderJs.includes('allow_parcel') && cloud.includes("const requiredChannel = selectedType === 'DINE_IN' ? 'allow_dine_in' : 'allow_parcel'") && cloud.includes('published.price'), 'SaaS QR/storefront menus honor channel flags and server-side ordering rejects stale or tampered unavailable items and prices']
   ,[schema.includes("addColumn(db, 'items', 'deleted_at DATETIME')") && schema.includes("addColumn(db, 'categories', 'deleted_at DATETIME')") && schema.includes("addColumn(db, 'kitchens', 'deleted_at DATETIME')") && schema.includes("addColumn(db, 'printers', 'deleted_at DATETIME')") && server.includes('FROM items i') && server.includes('WHERE i.deleted_at IS NULL') && server.includes('UPDATE items SET active = 0, deleted_at = CURRENT_TIMESTAMP') && server.includes('UPDATE printers SET active = 0, deleted_at = CURRENT_TIMESTAMP'), 'inactive availability is distinct from deletion across items, categories, kitchens and printers, while legacy inactive rows remain recoverable']
+  ,[desktopPackage.build.asarUnpack.includes('electron/rawPrint.ps1') && electron.includes("path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'rawPrint.ps1')") && electron.includes('fs.existsSync(rawPrintScript)'), 'packaged Windows builds unpack and validate the PowerShell RAW-print helper before invoking it']
 ];
 
 let failed = 0;
