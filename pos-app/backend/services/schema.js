@@ -53,12 +53,19 @@ const DEFAULT_SYSTEM_SETTINGS = {
   bill_template: 'BORDERED',
   bill_left_margin_dots: '0',
   bill_trailing_feed_lines: '0',
-  bill_cut_mode: 'PRINTER_DEFAULT',
-  bill_print_width_58: '28',
-  bill_print_width_80: '38',
+  bill_cut_mode: 'NONE',
+  bill_print_width_58: '32',
+  bill_print_width_80: '48',
   bill_font_type: 'FONT_A',
   bill_font_size: 'NORMAL',
   bill_line_spacing_dots: '24',
+  bill_details_layout: 'TWO_COLUMN',
+  bill_header_font_type: 'FONT_A', bill_header_font_size: 'NORMAL', bill_header_alignment: 'CENTER', bill_header_bold: '1',
+  bill_title_font_type: 'FONT_A', bill_title_font_size: 'NORMAL', bill_title_alignment: 'CENTER', bill_title_bold: '1',
+  bill_details_font_type: 'FONT_A', bill_details_font_size: 'NORMAL', bill_details_alignment: 'LEFT', bill_details_bold: '0',
+  bill_items_font_type: 'FONT_A', bill_items_font_size: 'NORMAL', bill_items_alignment: 'LEFT', bill_items_bold: '0',
+  bill_totals_font_type: 'FONT_A', bill_totals_font_size: 'NORMAL', bill_totals_alignment: 'LEFT', bill_totals_bold: '1',
+  bill_footer_font_type: 'FONT_A', bill_footer_font_size: 'NORMAL', bill_footer_alignment: 'CENTER', bill_footer_bold: '0',
   qr_require_table_pin: '1',
   qr_session_minutes: '30',
   qr_ordering_enabled: '1',
@@ -80,12 +87,17 @@ const DEFAULT_SYSTEM_SETTINGS = {
   kot_compact_spacing: '1',
   kot_left_margin_dots: '0',
   kot_trailing_feed_lines: '0',
-  kot_cut_mode: 'PRINTER_DEFAULT',
-  kot_print_width_58: '28',
-  kot_print_width_80: '38',
+  kot_cut_mode: 'NONE',
+  kot_print_width_58: '32',
+  kot_print_width_80: '48',
   kot_font_type: 'FONT_A',
   kot_font_size: 'NORMAL',
   kot_line_spacing_dots: '24',
+  kot_header_font_type: 'FONT_A', kot_header_font_size: 'NORMAL', kot_header_alignment: 'CENTER', kot_header_bold: '0',
+  kot_title_font_type: 'FONT_A', kot_title_font_size: 'LARGE', kot_title_alignment: 'CENTER', kot_title_bold: '1',
+  kot_details_font_type: 'FONT_A', kot_details_font_size: 'NORMAL', kot_details_alignment: 'CENTER', kot_details_bold: '0',
+  kot_items_font_type: 'FONT_A', kot_items_font_size: 'NORMAL', kot_items_alignment: 'LEFT', kot_items_bold: '0',
+  kot_footer_font_type: 'FONT_A', kot_footer_font_size: 'NORMAL', kot_footer_alignment: 'CENTER', kot_footer_bold: '0',
   backup_enabled: '0',
   backup_folder_path: '',
   onedrive_folder_path: '',
@@ -144,6 +156,11 @@ function seedDefaultSettings(db) {
     ON CONFLICT(key) DO NOTHING
   `);
   Object.entries(DEFAULT_SYSTEM_SETTINGS).forEach(([key, value]) => insert.run(key, value));
+  if (!db.prepare("SELECT 1 FROM system_config WHERE key = 'thermal_width_defaults_v2'").get()) {
+    db.prepare("UPDATE system_config SET value = '32', updated_at = CURRENT_TIMESTAMP WHERE key IN ('bill_print_width_58', 'kot_print_width_58') AND value = '28'").run();
+    db.prepare("UPDATE system_config SET value = '48', updated_at = CURRENT_TIMESTAMP WHERE key IN ('bill_print_width_80', 'kot_print_width_80') AND value = '38'").run();
+    insert.run('thermal_width_defaults_v2', '1');
+  }
 }
 
 function ensureRestaurantSchema(db) {

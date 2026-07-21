@@ -634,21 +634,34 @@ function groupInvoicePrintItems(items = []) {
   return [...grouped.values()];
 }
 
-function renderBillTemplatePreview() {
-  if (!window.billTemplatePreview || !window.settingBillTemplate) return;
-  const template = settingBillTemplate.value || 'BORDERED';
-  billTemplatePreview.dataset.template = template;
-  billTemplatePreview.innerHTML = `<div class="bill-preview-paper"><strong>${esc((state.settings?.settings || {}).restaurant_display_name || 'RESTAURANT NAME')}</strong><small>TAX INVOICE</small><div class="bill-preview-meta">Invoice: DEMO-0001<br>Date: 19/07/2026<br>Table: A1</div><table><tr><th>Item</th><th>Qty</th><th>Amount</th></tr><tr><td>Sample item</td><td>2</td><td>200.00</td></tr></table><div class="bill-preview-totals"><span>Taxable value</span><b>190.48</b><span>CGST @ 2.50%</span><b>4.76</b><span>SGST @ 2.50%</span><b>4.76</b><span>Grand total</span><b>200.00</b></div></div>`;
+const PRINT_STYLE_GROUPS = {
+  bill: [['header', 'Restaurant header'], ['title', 'Document title'], ['details', 'Invoice / reference details'], ['items', 'Item headings and rows'], ['totals', 'Tax and totals'], ['footer', 'Footer']],
+  kot: [['header', 'Kitchen header'], ['title', 'KOT title'], ['details', 'Date, reference, type and table'], ['items', 'Item headings and rows'], ['footer', 'Footer']]
+};
+const styleId = (prefix, section, name) => `setting${prefix[0].toUpperCase()}${prefix.slice(1)}${section[0].toUpperCase()}${section.slice(1)}${name}`;
+function renderPrintStyleRows(prefix) {
+  const body = document.getElementById(`${prefix}PrintStyleRows`); if (!body) return;
+  body.innerHTML = PRINT_STYLE_GROUPS[prefix].map(([section, label]) => `<tr><th scope="row">${esc(label)}</th><td><select id="${styleId(prefix, section, 'FontType')}"><option value="FONT_A">Font A</option><option value="FONT_B">Font B</option></select></td><td><select id="${styleId(prefix, section, 'FontSize')}"><option value="SMALL">Small</option><option value="NORMAL">Normal</option><option value="LARGE">Large</option></select></td><td><select id="${styleId(prefix, section, 'Alignment')}"><option value="LEFT">Left</option><option value="CENTER">Centre</option><option value="RIGHT">Right</option></select></td><td><input id="${styleId(prefix, section, 'Bold')}" type="checkbox" aria-label="Bold ${esc(label)}"></td></tr>`).join('');
 }
-
-function renderKotTemplatePreview() {
-  if (!window.kotTemplatePreview || !window.settingKotTemplate) return;
-  kotTemplatePreview.dataset.template = settingKotTemplate.value === 'BORDERLESS' ? 'BORDERLESS' : 'BORDERED';
-  kotTemplatePreview.innerHTML = `<div class="bill-preview-paper"><strong>KOT</strong><small>DINE IN</small><div class="bill-preview-meta">KOT: A12-2<br>Table No: Table 1</div><table><tr><th>Item</th><th>Note</th><th>Qty</th></tr><tr><td>Butter Naan</td><td>No onion</td><td>2</td></tr></table><small>Compact continuous-roll preview</small></div>`;
+renderPrintStyleRows('bill'); renderPrintStyleRows('kot');
+function printStyles(prefix) { return Object.fromEntries(PRINT_STYLE_GROUPS[prefix].map(([section]) => [section, { fontType: document.getElementById(styleId(prefix, section, 'FontType')).value, fontSize: document.getElementById(styleId(prefix, section, 'FontSize')).value, alignment: document.getElementById(styleId(prefix, section, 'Alignment')).value, bold: document.getElementById(styleId(prefix, section, 'Bold')).checked }])); }
+function flatPrintStyles(prefix) { return Object.fromEntries(Object.entries(printStyles(prefix)).flatMap(([section, style]) => [[`${prefix}_${section}_font_type`, style.fontType], [`${prefix}_${section}_font_size`, style.fontSize], [`${prefix}_${section}_alignment`, style.alignment], [`${prefix}_${section}_bold`, style.bold ? '1' : '0']])); }
+function loadPrintStyles(prefix, settings) {
+  const defaults = { header:['FONT_A','NORMAL','CENTER',true], title:['FONT_A',prefix === 'kot' ? 'LARGE' : 'NORMAL','CENTER',true], details:['FONT_A','NORMAL',prefix === 'kot' ? 'CENTER' : 'LEFT',false], items:['FONT_A','NORMAL','LEFT',false], totals:['FONT_A','NORMAL','LEFT',true], footer:['FONT_A','NORMAL','CENTER',false] };
+  PRINT_STYLE_GROUPS[prefix].forEach(([section]) => { const d=defaults[section]; document.getElementById(styleId(prefix,section,'FontType')).value=settings[`${prefix}_${section}_font_type`]||d[0]; document.getElementById(styleId(prefix,section,'FontSize')).value=settings[`${prefix}_${section}_font_size`]||d[1]; document.getElementById(styleId(prefix,section,'Alignment')).value=settings[`${prefix}_${section}_alignment`]||d[2]; setChecked(document.getElementById(styleId(prefix,section,'Bold')),settings[`${prefix}_${section}_bold`]===undefined?d[3]:settings[`${prefix}_${section}_bold`]); });
 }
+let billPreviewSequence=0, kotPreviewSequence=0;
+async function renderRawPreview(prefix) {
+  const preview=document.getElementById(`${prefix}TemplatePreview`); if(!preview)return; const sequence=prefix==='bill'?++billPreviewSequence:++kotPreviewSequence; const cap=prefix[0].toUpperCase()+prefix.slice(1); const value=(suffix,fallback)=>document.getElementById(`setting${cap}${suffix}`)?.value??fallback; preview.textContent='Generating exact RAW preview…';
+  try { const result=await postJson('/admin/printers/layout-preview',{restaurantId,actor,kind:prefix.toUpperCase(),paperWidthMm:Number(value('PreviewPaperWidth',58)),template:value('Template','BORDERED'),layout:{printWidth58:Number(value('PrintWidth58',32)),printWidth80:Number(value('PrintWidth80',48)),fontType:value('FontType','FONT_A'),fontSize:value('FontSize','NORMAL'),lineSpacingDots:Number(value('LineSpacingDots',24)),leftMarginDots:Number(value('LeftMarginDots',0)),trailingFeedLines:Number(value('TrailingFeedLines',0)),cutMode:value('CutMode','NONE'),detailsLayout:value('DetailsLayout','TWO_COLUMN'),styles:printStyles(prefix)}}); if((prefix==='bill'?billPreviewSequence:kotPreviewSequence)!==sequence)return; const p=result.preview; const rows=(p.rows||[]).map(row=>`<span class="raw-line font-${row.fontType.toLowerCase()} size-${row.fontSize.toLowerCase()} align-${row.alignment.toLowerCase()}${row.bold?' bold':''}">${esc(row.text)||' '}</span>`).join(''); preview.innerHTML=`<div class="thermal-raw-preview"><b>Exact RAW ${p.paperWidthMm} mm preview · ${p.width} characters</b><div class="raw-paper" style="--raw-line-height:${Math.max(.8,Number(p.lineSpacingDots||24)/24)}">${rows}</div><small>Line spacing: ${p.lineSpacingDots} dots · Cut: ${esc(p.cutMode)}</small></div>`; } catch(error){ preview.innerHTML=`<span class="field-error">${esc(error.message)}</span>`; }
+}
+function renderBillTemplatePreview(){return renderRawPreview('bill');}
+function renderKotTemplatePreview(){return renderRawPreview('kot');}
 
 settingBillTemplate?.addEventListener('change', renderBillTemplatePreview);
+settingBillDetailsLayout?.addEventListener('change', renderBillTemplatePreview);
 settingKotTemplate?.addEventListener('change', renderKotTemplatePreview);
+document.querySelectorAll('#billPrintStyleRows input,#billPrintStyleRows select,#kotPrintStyleRows input,#kotPrintStyleRows select,[id^="settingBillPrintWidth"],[id^="settingKotPrintWidth"],[id$="PreviewPaperWidth"],[id$="LineSpacingDots"],[id$="LeftMarginDots"],[id$="TrailingFeedLines"],[id$="CutMode"]').forEach((input)=>input.addEventListener('change',()=>input.id.includes('Kot')||input.closest('#kotPrintStyleRows')?renderKotTemplatePreview():renderBillTemplatePreview()));
 
 saveInvoiceReprintPin?.addEventListener('click', async () => {
   const pin = String(settingInvoiceReprintPin.value || '').trim();
@@ -974,12 +987,14 @@ function renderSettings() {
   settingBillTemplate.value = settings.bill_template || 'BORDERED';
   settingBillLeftMarginDots.value = settings.bill_left_margin_dots ?? '0';
   settingBillTrailingFeedLines.value = settings.bill_trailing_feed_lines ?? '0';
-  settingBillCutMode.value = settings.bill_cut_mode || 'PRINTER_DEFAULT';
-  settingBillPrintWidth58.value = settings.bill_print_width_58 ?? '28';
-  settingBillPrintWidth80.value = settings.bill_print_width_80 ?? '38';
+  settingBillCutMode.value = settings.bill_cut_mode === 'PRINTER_DEFAULT' ? 'NONE' : (settings.bill_cut_mode || 'NONE');
+  settingBillPrintWidth58.value = settings.bill_print_width_58 ?? '32';
+  settingBillPrintWidth80.value = settings.bill_print_width_80 ?? '48';
   settingBillFontType.value = settings.bill_font_type || 'FONT_A';
   settingBillFontSize.value = settings.bill_font_size || 'NORMAL';
   settingBillLineSpacingDots.value = settings.bill_line_spacing_dots ?? '24';
+  settingBillDetailsLayout.value = settings.bill_details_layout || 'TWO_COLUMN';
+  loadPrintStyles('bill', settings);
   renderBillTemplatePreview();
   setChecked(settingQrRequireTablePin, settings.qr_require_table_pin === undefined ? true : settings.qr_require_table_pin);
   settingQrSessionMinutes.value = settings.qr_session_minutes || '30';
@@ -1002,12 +1017,13 @@ function renderSettings() {
   setChecked(settingKotCompactSpacing, settings.kot_compact_spacing === undefined ? true : settings.kot_compact_spacing);
   settingKotLeftMarginDots.value = settings.kot_left_margin_dots ?? '0';
   settingKotTrailingFeedLines.value = settings.kot_trailing_feed_lines ?? '0';
-  settingKotCutMode.value = settings.kot_cut_mode || 'PRINTER_DEFAULT';
-  settingKotPrintWidth58.value = settings.kot_print_width_58 ?? '28';
-  settingKotPrintWidth80.value = settings.kot_print_width_80 ?? '38';
+  settingKotCutMode.value = settings.kot_cut_mode === 'PRINTER_DEFAULT' ? 'NONE' : (settings.kot_cut_mode || 'NONE');
+  settingKotPrintWidth58.value = settings.kot_print_width_58 ?? '32';
+  settingKotPrintWidth80.value = settings.kot_print_width_80 ?? '48';
   settingKotFontType.value = settings.kot_font_type || 'FONT_A';
   settingKotFontSize.value = settings.kot_font_size || 'NORMAL';
   settingKotLineSpacingDots.value = settings.kot_line_spacing_dots ?? '24';
+  loadPrintStyles('kot', settings);
   renderKotTemplatePreview();
   setChecked(settingRequireOpenRegisterForCashPayment, settings.require_open_register_for_cash_payment);
   setChecked(settingAllowCashierRegisterClose, settings.allow_cashier_register_close);
@@ -1079,11 +1095,13 @@ function collectSettings() {
     bill_left_margin_dots: settingBillLeftMarginDots.value || '0',
     bill_trailing_feed_lines: settingBillTrailingFeedLines.value || '0',
     bill_cut_mode: settingBillCutMode.value,
-    bill_print_width_58: settingBillPrintWidth58.value || '28',
-    bill_print_width_80: settingBillPrintWidth80.value || '38',
+    bill_print_width_58: settingBillPrintWidth58.value || '32',
+    bill_print_width_80: settingBillPrintWidth80.value || '48',
     bill_font_type: settingBillFontType.value,
     bill_font_size: settingBillFontSize.value,
     bill_line_spacing_dots: settingBillLineSpacingDots.value || '24',
+    bill_details_layout: settingBillDetailsLayout.value,
+    ...flatPrintStyles('bill'),
     qr_require_table_pin: checkedValue(settingQrRequireTablePin),
     qr_session_minutes: settingQrSessionMinutes.value || '30',
     qr_ordering_enabled: checkedValue(settingQrOrderingEnabled),
@@ -1106,11 +1124,12 @@ function collectSettings() {
     kot_left_margin_dots: settingKotLeftMarginDots.value || '0',
     kot_trailing_feed_lines: settingKotTrailingFeedLines.value || '0',
     kot_cut_mode: settingKotCutMode.value,
-    kot_print_width_58: settingKotPrintWidth58.value || '28',
-    kot_print_width_80: settingKotPrintWidth80.value || '38',
+    kot_print_width_58: settingKotPrintWidth58.value || '32',
+    kot_print_width_80: settingKotPrintWidth80.value || '48',
     kot_font_type: settingKotFontType.value,
     kot_font_size: settingKotFontSize.value,
     kot_line_spacing_dots: settingKotLineSpacingDots.value || '24',
+    ...flatPrintStyles('kot'),
     require_open_register_for_cash_payment: checkedValue(settingRequireOpenRegisterForCashPayment),
     allow_cashier_register_close: checkedValue(settingAllowCashierRegisterClose),
     cash_discrepancy_threshold: settingCashDiscrepancyThreshold.value,
@@ -1134,8 +1153,8 @@ const SETTINGS_KEYS_BY_SECTION = {
   profile: ["restaurant_display_name", "legal_name", "gstin", "fssai_license_no", "state_code", "address_line_1", "address_line_2", "city", "state", "country", "phone", "email", "currency", "timezone", "logo_path"],
   pos: ["default_order_type", "allow_non_invoice_orders", "allow_discount", "allow_manual_price_override", "allow_refund", "allow_order_cancel", "require_manager_pin_for_discount", "require_manager_pin_for_refund", "require_manager_pin_for_void", "require_clock_in_before_order"],
   billing: ["invoice_prefix", "invoice_reset_frequency", "show_tax_on_bill", "tax_name", "tax_rate", "sac_code", "show_qr_on_bill", "qr_require_table_pin", "qr_session_minutes", "qr_ordering_enabled", "qr_pending_order_limit", "upi_id", "service_charge_enabled", "service_charge_percent", "round_off_enabled"],
-  "bill-print": ["bill_template", "bill_print_contact", "bill_print_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text", "bill_left_margin_dots", "bill_trailing_feed_lines", "bill_cut_mode", "bill_print_width_58", "bill_print_width_80", "bill_font_type", "bill_font_size", "bill_line_spacing_dots"],
-  kot: ["auto_print_kot", "print_kot_on_save", "print_kot_on_submit", "allow_kot_reprint", "kot_header_text", "kot_footer_text", "kot_template", "kot_print_table", "kot_print_customer", "kot_print_kitchen", "kot_compact_spacing", "kot_left_margin_dots", "kot_trailing_feed_lines", "kot_cut_mode", "kot_print_width_58", "kot_print_width_80", "kot_font_type", "kot_font_size", "kot_line_spacing_dots"],
+  "bill-print": ["bill_template", "bill_print_contact", "bill_print_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text", "bill_left_margin_dots", "bill_trailing_feed_lines", "bill_cut_mode", "bill_print_width_58", "bill_print_width_80", "bill_font_type", "bill_font_size", "bill_line_spacing_dots", "bill_details_layout", ...Object.keys(flatPrintStyles('bill'))],
+  kot: ["auto_print_kot", "print_kot_on_save", "print_kot_on_submit", "allow_kot_reprint", "kot_header_text", "kot_footer_text", "kot_template", "kot_print_table", "kot_print_customer", "kot_print_kitchen", "kot_compact_spacing", "kot_left_margin_dots", "kot_trailing_feed_lines", "kot_cut_mode", "kot_print_width_58", "kot_print_width_80", "kot_font_type", "kot_font_size", "kot_line_spacing_dots", ...Object.keys(flatPrintStyles('kot'))],
   online: ["mobile_app_enabled", "online_order_enabled", "online_storefront_slug", "online_theme", "online_primary_color", "online_accent_color", "online_logo_path", "online_payment_methods", "online_require_otp", "online_allow_loyalty_credit", "online_delivery_enabled", "online_takeaway_enabled", "online_min_order_amount"]
 };
 

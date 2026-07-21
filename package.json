@@ -36,5 +36,6 @@
     ,"test:qr-kds-owner": "node tests/qr-kds-owner-hardening-regression.js"
     ,"test:latest-feedback": "node tests/latest-production-feedback-regression.js"
     ,"test:central-loyalty": "node tests/central-loyalty-regression.js"
+    ,"test:printing": "node tests/thermal-escpos-regression.js"
   }
 }

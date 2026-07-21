@@ -500,15 +500,20 @@
             <label class="check-row"><input id="settingKotCompactSpacing" type="checkbox"> Compact spacing to save paper</label>
             <fieldset><legend>Thermal paper layout</legend>
               <p class="settings-help">Start with width 28 for 58 mm or 38 for 80 mm. Reduce the width if the right edge is clipped. Changes are applied to the next print job.</p>
-              <label>58 mm printable characters<input id="settingKotPrintWidth58" type="number" min="24" max="32" step="1" value="28"></label>
-              <label>80 mm printable characters<input id="settingKotPrintWidth80" type="number" min="32" max="48" step="1" value="38"></label>
+              <label>58 mm printable characters<input id="settingKotPrintWidth58" type="number" min="24" max="32" step="1" value="32"></label>
+              <label>80 mm printable characters<input id="settingKotPrintWidth80" type="number" min="32" max="48" step="1" value="48"></label>
               <label>Printer font type<select id="settingKotFontType"><option value="FONT_A">Font A — standard</option><option value="FONT_B">Font B — condensed</option></select></label>
               <label>Font size<select id="settingKotFontSize"><option value="COMPACT">Compact</option><option value="NORMAL">Normal</option><option value="TALL">Tall</option></select></label>
               <label>Line spacing (printer dots)<input id="settingKotLineSpacingDots" type="number" min="16" max="60" step="1" value="24"></label>
               <label>Left margin (printer dots)<input id="settingKotLeftMarginDots" type="number" min="0" max="255" step="1" value="0"></label>
               <label>Trailing feed lines<input id="settingKotTrailingFeedLines" type="number" min="0" max="8" step="1" value="0"></label>
-              <label>Cut control<select id="settingKotCutMode"><option value="PRINTER_DEFAULT">Printer / Windows default</option><option value="PARTIAL">Application partial cut</option><option value="FULL">Application full cut</option></select></label>
+              <label>Cut control<select id="settingKotCutMode"><option value="NONE">No application cut</option><option value="PARTIAL">Application partial cut — feed then cut</option><option value="FULL">Application full cut — feed then cut</option></select></label>
             </fieldset>
+            <fieldset><legend>Per-line appearance</legend>
+              <p class="settings-help">Each row controls the corresponding lines in both the preview and the physical KOT.</p>
+              <div class="table-panel"><table class="print-style-table"><thead><tr><th>Lines</th><th>Font</th><th>Size</th><th>Alignment</th><th>Bold</th></tr></thead><tbody id="kotPrintStyleRows"></tbody></table></div>
+            </fieldset>
+            <label>Preview paper width<select id="settingKotPreviewPaperWidth"><option value="58">58 mm</option><option value="80">80 mm</option></select></label>
             <div id="kotTemplatePreview" class="bill-template-preview" aria-label="KOT template preview"></div>
           </article>
 
@@ -523,16 +528,22 @@
             <label class="check-row"><input id="settingBillPrintAuthorisedSignatory" type="checkbox"> Print authorised-signatory line</label>
             <label>Bill footer text<input id="settingBillFooterText" maxlength="120" placeholder="THANK YOU. VISIT AGAIN."></label>
             <fieldset><legend>Thermal paper layout</legend>
-              <p class="settings-help">Start with width 28 for 58 mm or 38 for 80 mm. Reduce the width if the right edge is clipped. Application cutting is for RAW printers that do not cut at Windows EndDoc.</p>
-              <label>58 mm printable characters<input id="settingBillPrintWidth58" type="number" min="24" max="32" step="1" value="28"></label>
-              <label>80 mm printable characters<input id="settingBillPrintWidth80" type="number" min="32" max="48" step="1" value="38"></label>
+              <p class="settings-help">Start with width 28 for 58 mm or 38 for 80 mm. Reduce the width if the right edge is clipped. RAW printing bypasses the Windows driver; select an application cut when the printer has a cutter.</p>
+              <label>58 mm printable characters<input id="settingBillPrintWidth58" type="number" min="24" max="32" step="1" value="32"></label>
+              <label>80 mm printable characters<input id="settingBillPrintWidth80" type="number" min="32" max="48" step="1" value="48"></label>
               <label>Printer font type<select id="settingBillFontType"><option value="FONT_A">Font A — standard</option><option value="FONT_B">Font B — condensed</option></select></label>
               <label>Font size<select id="settingBillFontSize"><option value="COMPACT">Compact</option><option value="NORMAL">Normal</option><option value="TALL">Tall</option></select></label>
               <label>Line spacing (printer dots)<input id="settingBillLineSpacingDots" type="number" min="16" max="60" step="1" value="24"></label>
+              <label>Bill details layout<select id="settingBillDetailsLayout"><option value="TWO_COLUMN">Two columns - compact</option><option value="STACKED">Single column - stacked</option></select></label>
               <label>Left margin (printer dots)<input id="settingBillLeftMarginDots" type="number" min="0" max="255" step="1" value="0"></label>
               <label>Trailing feed lines<input id="settingBillTrailingFeedLines" type="number" min="0" max="8" step="1" value="0"></label>
-              <label>Cut control<select id="settingBillCutMode"><option value="PRINTER_DEFAULT">Printer / Windows default</option><option value="PARTIAL">Application partial cut</option><option value="FULL">Application full cut</option></select></label>
+              <label>Cut control<select id="settingBillCutMode"><option value="NONE">No application cut</option><option value="PARTIAL">Application partial cut — feed then cut</option><option value="FULL">Application full cut — feed then cut</option></select></label>
             </fieldset>
+            <fieldset><legend>Per-line appearance</legend>
+              <p class="settings-help">Each row controls the corresponding lines in both the preview and the physical bill.</p>
+              <div class="table-panel"><table class="print-style-table"><thead><tr><th>Lines</th><th>Font</th><th>Size</th><th>Alignment</th><th>Bold</th></tr></thead><tbody id="billPrintStyleRows"></tbody></table></div>
+            </fieldset>
+            <label>Preview paper width<select id="settingBillPreviewPaperWidth"><option value="58">58 mm</option><option value="80">80 mm</option></select></label>
             <fieldset><legend>Invoice reprint security</legend><p class="settings-help">Cashiers must enter this six-digit PIN before reprinting a paid invoice. Only owners and managers can change it.</p><label>New six-digit reprint PIN<input id="settingInvoiceReprintPin" type="password" inputmode="numeric" minlength="6" maxlength="6" pattern="[0-9]{6}" autocomplete="new-password" placeholder="Leave blank to keep current PIN"></label><button type="button" class="secondary-btn" id="saveInvoiceReprintPin">Update reprint PIN</button><span id="invoiceReprintPinStatus" class="settings-help"></span></fieldset>
             <div id="billTemplatePreview" class="bill-template-preview" aria-label="Bill template preview"></div>
           </article>

@@ -39,6 +39,7 @@ const { openDatabase } = require('./db/database');
 const { hasPermission, permissionsForRole, seedDefaultPermissions } = require('./services/permissions');
 const { getSingleRestaurantId } = require('./utils/restaurantScanner');
 const { groupPrintableItems } = require('./services/printItemGrouping');
+const { buildThermalPreview } = require('../electron/thermalEscPos');
 const { dataDir, restaurantDbPath } = require('./utils/dataPaths');
 const { ensureRestaurantSchema, seedDefaultSettings, DEFAULT_SYSTEM_SETTINGS } = require('./services/schema');
 const { runMigrations } = require('./services/migrationRunner');
@@ -807,7 +808,9 @@ const SETTINGS_BOOLEAN_KEYS = new Set([
   'online_require_otp',
   'online_allow_loyalty_credit',
   'online_delivery_enabled',
-  'online_takeaway_enabled'
+  'online_takeaway_enabled',
+  'bill_header_bold', 'bill_title_bold', 'bill_details_bold', 'bill_items_bold', 'bill_totals_bold', 'bill_footer_bold',
+  'kot_header_bold', 'kot_title_bold', 'kot_details_bold', 'kot_items_bold', 'kot_footer_bold'
 ]);
 
 app.use('/inventory', moduleGate('INVENTORY'));
@@ -885,8 +888,8 @@ function normaliseSettingsInput(input) {
     }
     if (key.endsWith('_cut_mode')) {
       const mode = String(value || '').toUpperCase();
-      if (!['PRINTER_DEFAULT', 'PARTIAL', 'FULL'].includes(mode)) throw new Error(`${key} is invalid`);
-      output[key] = mode;
+      if (!['NONE', 'PRINTER_DEFAULT', 'PARTIAL', 'FULL'].includes(mode)) throw new Error(`${key} is invalid`);
+      output[key] = mode === 'PRINTER_DEFAULT' ? 'NONE' : mode;
       return;
     }
     if (key.endsWith('_font_type')) {
@@ -897,8 +900,20 @@ function normaliseSettingsInput(input) {
     }
     if (key.endsWith('_font_size')) {
       const size = String(value || '').toUpperCase();
-      if (!['COMPACT', 'NORMAL', 'TALL'].includes(size)) throw new Error(`${key} is invalid`);
+      if (!['SMALL', 'COMPACT', 'NORMAL', 'LARGE', 'TALL'].includes(size)) throw new Error(`${key} is invalid`);
       output[key] = size;
+      return;
+    }
+    if (key.endsWith('_alignment')) {
+      const alignment = String(value || '').toUpperCase();
+      if (!['LEFT', 'CENTER', 'RIGHT'].includes(alignment)) throw new Error(`${key} is invalid`);
+      output[key] = alignment;
+      return;
+    }
+    if (key === 'bill_details_layout') {
+      const detailsLayout = String(value || '').toUpperCase();
+      if (!['TWO_COLUMN', 'STACKED'].includes(detailsLayout)) throw new Error('bill_details_layout is invalid');
+      output[key] = detailsLayout;
       return;
     }
     if (key === 'online_theme') {
@@ -3011,6 +3026,19 @@ app.post('/orders/merge', (req, res) => {
 // ========================
 // FETCH PENDING PRINT JOBS
 // ========================
+function getThermalSectionStyles(db, prefix) {
+  const sections = prefix === 'kot' ? ['header', 'title', 'details', 'items', 'footer'] : ['header', 'title', 'details', 'items', 'totals', 'footer'];
+  const defaultAlignment = { header: 'CENTER', title: 'CENTER', details: prefix === 'kot' ? 'CENTER' : 'LEFT', items: 'LEFT', totals: 'LEFT', footer: 'CENTER' };
+  return Object.fromEntries(sections.map((section) => {
+    const fontType = String(getConfigValue(db, `${prefix}_${section}_font_type`, 'FONT_A')).toUpperCase() === 'FONT_B' ? 'FONT_B' : 'FONT_A';
+    const rawSize = String(getConfigValue(db, `${prefix}_${section}_font_size`, section === 'title' && prefix === 'kot' ? 'LARGE' : 'NORMAL')).toUpperCase();
+    const fontSize = ['SMALL', 'NORMAL', 'LARGE'].includes(rawSize) ? rawSize : 'NORMAL';
+    const rawAlignment = String(getConfigValue(db, `${prefix}_${section}_alignment`, defaultAlignment[section])).toUpperCase();
+    const alignment = ['LEFT', 'CENTER', 'RIGHT'].includes(rawAlignment) ? rawAlignment : defaultAlignment[section];
+    return [section, { fontType, fontSize, alignment, bold: getBooleanConfig(db, `${prefix}_${section}_bold`, ['header', 'title'].includes(section)) }];
+  }));
+}
+
 app.get('/print-jobs/pending', (req, res) => {
   const { restaurantId } = req.query;
 
@@ -3040,13 +3068,15 @@ app.get('/print-jobs/pending', (req, res) => {
       payload.printLayout = {
         leftMarginDots: Math.max(0, Math.min(255, Number(getConfigValue(db, `${prefix}_left_margin_dots`, '10')) || 0)),
         trailingFeedLines: Math.max(0, Math.min(8, Number(getConfigValue(db, `${prefix}_trailing_feed_lines`, '0')) || 0)),
-        cutMode: ['PRINTER_DEFAULT', 'PARTIAL', 'FULL'].includes(String(getConfigValue(db, `${prefix}_cut_mode`, 'PRINTER_DEFAULT')).toUpperCase())
-          ? String(getConfigValue(db, `${prefix}_cut_mode`, 'PRINTER_DEFAULT')).toUpperCase() : 'PRINTER_DEFAULT',
-        printWidth58: Math.max(24, Math.min(32, Number(getConfigValue(db, `${prefix}_print_width_58`, '28')) || 28)),
-        printWidth80: Math.max(32, Math.min(48, Number(getConfigValue(db, `${prefix}_print_width_80`, '38')) || 38)),
+        cutMode: ['PARTIAL', 'FULL'].includes(String(getConfigValue(db, `${prefix}_cut_mode`, 'NONE')).toUpperCase())
+          ? String(getConfigValue(db, `${prefix}_cut_mode`, 'NONE')).toUpperCase() : 'NONE',
+        printWidth58: Math.max(24, Math.min(32, Number(getConfigValue(db, `${prefix}_print_width_58`, '32')) || 32)),
+        printWidth80: Math.max(32, Math.min(48, Number(getConfigValue(db, `${prefix}_print_width_80`, '48')) || 48)),
         fontType: String(getConfigValue(db, `${prefix}_font_type`, 'FONT_A')).toUpperCase() === 'FONT_B' ? 'FONT_B' : 'FONT_A',
         fontSize: ['COMPACT', 'NORMAL', 'TALL'].includes(String(getConfigValue(db, `${prefix}_font_size`, 'NORMAL')).toUpperCase()) ? String(getConfigValue(db, `${prefix}_font_size`, 'NORMAL')).toUpperCase() : 'NORMAL',
-        lineSpacingDots: Math.max(16, Math.min(60, Number(getConfigValue(db, `${prefix}_line_spacing_dots`, '24')) || 24))
+        lineSpacingDots: Math.max(16, Math.min(60, Number(getConfigValue(db, `${prefix}_line_spacing_dots`, '24')) || 24)),
+        detailsLayout: prefix === 'bill' && String(getConfigValue(db, 'bill_details_layout', 'TWO_COLUMN')).toUpperCase() === 'STACKED' ? 'STACKED' : 'TWO_COLUMN',
+        styles: getThermalSectionStyles(db, prefix)
       };
       return { ...job, payload: JSON.stringify(payload) };
     });
@@ -4674,6 +4704,52 @@ app.post('/admin/items/save', (req, res) => {
   } finally {
     db.close();
   }
+});
+
+app.post('/admin/printers/layout-preview', (req, res) => {
+  const { restaurantId, actor, kind, paperWidthMm, layout = {}, template } = req.body || {};
+  if (!restaurantId || !canManage(actor?.role)) {
+    return res.status(403).json({ success: false, message: 'Printer preview requires manager permission' });
+  }
+  const type = String(kind || '').toUpperCase() === 'KOT' ? 'KOT' : 'BILL';
+  const safeStyles = Object.fromEntries(Object.entries(layout.styles || {}).map(([section, style]) => [section, {
+    fontType: String(style?.fontType || '').toUpperCase() === 'FONT_B' ? 'FONT_B' : 'FONT_A',
+    fontSize: ['SMALL', 'NORMAL', 'LARGE'].includes(String(style?.fontSize || '').toUpperCase()) ? String(style.fontSize).toUpperCase() : 'NORMAL',
+    alignment: ['LEFT', 'CENTER', 'RIGHT'].includes(String(style?.alignment || '').toUpperCase()) ? String(style.alignment).toUpperCase() : 'LEFT',
+    bold: style?.bold === true || style?.bold === 1 || style?.bold === '1'
+  }]));
+  const safeLayout = {
+    leftMarginDots: Math.max(0, Math.min(255, Number(layout.leftMarginDots) || 0)),
+    trailingFeedLines: Math.max(0, Math.min(8, Number(layout.trailingFeedLines) || 0)),
+    cutMode: ['NONE', 'PARTIAL', 'FULL'].includes(String(layout.cutMode || '').toUpperCase()) ? String(layout.cutMode).toUpperCase() : 'NONE',
+    printWidth58: Math.max(24, Math.min(32, Number(layout.printWidth58) || 28)),
+    printWidth80: Math.max(32, Math.min(48, Number(layout.printWidth80) || 38)),
+    fontType: String(layout.fontType || '').toUpperCase() === 'FONT_B' ? 'FONT_B' : 'FONT_A',
+    fontSize: ['COMPACT', 'NORMAL', 'TALL'].includes(String(layout.fontSize || '').toUpperCase()) ? String(layout.fontSize).toUpperCase() : 'NORMAL',
+    lineSpacingDots: Math.max(16, Math.min(60, Number(layout.lineSpacingDots) || 24)),
+    detailsLayout: String(layout.detailsLayout || '').toUpperCase() === 'STACKED' ? 'STACKED' : 'TWO_COLUMN', styles: safeStyles
+  };
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const profile = {
+      displayName: getConfigValue(db, 'restaurant_display_name', 'KMaster Restaurant'),
+      legalName: getConfigValue(db, 'legal_name', ''),
+      addressLine1: getConfigValue(db, 'address_line_1', ''),
+      city: getConfigValue(db, 'city', ''), state: getConfigValue(db, 'state', ''), stateCode: getConfigValue(db, 'state_code', '33'),
+      country: getConfigValue(db, 'country', 'India'), phone: getConfigValue(db, 'phone', ''), email: getConfigValue(db, 'email', ''),
+      gstin: getConfigValue(db, 'gstin', ''), fssaiLicenseNo: getConfigValue(db, 'fssai_license_no', ''), currency: getConfigValue(db, 'currency', 'INR'),
+      footerText: type === 'BILL' ? getConfigValue(db, 'bill_footer_text', 'THANK YOU. VISIT AGAIN.') : '',
+      billTemplate: String(template || 'BORDERED').toUpperCase()
+    };
+    const job = type === 'KOT' ? {
+      type, paper_width_mm: Number(paperWidthMm) === 80 ? 80 : 58, ref_id: 'PREVIEW', created_at: '2026-07-22T10:30:00.000Z',
+      payload: { printLayout: safeLayout, headerText: getConfigValue(db, 'kot_header_text', 'KMaster Kitchen'), kotReference: 'A12-2', orderType: 'DINE_IN', tableName: 'Table 1', printTable: true, items: [{ name: 'Butter Naan', quantity: 2, notes: 'No onion' }], footerText: getConfigValue(db, 'kot_footer_text', '') }
+    } : {
+      type, paper_width_mm: Number(paperWidthMm) === 80 ? 80 : 58, ref_id: 'PREVIEW', created_at: '2026-07-22T10:30:00.000Z',
+      payload: { printLayout: safeLayout, finalBill: true, invoiceNo: 'FINAL-A12', settledAt: '22/07/2026 16:00', orderReference: 'A12', tableNumber: 'Table 1', customerName: 'Walk-in customer', payable: 200, taxRate: 5, kotReferences: 'A12-1', restaurantProfile: profile, items: [{ name: 'Butter Naan', quantity: 2, price: 100 }] }
+    };
+    res.json({ success: true, preview: buildThermalPreview(job, groupPrintableItems) });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
 });
 
 app.post('/admin/items/channels', (req, res) => {
