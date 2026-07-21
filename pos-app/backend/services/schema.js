@@ -46,6 +46,7 @@ const DEFAULT_SYSTEM_SETTINGS = {
   show_qr_on_bill: '0',
   bill_print_contact: '1',
   bill_print_kot_references: '1',
+  bill_compact_kot_references: '1',
   bill_print_customer: '1',
   bill_print_payment: '1',
   bill_print_authorised_signatory: '1',

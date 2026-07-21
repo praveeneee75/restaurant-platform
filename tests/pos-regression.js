@@ -77,7 +77,7 @@ assert.match(server, /notes: row\.notes \|\| ''/);
 assert.match(adminDashboard, /window\.posDesktop\?\.printHtml/);
 assert.match(adminDashboard, /window\.posDesktop\?\.savePdf/);
 assert.match(adminDashboard, /fssai_license_no/);
-assert.match(adminDashboard, /state\.settings\?\.settings\?\.timezone \|\| "Asia\/Kolkata"/);
+assert.match(adminDashboard, /return window\.formatPosDateTime\(value\)/);
 assert.match(adminDashboard, /await loadSettings\(\)[\s\S]*await loadInvoiceList\(\)/);
 assert.match(adminDashboard, /formatDateTime\(invoice\.settled_at\)/);
 assert.match(adminDashboard, /TAX INVOICE/);

@@ -787,6 +787,7 @@ const SETTINGS_BOOLEAN_KEYS = new Set([
   'require_manager_pin_for_void',
   'show_tax_on_bill',
   'show_qr_on_bill',
+  'bill_compact_kot_references',
   'qr_require_table_pin',
   'qr_ordering_enabled',
   'service_charge_enabled',
@@ -973,7 +974,13 @@ function applyRoundOff(db, amount) {
 
 function invoiceNumberForOrder(db, orderId) {
   const prefix = getConfigValue(db, 'invoice_prefix', 'INV') || 'INV';
-  return `${prefix}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(orderId).padStart(5, '0')}`;
+  return `${prefix}-${localIsoDateOnly().replace(/-/g, '')}-${String(orderId).padStart(5, '0')}`;
+}
+
+function localIsoDateOnly(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error('Invalid date');
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function canUseCashRegister(role) {
@@ -4739,6 +4746,7 @@ app.post('/admin/printers/layout-preview', (req, res) => {
       country: getConfigValue(db, 'country', 'India'), phone: getConfigValue(db, 'phone', ''), email: getConfigValue(db, 'email', ''),
       gstin: getConfigValue(db, 'gstin', ''), fssaiLicenseNo: getConfigValue(db, 'fssai_license_no', ''), currency: getConfigValue(db, 'currency', 'INR'),
       footerText: type === 'BILL' ? getConfigValue(db, 'bill_footer_text', 'THANK YOU. VISIT AGAIN.') : '',
+      compactKotReferences: getBooleanConfig(db, 'bill_compact_kot_references', true),
       billTemplate: String(template || 'BORDERED').toUpperCase()
     };
     const job = type === 'KOT' ? {
@@ -4746,7 +4754,7 @@ app.post('/admin/printers/layout-preview', (req, res) => {
       payload: { printLayout: safeLayout, headerText: getConfigValue(db, 'kot_header_text', 'KMaster Kitchen'), kotReference: 'A12-2', orderType: 'DINE_IN', tableName: 'Table 1', printTable: true, items: [{ name: 'Butter Naan', quantity: 2, notes: 'No onion' }], footerText: getConfigValue(db, 'kot_footer_text', '') }
     } : {
       type, paper_width_mm: Number(paperWidthMm) === 80 ? 80 : 58, ref_id: 'PREVIEW', created_at: '2026-07-22T10:30:00.000Z',
-      payload: { printLayout: safeLayout, finalBill: true, invoiceNo: 'FINAL-A12', settledAt: '22/07/2026 16:00', orderReference: 'A12', tableNumber: 'Table 1', customerName: 'Walk-in customer', payable: 200, taxRate: 5, kotReferences: 'A12-1', restaurantProfile: profile, items: [{ name: 'Butter Naan', quantity: 2, price: 100 }] }
+      payload: { printLayout: safeLayout, finalBill: true, invoiceNo: 'FINAL-A12', settledAt: '22/07/2026 16:00', orderReference: 'A12', tableNumber: 'Table 1', customerName: 'Walk-in customer', payable: 200, taxRate: 5, kotReferences: '1-A7-1, 1-A7-2', restaurantProfile: profile, items: [{ name: 'Butter Naan', quantity: 2, price: 100 }] }
     };
     res.json({ success: true, preview: buildThermalPreview(job, groupPrintableItems) });
   } catch (err) { sendError(res, err); } finally { db.close(); }
@@ -6690,7 +6698,7 @@ app.post('/orders/final-bill', (req, res) => {
       db.prepare("INSERT INTO print_jobs (type, ref_id, kitchen_id, printer_id, payload, status) VALUES ('BILL', ?, NULL, ?, ?, 'PENDING')").run(orderId, billPrinter.id, JSON.stringify({
         orderId, orderReference: order.order_reference || String(orderId), invoiceNo: `FINAL-${order.order_reference || orderId}`, finalBill: true, items,
         printer: { name: billPrinter.name, connection: billPrinter.connection, address: billPrinter.address },
-        restaurantProfile: { displayName:getConfigValue(db,'restaurant_display_name',''), legalName:getConfigValue(db,'legal_name',''), gstin:getConfigValue(db,'gstin',''), fssaiLicenseNo:getConfigValue(db,'fssai_license_no',''), stateCode:getConfigValue(db,'state_code','33'), sacCode:getConfigValue(db,'sac_code','996331'), addressLine1:getConfigValue(db,'address_line_1',''), addressLine2:getConfigValue(db,'address_line_2',''), city:getConfigValue(db,'city',''), state:getConfigValue(db,'state',''), country:getConfigValue(db,'country',''), phone:getConfigValue(db,'phone',''), email:getConfigValue(db,'email',''), currency:getConfigValue(db,'currency','INR'), showTaxOnBill:getBooleanConfig(db,'show_tax_on_bill',true), printContact:getBooleanConfig(db,'bill_print_contact',true), printKotReferences:getBooleanConfig(db,'bill_print_kot_references',true), printCustomer:getBooleanConfig(db,'bill_print_customer',true), printPayment:false, printAuthorisedSignatory:getBooleanConfig(db,'bill_print_authorised_signatory',true), footerText:getConfigValue(db,'bill_footer_text','THANK YOU. VISIT AGAIN.'), billTemplate:getConfigValue(db,'bill_template','BORDERED') },
+        restaurantProfile: { displayName:getConfigValue(db,'restaurant_display_name',''), legalName:getConfigValue(db,'legal_name',''), gstin:getConfigValue(db,'gstin',''), fssaiLicenseNo:getConfigValue(db,'fssai_license_no',''), stateCode:getConfigValue(db,'state_code','33'), sacCode:getConfigValue(db,'sac_code','996331'), addressLine1:getConfigValue(db,'address_line_1',''), addressLine2:getConfigValue(db,'address_line_2',''), city:getConfigValue(db,'city',''), state:getConfigValue(db,'state',''), country:getConfigValue(db,'country',''), phone:getConfigValue(db,'phone',''), email:getConfigValue(db,'email',''), currency:getConfigValue(db,'currency','INR'), showTaxOnBill:getBooleanConfig(db,'show_tax_on_bill',true), printContact:getBooleanConfig(db,'bill_print_contact',true), printKotReferences:getBooleanConfig(db,'bill_print_kot_references',true), compactKotReferences:getBooleanConfig(db,'bill_compact_kot_references',true), printCustomer:getBooleanConfig(db,'bill_print_customer',true), printPayment:false, printAuthorisedSignatory:getBooleanConfig(db,'bill_print_authorised_signatory',true), footerText:getConfigValue(db,'bill_footer_text','THANK YOU. VISIT AGAIN.'), billTemplate:getConfigValue(db,'bill_template','BORDERED') },
         customerId:order.customer_id || null, customerName:customer?.name || '', customerPhone:customer?.phone || '', tableNumber:order.table_no || '', orderType:order.order_type || 'DINE_IN', settledAt:new Date().toISOString(), serviceCharge, roundOff, payable, taxName:getConfigValue(db,'tax_name','GST'), taxRate:getNumberConfig(db,'tax_rate',getConfigValue(db,'gstin','') ? 5 : 0), paymentMode:'Pending settlement', kotReferences
       }));
       printQueued = true;
@@ -6972,6 +6980,7 @@ app.post('/orders/settle', async (req, res) => {
           showQrOnBill: getBooleanConfig(db, 'show_qr_on_bill', false),
           printContact: getBooleanConfig(db, 'bill_print_contact', true),
           printKotReferences: getBooleanConfig(db, 'bill_print_kot_references', true),
+          compactKotReferences: getBooleanConfig(db, 'bill_compact_kot_references', true),
           printCustomer: getBooleanConfig(db, 'bill_print_customer', true),
           printPayment: getBooleanConfig(db, 'bill_print_payment', true),
           printAuthorisedSignatory: getBooleanConfig(db, 'bill_print_authorised_signatory', true),
@@ -7772,7 +7781,7 @@ app.post('/loyalty/settings', (req, res) => {
 app.get('/reports/dashboard', (req, res) => {
   const { restaurantId, fromDate, toDate, role } = req.query;
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
-  const from = fromDate || new Date().toISOString().slice(0, 10);
+  const from = fromDate || localIsoDateOnly();
   const to = toDate || from;
 
   const db = openRestaurantDatabase(restaurantId);
@@ -8559,7 +8568,7 @@ function canViewPurchases(role) {
 }
 
 function nextPurchaseOrderNumber(db) {
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const today = localIsoDateOnly().replace(/-/g, '');
   const prefix = `PO-${today}-`;
   const row = db.prepare('SELECT po_number FROM purchase_orders WHERE po_number LIKE ? ORDER BY po_number DESC LIMIT 1').get(`${prefix}%`);
   const next = row?.po_number ? Number(row.po_number.slice(prefix.length)) + 1 : 1;
@@ -9079,11 +9088,11 @@ app.post('/inventory/purchase-orders/save', (req, res) => {
       const oldValue = purchaseOrderId ? db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(purchaseOrderId) : null;
       if (purchaseOrderId) {
         db.prepare('UPDATE purchase_orders SET supplier_id = ?, order_date = ?, status = ?, total_amount = ?, notes = ?, active = 1 WHERE id = ?')
-          .run(supplierId, orderDate || new Date().toISOString().slice(0, 10), status || 'DRAFT', total, normaliseText(notes) || null, purchaseOrderId);
+          .run(supplierId, orderDate || localIsoDateOnly(), status || 'DRAFT', total, normaliseText(notes) || null, purchaseOrderId);
         db.prepare('DELETE FROM purchase_order_items WHERE purchase_order_id = ?').run(purchaseOrderId);
       } else {
         const result = db.prepare('INSERT INTO purchase_orders (supplier_id, order_date, status, total_amount, notes) VALUES (?, ?, ?, ?, ?)')
-          .run(supplierId, orderDate || new Date().toISOString().slice(0, 10), status || 'DRAFT', total, normaliseText(notes) || null);
+          .run(supplierId, orderDate || localIsoDateOnly(), status || 'DRAFT', total, normaliseText(notes) || null);
         purchaseOrderId = result.lastInsertRowid;
       }
 
@@ -9217,7 +9226,7 @@ app.post('/inventory/recipes/delete', (req, res) => {
 app.get('/inventory/reports', (req, res) => {
   const { restaurantId, fromDate, toDate } = req.query;
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
-  const from = fromDate || new Date().toISOString().slice(0, 10);
+  const from = fromDate || localIsoDateOnly();
   const to = toDate || from;
 
   const db = openRestaurantDatabase(restaurantId);
@@ -9479,7 +9488,7 @@ setInterval(runBackupSchedulerTick, 60 * 1000);
 function isoDateOnly(value) {
   const date = value ? new Date(value) : new Date();
   if (Number.isNaN(date.getTime())) throw new Error('Invalid report date');
-  return date.toISOString().slice(0, 10);
+  return localIsoDateOnly(date);
 }
 
 function cloudSyncStatus(db, restaurantId, status, message) {
@@ -9921,7 +9930,7 @@ async function retryCloudSyncQueue(restaurantId) {
 function dateDaysAgo(days) {
   const date = new Date();
   date.setDate(date.getDate() - days);
-  return date.toISOString().slice(0, 10);
+  return localIsoDateOnly(date);
 }
 
 async function runCloudSyncSchedulerTick() {

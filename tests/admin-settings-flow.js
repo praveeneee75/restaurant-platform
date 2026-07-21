@@ -130,6 +130,7 @@ function assertSettings(actual, expected, label) {
     kot_footer_font_type: 'FONT_A', kot_footer_font_size: 'NORMAL', kot_footer_alignment: 'CENTER', kot_footer_bold: '0',
     bill_print_contact: '1',
     bill_print_kot_references: '1',
+    bill_compact_kot_references: '1',
     bill_print_customer: '1',
     bill_print_payment: '1',
     bill_print_authorised_signatory: '1',

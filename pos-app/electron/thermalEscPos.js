@@ -24,6 +24,42 @@ function center(value, width) {
   return wrap(value, width).map((line) => `${' '.repeat(Math.max(0, Math.floor((width - line.length) / 2)))}${line}`);
 }
 
+function posDate(value = Date.now()) {
+  if (value instanceof Date || typeof value === 'number') return new Date(value);
+  const source = String(value || '').trim();
+  // SQLite CURRENT_TIMESTAMP is UTC but omits the timezone suffix. Treating it
+  // as local time causes every POS screen/print to drift by the PC offset.
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(source)
+    ? `${source.replace(' ', 'T')}Z`
+    : source;
+  return new Date(normalized);
+}
+
+function compactLocalDateTime(value) {
+  const date = posDate(value);
+  if (Number.isNaN(date.getTime())) return text(value);
+  return date.toLocaleString('en-GB', {
+    day: '2-digit', month: '2-digit', year: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  }).replace(',', '');
+}
+
+function compactKotReferences(value) {
+  const references = String(value || '').split(',').map((entry) => entry.trim()).filter(Boolean);
+  if (references.length < 2) return references.join(', ');
+  const output = [];
+  let previousPrefix = '';
+  references.forEach((reference) => {
+    const match = reference.match(/^(.*-)([^-]+)$/);
+    if (match && match[1] === previousPrefix) output.push(match[2]);
+    else {
+      output.push(reference);
+      previousPrefix = match ? match[1] : '';
+    }
+  });
+  return output.join(',');
+}
+
 function columns(values, widths, aligns = []) {
   const cells = values.map((value, index) => wrap(value, widths[index]));
   const height = Math.max(...cells.map((cell) => cell.length));
@@ -59,6 +95,11 @@ function buildThermalDocument(job, groupedItems = (items) => items) {
   const width = Number(job.paper_width_mm) === 80
     ? Math.max(32, Math.min(48, Number(layout.printWidth80) || 38))
     : Math.max(24, Math.min(32, Number(layout.printWidth58) || 28));
+  const isKot = String(job.type).toUpperCase() === 'KOT';
+  // Bill rows carry more columns than KOT rows. Some Windows thermal drivers
+  // expose 48 columns in configuration but physically wrap after 42 on 80 mm.
+  // Keep this bill-only so the proven KOT layout remains byte-for-byte stable.
+  const billPhysicalWidth = Number(job.paper_width_mm) === 80 ? Math.min(width, 42) : Math.min(width, 32);
   const leftMarginDots = Math.max(0, Math.min(255, Number(layout.leftMarginDots ?? 0) || 0));
   const trailingFeedLines = Math.max(0, Math.min(8, Number(layout.trailingFeedLines ?? 0) || 0));
   const requestedCutMode = String(layout.cutMode || 'NONE').toUpperCase();
@@ -78,7 +119,9 @@ function buildThermalDocument(job, groupedItems = (items) => items) {
     const condensed = sectionFont === 'FONT_B' || sectionSize === 'SMALL';
     const enlarged = sectionSize === 'LARGE';
     const condensedLimit = Number(job.paper_width_mm) === 80 ? 56 : 42;
-    const capacity = condensed ? Math.min(condensedLimit, Math.floor(width * 1.5)) : width;
+    const capacity = isKot
+      ? (condensed ? Math.min(condensedLimit, Math.floor(width * 1.5)) : width)
+      : billPhysicalWidth;
     return Math.max(12, enlarged ? Math.floor(capacity / 2) : capacity);
   };
   const bytes = (...values) => chunks.push(Buffer.from(values));
@@ -120,14 +163,14 @@ function buildThermalDocument(job, groupedItems = (items) => items) {
   // GS L changes the printable origin without introducing a page-sized canvas.
   bytes(GS, 0x4c, leftMarginDots & 0xff, (leftMarginDots >> 8) & 0xff);
 
-  if (String(job.type).toUpperCase() === 'KOT') {
+  if (isKot) {
     const orderType = String(payload.orderType || 'DINE_IN').toUpperCase();
     const orderLabel = orderType === 'DINE_IN' ? 'Dine In' : ['PARCEL', 'TAKEAWAY'].includes(orderType) ? 'Parcel' : orderType.replaceAll('_', ' ');
     applyStyle('header', { alignment: 'CENTER' });
     if (payload.headerText) lines(wrap(payload.headerText, width));
     applyStyle('title', { alignment: 'CENTER', fontSize: 'LARGE', bold: true }); line('KOT');
     applyStyle('details', { alignment: 'CENTER' });
-    line(new Date(job.created_at || Date.now()).toLocaleString('en-IN'));
+    line(posDate(job.created_at || Date.now()).toLocaleString('en-IN'));
     line(`KOT - ${payload.kotReference || payload.kotId || job.ref_id}`);
     line(orderLabel);
     if (orderType === 'DINE_IN' && payload.printTable !== false) {
@@ -149,12 +192,12 @@ function buildThermalDocument(job, groupedItems = (items) => items) {
     const { profile, grandTotal, taxRate, totalTax, serviceCharge, taxableValue } = calculateBill(payload);
     const items = groupedItems(payload.items || []);
     applyStyle('header', { alignment: 'CENTER', bold: true });
-    lines(wrap(profile.displayName || profile.legalName || 'Restaurant', width));
-    if (profile.legalName && profile.legalName !== profile.displayName) lines(wrap(profile.legalName, width));
-    lines(wrap([profile.addressLine1, profile.addressLine2, profile.city, profile.state, profile.stateCode ? `Code ${profile.stateCode}` : '', profile.country].filter(Boolean).join(', '), width));
-    if (profile.printContact !== false) lines(wrap([profile.phone, profile.email].filter(Boolean).join(' '), width));
-    if (profile.gstin) lines(wrap(`GSTIN: ${profile.gstin}`, width));
-    if (profile.fssaiLicenseNo) lines(wrap(`FSSAI: ${profile.fssaiLicenseNo}`, width));
+    lines(wrap(profile.displayName || profile.legalName || 'Restaurant', currentLineWidth));
+    if (profile.legalName && profile.legalName !== profile.displayName) lines(wrap(profile.legalName, currentLineWidth));
+    lines(wrap([profile.addressLine1, profile.addressLine2, profile.city, profile.state, profile.stateCode ? `Code ${profile.stateCode}` : '', profile.country].filter(Boolean).join(', '), currentLineWidth));
+    if (profile.printContact !== false) lines(wrap([profile.phone, profile.email].filter(Boolean).join(' '), currentLineWidth));
+    if (profile.gstin) lines(wrap(`GSTIN: ${profile.gstin}`, currentLineWidth));
+    if (profile.fssaiLicenseNo) lines(wrap(`FSSAI: ${profile.fssaiLicenseNo}`, currentLineWidth));
     applyStyle('details', { alignment: 'CENTER' });
     line('-'.repeat(currentLineWidth));
     applyStyle('title', { alignment: 'CENTER', bold: true });
@@ -164,14 +207,14 @@ function buildThermalDocument(job, groupedItems = (items) => items) {
     applyStyle('details', { alignment: 'LEFT' });
     const metadata = [
       [payload.finalBill ? 'Bill Ref.' : 'Invoice No.', payload.invoiceNo || ''],
-      ['Date / Time', payload.settledAt || ''],
-      ['Order / Table', `${payload.orderReference || payload.orderId || ''} / ${payload.tableNumber || payload.orderType || ''}`],
-      ...(profile.printKotReferences !== false && payload.kotReferences ? [['KOT No(s).', payload.kotReferences]] : []),
+      ['Date / Time', compactLocalDateTime(payload.settledAt || '')],
+      ['Order / Table', `${payload.orderReference || payload.orderId || ''}/${payload.tableNumber || payload.orderType || ''}`],
+      ...(profile.printKotReferences !== false && payload.kotReferences ? [['KOT No(s).', profile.compactKotReferences === false ? payload.kotReferences : compactKotReferences(payload.kotReferences)]] : []),
       ...(profile.printCustomer !== false ? [['Customer', payload.customerName || 'Walk-in customer']] : []),
       ...(profile.printPayment !== false && payload.paymentMode ? [['Payment', payload.paymentMode]] : []),
       ...(profile.gstin ? [['SAC', profile.sacCode || '996331'], ['Reverse chg.', 'No']] : [])
     ];
-    if (String(layout.detailsLayout || 'TWO_COLUMN').toUpperCase() === 'TWO_COLUMN') {
+    if (String(layout.detailsLayout || 'TWO_COLUMN').toUpperCase() === 'TWO_COLUMN' && currentLineWidth >= 40) {
       const detailWidth = currentLineWidth;
       const usableWidth = detailWidth - 1;
       const half = Math.floor(usableWidth / 2); const rightHalf = usableWidth - half;
@@ -184,17 +227,22 @@ function buildThermalDocument(job, groupedItems = (items) => items) {
       }
     } else {
       const detailWidth = currentLineWidth;
-      const labelWidth = Math.max(10, Math.floor(detailWidth * 0.34));
-      metadata.forEach(([label, value]) => lines(columns([label, value], [labelWidth, detailWidth - labelWidth])));
+      const labelWidth = detailWidth < 40 ? 9 : Math.max(10, Math.floor(detailWidth * 0.34));
+      const compactLabel = (label) => ({ 'Bill Ref.': 'Bill', 'Invoice No.': 'Invoice', 'Date / Time': 'Date', 'Order / Table': 'Order', 'KOT No(s).': 'KOT', Customer: 'Customer', 'Reverse chg.': 'Rev' }[label] || label);
+      metadata.forEach(([label, value]) => lines(columns([compactLabel(label), value], [labelWidth, detailWidth - labelWidth])));
     }
-    applyStyle('items', { alignment: 'LEFT' }); line('-'.repeat(width));
-    const qtyWidth = 4; const amountWidth = width >= 40 ? 11 : 9; const itemWidth = width - qtyWidth - amountWidth;
+    applyStyle('items', { alignment: 'LEFT' });
+    const itemsWidth = currentLineWidth;
+    line('-'.repeat(itemsWidth));
+    const qtyWidth = 4; const amountWidth = itemsWidth >= 40 ? 11 : 9; const itemWidth = itemsWidth - qtyWidth - amountWidth;
     lines(columns(['Item', 'Qty', 'Amount'], [itemWidth, qtyWidth, amountWidth], ['left', 'right', 'right']));
-    line('-'.repeat(width));
+    line('-'.repeat(itemsWidth));
     items.forEach((item) => lines(columns([item.name, item.quantity, (Number(item.quantity || 0) * Number(item.price || 0)).toFixed(2)], [itemWidth, qtyWidth, amountWidth], ['left', 'right', 'right'])));
-    line('-'.repeat(width));
+    line('-'.repeat(itemsWidth));
     applyStyle('totals', { alignment: 'LEFT' });
-    const money = (label, value) => lines(columns([label, `INR ${Number(value).toFixed(2)}`], [width - amountWidth - 4, amountWidth + 4], ['left', 'right']));
+    const totalsWidth = currentLineWidth;
+    const totalsAmountWidth = totalsWidth >= 40 ? 15 : 13;
+    const money = (label, value) => lines(columns([label, `INR ${Number(value).toFixed(2)}`], [totalsWidth - totalsAmountWidth, totalsAmountWidth], ['left', 'right']));
     if (serviceCharge > 0) money('Service charge', serviceCharge);
     if (taxRate > 0) {
       money('Taxable value', taxableValue);
@@ -203,8 +251,8 @@ function buildThermalDocument(job, groupedItems = (items) => items) {
       money('Total GST', totalTax);
     }
     money('GRAND TOTAL', grandTotal);
-    applyStyle('footer', { alignment: 'CENTER' }); line('-'.repeat(width));
-    if (profile.footerText) lines(wrap(profile.footerText, width));
+    applyStyle('footer', { alignment: 'CENTER' }); line('-'.repeat(currentLineWidth));
+    if (profile.footerText) lines(wrap(profile.footerText, currentLineWidth));
     if (profile.printAuthorisedSignatory !== false) line('Authorised Signatory');
   }
 
@@ -219,7 +267,8 @@ function buildThermalDocument(job, groupedItems = (items) => items) {
   return {
     data: Buffer.concat(chunks),
     preview: {
-      text: previewLines.join('\n'), rows: previewRows, width, fontType, fontSize, lineSpacingDots,
+      text: previewLines.join('\n'), rows: previewRows, width, physicalWidth: isKot ? width : billPhysicalWidth,
+      type: isKot ? 'KOT' : 'BILL', fontType, fontSize, lineSpacingDots,
       cutMode, paperWidthMm: Number(job.paper_width_mm) === 80 ? 80 : 58
     }
   };
@@ -229,4 +278,4 @@ function buildThermalPreview(job, groupedItems) {
   return buildThermalDocument(job, groupedItems).preview;
 }
 
-module.exports = { buildThermalEscPos, buildThermalPreview, columns, wrap };
+module.exports = { buildThermalEscPos, buildThermalPreview, columns, wrap, posDate, compactLocalDateTime, compactKotReferences };

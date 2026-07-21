@@ -1,6 +1,30 @@
 (function initialiseUiFeedback() {
   let timer;
 
+  function parsePosDateTime(value) {
+    if (value instanceof Date || typeof value === 'number') return new Date(value);
+    const source = String(value || '').trim();
+    const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(source)
+      ? `${source.replace(' ', 'T')}Z`
+      : source;
+    return new Date(normalized);
+  }
+
+  window.parsePosDateTime = parsePosDateTime;
+  window.formatPosDateTime = function formatPosDateTime(value, options) {
+    const date = parsePosDateTime(value);
+    return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleString(undefined, options);
+  };
+  window.formatPosTime = function formatPosTime(value, options = {}) {
+    const date = parsePosDateTime(value);
+    return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleTimeString(undefined, options);
+  };
+  window.localIsoDate = function localIsoDate(value = new Date()) {
+    const date = value instanceof Date ? value : parsePosDateTime(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+
   function toastElement() {
     let toast = document.getElementById('appFeedbackToast');
     if (toast) return toast;

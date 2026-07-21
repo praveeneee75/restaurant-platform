@@ -72,7 +72,7 @@ async function loadProfile(customerId) {
     <p>Total spend: ${money(data.totalSpend)} · Visits: ${data.visitCount}</p>
     <h3>Visit History</h3>${data.visits.map((visit) => `<p>#${visit.order_id}: ${money(visit.amount)} · ${esc(visit.visit_at)}</p>`).join("") || "<p>No visits</p>"}
     <h3>Loyalty Ledger</h3>${data.ledger.map((row) => `<p>${esc(row.type)} ${row.points}: ${esc(row.note || "")}</p>`).join("") || "<p>No loyalty activity</p>"}
-    <h3>Notes</h3>${data.notes.map((note) => `<p>${esc(note.note)} · ${esc(note.created_at)}</p>`).join("") || "<p>No notes</p>"}
+    <h3>Notes</h3>${data.notes.map((note) => `<p>${esc(note.note)} · ${esc(window.formatPosDateTime(note.created_at))}</p>`).join("") || "<p>No notes</p>"}
   `;
 }
 

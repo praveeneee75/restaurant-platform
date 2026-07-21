@@ -32,11 +32,11 @@ const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&":
 const money = (value) => Number(value || 0).toFixed(2);
 const can = (permission) => (state.permissions.currentPermissions || []).includes(permission) || actor.role === "OWNER";
 const moduleEnabled = (code) => (state.admin.enabledModules || []).includes(code);
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const todayIso = () => window.localIsoDate();
 const monthStartIso = () => {
   const date = new Date();
   date.setDate(1);
-  return date.toISOString().slice(0, 10);
+  return window.localIsoDate(date);
 };
 
 async function postJson(url, body) {
@@ -62,19 +62,7 @@ function actions(type, id) {
 }
 
 function formatDateTime(value) {
-  if (!value) return "";
-  const text = String(value);
-  const date = new Date(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text) ? `${text.replace(" ", "T")}Z` : text);
-  if (Number.isNaN(date.getTime())) return String(value);
-  const timeZone = String(state.settings?.settings?.timezone || "Asia/Kolkata");
-  try {
-    return new Intl.DateTimeFormat("en-IN", {
-      timeZone, day: "2-digit", month: "2-digit", year: "numeric",
-      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
-    }).format(date);
-  } catch (_) {
-    return date.toLocaleString();
-  }
+  return window.formatPosDateTime(value);
 }
 
 function isFutureDate(value) {
@@ -204,7 +192,7 @@ async function loadUpdates() {
   if (headerVersion) headerVersion.textContent = `POS ${version.posVersion}`;
   updateCurrentVersion.textContent = `Current version: ${version.posVersion} | Print Agent: ${version.printAgentVersion || "Not detected"}`;
   const logs = await fetchJson(`/updates/logs?restaurantId=${encodeURIComponent(restaurantId)}`).catch(() => ({ logs: [] }));
-  updateLogsPanel.innerHTML = (logs.logs || []).map((log) => `<p><strong>${esc(log.status)}</strong> ${esc(log.current_version || "")} -> ${esc(log.target_version || "")}<br><small>${esc(log.message || "")} ${esc(log.created_at || "")}</small></p>`).join("") || "<p>No update logs yet.</p>";
+  updateLogsPanel.innerHTML = (logs.logs || []).map((log) => `<p><strong>${esc(log.status)}</strong> ${esc(log.current_version || "")} -> ${esc(log.target_version || "")}<br><small>${esc(log.message || "")} ${esc(formatDateTime(log.created_at))}</small></p>`).join("") || "<p>No update logs yet.</p>";
   const latest = await fetchJson(`/updates/check?restaurantId=${encodeURIComponent(restaurantId)}`).catch(() => ({ updateAvailable: false }));
   state.latestUpdate = latest;
 }
@@ -258,7 +246,7 @@ async function loadAudit() {
   const data = await fetchJson(`/audit/logs?${auditQuery().toString()}`);
   auditLogsTable.innerHTML = (data.logs || []).map((log) => `
     <tr>
-      <td>${esc(log.created_at)}</td>
+      <td>${esc(formatDateTime(log.created_at))}</td>
       <td>${esc(log.user || log.user_role || "")}</td>
       <td>${esc(log.action)}</td>
       <td>${esc(log.entity_type)} #${esc(log.entity_id || "")}</td>
@@ -268,7 +256,7 @@ async function loadAudit() {
   `).join("") || `<tr><td colspan="6">No audit logs found.</td></tr>`;
   complianceEventsTable.innerHTML = (summary.events || []).concat(data.complianceEvents || []).slice(0, 100).map((event) => `
     <tr>
-      <td>${esc(event.created_at)}</td>
+      <td>${esc(formatDateTime(event.created_at))}</td>
       <td>${esc(event.severity)}</td>
       <td>${esc(event.event_type)}</td>
       <td>${esc(event.message)}</td>
@@ -459,7 +447,7 @@ function renderBackup() {
   onedriveFolderPath.value = settings.onedrive_folder_path || "";
   backupStatusPanel.innerHTML = `<p>Last backup: ${esc(settings.last_backup_at || "Never")}</p><p>Last sync: ${esc(settings.last_sync_at || "Never")}</p>`;
   backupLogsPanel.innerHTML = (state.backups.logs || []).map((log) => `<p><strong>${esc(log.type)}</strong> ${esc(log.status)}<br><small>${esc(log.message || "")}</small></p>`).join("") || "<p>No logs yet.</p>";
-  backupListTable.innerHTML = (state.backups.backups || []).map((backup) => `<tr><td>${esc(backup.filename)}</td><td>${backup.size}</td><td>${esc(backup.created_at)}</td><td><button data-restore-backup="${esc(backup.filename)}" class="danger-btn" type="button">Restore</button></td></tr>`).join("");
+  backupListTable.innerHTML = (state.backups.backups || []).map((backup) => `<tr><td>${esc(backup.filename)}</td><td>${backup.size}</td><td>${esc(formatDateTime(backup.created_at))}</td><td><button data-restore-backup="${esc(backup.filename)}" class="danger-btn" type="button">Restore</button></td></tr>`).join("");
 }
 
 function renderPermissions() {
@@ -980,6 +968,7 @@ function renderSettings() {
   setChecked(settingShowQrOnBill, settings.show_qr_on_bill);
   setChecked(settingBillPrintContact, settings.bill_print_contact);
   setChecked(settingBillPrintKotReferences, settings.bill_print_kot_references);
+  setChecked(settingBillCompactKotReferences, settings.bill_compact_kot_references);
   setChecked(settingBillPrintCustomer, settings.bill_print_customer);
   setChecked(settingBillPrintPayment, settings.bill_print_payment);
   setChecked(settingBillPrintAuthorisedSignatory, settings.bill_print_authorised_signatory);
@@ -1087,6 +1076,7 @@ function collectSettings() {
     show_qr_on_bill: checkedValue(settingShowQrOnBill),
     bill_print_contact: checkedValue(settingBillPrintContact),
     bill_print_kot_references: checkedValue(settingBillPrintKotReferences),
+    bill_compact_kot_references: checkedValue(settingBillCompactKotReferences),
     bill_print_customer: checkedValue(settingBillPrintCustomer),
     bill_print_payment: checkedValue(settingBillPrintPayment),
     bill_print_authorised_signatory: checkedValue(settingBillPrintAuthorisedSignatory),
@@ -1153,7 +1143,7 @@ const SETTINGS_KEYS_BY_SECTION = {
   profile: ["restaurant_display_name", "legal_name", "gstin", "fssai_license_no", "state_code", "address_line_1", "address_line_2", "city", "state", "country", "phone", "email", "currency", "timezone", "logo_path"],
   pos: ["default_order_type", "allow_non_invoice_orders", "allow_discount", "allow_manual_price_override", "allow_refund", "allow_order_cancel", "require_manager_pin_for_discount", "require_manager_pin_for_refund", "require_manager_pin_for_void", "require_clock_in_before_order"],
   billing: ["invoice_prefix", "invoice_reset_frequency", "show_tax_on_bill", "tax_name", "tax_rate", "sac_code", "show_qr_on_bill", "qr_require_table_pin", "qr_session_minutes", "qr_ordering_enabled", "qr_pending_order_limit", "upi_id", "service_charge_enabled", "service_charge_percent", "round_off_enabled"],
-  "bill-print": ["bill_template", "bill_print_contact", "bill_print_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text", "bill_left_margin_dots", "bill_trailing_feed_lines", "bill_cut_mode", "bill_print_width_58", "bill_print_width_80", "bill_font_type", "bill_font_size", "bill_line_spacing_dots", "bill_details_layout", ...Object.keys(flatPrintStyles('bill'))],
+  "bill-print": ["bill_template", "bill_print_contact", "bill_print_kot_references", "bill_compact_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text", "bill_left_margin_dots", "bill_trailing_feed_lines", "bill_cut_mode", "bill_print_width_58", "bill_print_width_80", "bill_font_type", "bill_font_size", "bill_line_spacing_dots", "bill_details_layout", ...Object.keys(flatPrintStyles('bill'))],
   kot: ["auto_print_kot", "print_kot_on_save", "print_kot_on_submit", "allow_kot_reprint", "kot_header_text", "kot_footer_text", "kot_template", "kot_print_table", "kot_print_customer", "kot_print_kitchen", "kot_compact_spacing", "kot_left_margin_dots", "kot_trailing_feed_lines", "kot_cut_mode", "kot_print_width_58", "kot_print_width_80", "kot_font_type", "kot_font_size", "kot_line_spacing_dots", ...Object.keys(flatPrintStyles('kot'))],
   online: ["mobile_app_enabled", "online_order_enabled", "online_storefront_slug", "online_theme", "online_primary_color", "online_accent_color", "online_logo_path", "online_payment_methods", "online_require_otp", "online_allow_loyalty_credit", "online_delivery_enabled", "online_takeaway_enabled", "online_min_order_amount"]
 };
@@ -1454,9 +1444,9 @@ async function fetchStaffCashReports() {
   `).join("") || `<tr><td colspan="6">No attendance rows.</td></tr>`;
   cashRegisterReportTable.innerHTML = (cash.sessions || []).map((row) => `
     <tr>
-      <td>${esc(row.opened_at)}</td>
+      <td>${esc(formatDateTime(row.opened_at))}</td>
       <td>${esc(row.opened_by_name || row.opened_by)}</td>
-      <td>${esc(row.closed_at || "")}</td>
+      <td>${esc(formatDateTime(row.closed_at))}</td>
       <td>${money(row.opening_cash)}</td>
       <td>${money(row.expected_cash)}</td>
       <td>${money(row.closing_cash)}</td>
@@ -1466,7 +1456,7 @@ async function fetchStaffCashReports() {
   `).join("") || `<tr><td colspan="8">No cash sessions.</td></tr>`;
   cashMovementReportTable.innerHTML = (cash.movements || []).map((row) => `
     <tr>
-      <td>${esc(row.created_at)}</td>
+      <td>${esc(formatDateTime(row.created_at))}</td>
       <td>${esc(row.type)}</td>
       <td>${money(row.amount)}</td>
       <td>${esc(row.reason || "")}</td>

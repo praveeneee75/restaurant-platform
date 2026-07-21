@@ -73,7 +73,7 @@ function renderOrders() {
       <header>
         <div>
           <h3>#${order.id} ${esc(order.order_type || "")}</h3>
-          <p>${esc(order.table_no || "No table")} · ${esc(order.created_at || "")}</p>
+          <p>${esc(order.table_no || "No table")} · ${esc(window.formatPosDateTime(order.created_at))}</p>
         </div>
         <span class="status-pill">${esc(order.status || "")}</span>
       </header>

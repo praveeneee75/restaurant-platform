@@ -1,9 +1,13 @@
 const assert = require('assert');
-const { buildThermalEscPos, buildThermalPreview, columns, wrap } = require('../pos-app/electron/thermalEscPos');
+const { buildThermalEscPos, buildThermalPreview, columns, wrap, posDate, compactLocalDateTime, compactKotReferences } = require('../pos-app/electron/thermalEscPos');
 const { groupPrintableItems } = require('../pos-app/backend/services/printItemGrouping');
 
 assert.deepStrictEqual(wrap('Butter Naan', 8), ['Butter', 'Naan']);
 assert.deepStrictEqual(columns(['Item', '2'], [6, 3], ['left', 'right']), ['Item    2']);
+assert.strictEqual(posDate('2026-07-21 09:05:47').getTime(), Date.parse('2026-07-21T09:05:47Z'));
+assert(!compactLocalDateTime('2026-07-21T09:05:47.125Z').includes('.125'), 'receipt time must omit seconds and milliseconds');
+assert.strictEqual(compactKotReferences('1-A7-1, 1-A7-2'), '1-A7-1,2');
+assert.strictEqual(compactKotReferences('1-A7-1, 1-A7-2, 2-B4-1'), '1-A7-1,2,2-B4-1');
 
 const kot = buildThermalEscPos({
   type: 'KOT', ref_id: '14-A14-1', paper_width_mm: 58, created_at: '2026-07-21T09:05:47Z',
@@ -42,6 +46,12 @@ assert(kotPreview.text.includes('Table No: Table 1') && kotPreview.text.includes
 
 function assertRowsFit(preview, paperWidth) {
   for (const row of preview.rows) {
+    if (preview.type === 'BILL') {
+      let capacity = preview.physicalWidth;
+      if (row.fontSize === 'LARGE') capacity = Math.max(12, Math.floor(capacity / 2));
+      assert(row.text.length <= capacity, `${paperWidth} mm bill ${row.text} exceeds ${capacity} physical characters`);
+      continue;
+    }
     const condensed = row.fontType === 'FONT_B' || row.fontSize === 'SMALL';
     const condensedLimit = paperWidth === 80 ? 56 : 42;
     let capacity = condensed ? Math.min(condensedLimit, Math.floor(preview.width * 1.5)) : preview.width;
@@ -66,6 +76,7 @@ for (const paperWidth of [58, 80]) {
 
   const visualBill = buildThermalPreview({ type: 'BILL', paper_width_mm: paperWidth, payload: { printLayout: { ...layout, styles: printStyles.bill }, finalBill: true, invoiceNo: 'FINAL-A12', settledAt: '22/07/2026 16:00', orderReference: 'A12', tableNumber: 'Table 1', kotReferences: 'A12-1, A12-2', customerName: 'Rasika Sekar', payable: 5180, taxRate: 5, restaurantProfile: { displayName: 'KMaster Restaurant', gstin: '33ABCDE1234F1Z5', fssaiLicenseNo: '12345678901234', footerText: 'THANK YOU. VISIT AGAIN.' }, items: [{ name: 'Chicken Biryani', quantity: 10, price: 219.05 }] } }, groupPrintableItems);
   assertRowsFit(visualBill, paperWidth);
+  assert.strictEqual(visualBill.physicalWidth, paperWidth === 80 ? 42 : 32);
   const titleRow = visualBill.rows.find((row) => row.text === 'FINAL BILL');
   assert(titleRow && titleRow.alignment === 'CENTER', `${paperWidth} mm bill title must be exactly centered`);
   for (const label of ['Taxable value', 'CGST @ 2.50%', 'SGST @ 2.50%', 'GRAND TOTAL']) {
