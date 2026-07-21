@@ -9563,12 +9563,21 @@ function importSaasOnlineOrderLocal(db, restaurantId, actor, saasOrder) {
     for (const line of saasOrder.items || []) {
       const itemId = Number(line.itemId || line.item_id);
       const quantity = Math.max(Number(line.quantity || 1), 1);
+      // A customer may submit from a SaaS menu snapshot immediately before a
+      // local menu item is retired. Keep that accepted order visible for
+      // cashier approval/rejection instead of dropping it silently. Prefer the
+      // current active item, then an active exact-name replacement, and finally
+      // the matching historical row referenced by the cloud order.
+      const itemName = normaliseText(line.itemName || line.item_name || '');
       const menu = Number.isInteger(itemId) ? db.prepare(`
         SELECT i.id, i.price, c.kitchen_id
         FROM items i
         JOIN categories c ON c.id = i.category_id
-        WHERE i.id = ? AND i.active = 1
-      `).get(itemId) : null;
+        WHERE (i.id = ? AND LOWER(TRIM(i.name)) = LOWER(TRIM(?)))
+           OR (i.active = 1 AND LOWER(TRIM(i.name)) = LOWER(TRIM(?)))
+        ORDER BY i.active DESC, CASE WHEN i.id = ? THEN 0 ELSE 1 END
+        LIMIT 1
+      `).get(itemId, itemName, itemName, itemId) : null;
       if (!menu) throw new Error(`Menu item not found for SaaS order item ${line.itemName || line.item_name || line.itemId || line.item_id}`);
       const unitPrice = Number(line.unitPrice || line.unit_price || menu.price || 0);
       db.prepare('INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price) VALUES (?, ?, ?, ?, ?)')
