@@ -786,6 +786,7 @@ function ensureRestaurantSchema(db) {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+  addColumn(db, 'notification_logs', 'resolved_at DATETIME');
   ['Rent', 'Salary', 'Electricity', 'Gas', 'Internet', 'Other'].forEach((name) => {
     db.prepare('INSERT OR IGNORE INTO expense_categories (name) VALUES (?)').run(name);
   });

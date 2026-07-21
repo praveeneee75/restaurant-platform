@@ -19,7 +19,7 @@
       <a data-role-nav="admin" href="/admin.html">Admin</a>
       <a data-role-nav="availability" data-pos-shortcut="F8" href="/admin.html?view=items&standalone=1">Availability</a>
       <a data-role-nav="live-orders" data-pos-shortcut="F9" href="/orders.html">Live Orders</a>
-      <a data-role-nav="qr-notifications" data-pos-shortcut="F10" data-notification-center id="qrNotifications" href="#qrApprovalPanel">Notifications <span id="qrNotificationCount" class="notification-count" data-notification-count>0</span></a>
+      <a data-role-nav="qr-notifications" data-pos-shortcut="F10" data-notification-center id="qrNotifications" href="/billing.html">Notifications <span id="qrNotificationCount" class="notification-count" data-notification-count>0</span></a>
       <button data-logout type="button">Logout</button>
     </nav>
   </header>
@@ -42,10 +42,6 @@
         <p id="activeRestaurantName" class="active-restaurant">Loading restaurant...</p>
       </div>
     </header>
-    <section class="qr-approval-panel" id="qrApprovalPanel" hidden>
-      <h3>QR orders waiting for approval</h3>
-      <div id="qrApprovalList"></div>
-    </section>
     <div id="tablesList" class="table-list"></div>
   </aside>
 

@@ -1017,6 +1017,32 @@ function localIpAddresses() {
   return (physical.length ? physical : candidates).map(({ address }) => address);
 }
 
+function resolveCompletedTaskNotifications(db) {
+  // Task notifications are actionable state, not a permanent inbox. Resolve old rows
+  // defensively on every read as well as when the action completes, which also repairs
+  // notifications created by older POS versions.
+  db.prepare(`
+    UPDATE notification_logs
+    SET status = 'RESOLVED', resolved_at = CURRENT_TIMESTAMP
+    WHERE channel = 'IN_APP' AND status = 'QUEUED' AND event_type = 'FINAL_BILL_READY'
+      AND NOT EXISTS (
+        SELECT 1 FROM orders o
+        WHERE o.id = CAST(json_extract(notification_logs.payload, '$.orderId') AS INTEGER)
+          AND COALESCE(o.billing_ready, 0) = 1
+          AND COALESCE(o.payment_status, '') != 'PAID'
+          AND COALESCE(o.status, '') != 'CANCELLED'
+      )
+  `).run();
+}
+
+function resolveOrderNotifications(db, orderId) {
+  db.prepare(`
+    UPDATE notification_logs SET status = 'RESOLVED', resolved_at = CURRENT_TIMESTAMP
+    WHERE channel = 'IN_APP' AND status = 'QUEUED'
+      AND CAST(json_extract(payload, '$.orderId') AS INTEGER) = ?
+  `).run(Number(orderId));
+}
+
 function applyCloudRestaurantProfile(db, licenseData) {
   const profile = licenseData?.restaurantProfile;
   if (!profile || typeof profile !== 'object') return;
@@ -5277,6 +5303,7 @@ app.get('/notifications/in-app', (req, res) => {
   if (!restaurantId || !cleanRole) return res.status(400).json({ success: false, message: 'restaurantId and role required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    resolveCompletedTaskNotifications(db);
     const notifications = db.prepare(`
       SELECT id, event_type, payload, created_at
       FROM notification_logs
@@ -6674,6 +6701,7 @@ app.post('/orders/settle', (req, res) => {
             customer_id = COALESCE(?, customer_id), redeemed_points = ?, loyalty_discount = ?
         WHERE id = ?
       `).run(payable, taxAmount, serviceCharge, paid, invoiceNo, isInvoice === false ? 0 : 1, linkedCustomerId || null, redeem, loyaltyDiscount, orderId);
+      resolveOrderNotifications(db, orderId);
       if (linkedCustomerId) {
         db.prepare('INSERT INTO customer_visits (customer_id, order_id, amount) VALUES (?, ?, ?)')
           .run(linkedCustomerId, orderId, paid);
@@ -7591,7 +7619,62 @@ app.get('/settings', (req, res) => {
   }
 });
 
-app.post('/settings/update', (req, res) => {
+const CLOUD_SHARED_SETTING_KEYS = new Set([
+  'qr_ordering_enabled', 'qr_require_table_pin', 'qr_session_minutes', 'qr_pending_order_limit',
+  'mobile_app_enabled', 'online_order_enabled', 'online_storefront_slug', 'online_theme',
+  'online_primary_color', 'online_accent_color', 'online_logo_path', 'online_payment_methods',
+  'online_require_otp', 'online_allow_loyalty_credit', 'online_delivery_enabled',
+  'online_takeaway_enabled', 'online_min_order_amount'
+]);
+
+function settingEnabled(value) {
+  return [true, 1, '1', 'true'].includes(value);
+}
+
+async function validateCloudSharedSettings(db, restaurantId, safeSettings, oldValue) {
+  const changedCloudKeys = Object.keys(safeSettings).filter((key) => (
+    CLOUD_SHARED_SETTING_KEYS.has(key)
+    && String(safeSettings[key]) !== String(oldValue[key] ?? '')
+  ));
+  if (!changedCloudKeys.length) return;
+
+  const effectiveQrEnabled = Object.hasOwn(safeSettings, 'qr_ordering_enabled')
+    ? settingEnabled(safeSettings.qr_ordering_enabled)
+    : getBooleanConfig(db, 'qr_ordering_enabled', true);
+  const effectiveOnlineEnabled = Object.hasOwn(safeSettings, 'online_order_enabled')
+    ? settingEnabled(safeSettings.online_order_enabled)
+    : getBooleanConfig(db, 'online_order_enabled', false);
+  const effectiveMobileEnabled = Object.hasOwn(safeSettings, 'mobile_app_enabled')
+    ? settingEnabled(safeSettings.mobile_app_enabled)
+    : getBooleanConfig(db, 'mobile_app_enabled', false);
+
+  // Disabling cloud features must always remain possible during an outage.
+  if (!effectiveQrEnabled && !effectiveOnlineEnabled && !effectiveMobileEnabled) return;
+  if (!process.env.SAAS_URL) {
+    const error = new Error('Internet and SaaS connection are required before enabling or changing cloud-shared features. SAAS_URL is not configured.');
+    error.status = 503;
+    throw error;
+  }
+
+  const credentials = saasCredentials(db, restaurantId);
+  try {
+    const response = await axios.post(`${process.env.SAAS_URL.replace(/\/$/, '')}/monitoring/heartbeat`, {
+      restaurantId,
+      ...credentials,
+      posVersion: posPackageInfo().version,
+      licenseStatus: 'ACTIVE',
+      appStatus: 'SETTINGS_VALIDATION'
+    }, { timeout: 5000 });
+    if (!response.data?.success) throw new Error(response.data?.message || 'SaaS validation failed');
+  } catch (cause) {
+    const detail = cause.response?.data?.message || cause.message || 'SaaS is unreachable';
+    const error = new Error(`Internet and a valid SaaS connection are required before enabling or changing cloud-shared features. ${detail}`);
+    error.status = 503;
+    throw error;
+  }
+}
+
+app.post('/settings/update', async (req, res) => {
   const { restaurantId, actor, settings, updatedByRole } = req.body;
   const role = actor?.role || updatedByRole;
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
@@ -7604,6 +7687,7 @@ app.post('/settings/update', (req, res) => {
     Object.keys(safeSettings).forEach((key) => {
       oldValue[key] = getConfigValue(db, key, DEFAULT_SYSTEM_SETTINGS[key]);
     });
+    await validateCloudSharedSettings(db, restaurantId, safeSettings, oldValue);
     setConfigValues(db, safeSettings);
     const newValue = {};
     Object.keys(safeSettings).forEach((key) => {
@@ -9661,7 +9745,14 @@ async function runSaasOrderImportTick() {
   if (!restaurantId || !process.env.SAAS_URL) return;
   try {
     const db = openRestaurantDatabase(restaurantId);
-    const enabled = moduleEnabled(db, 'ONLINE_ORDERING') && getBooleanConfig(db, 'online_order_enabled', true);
+    // Cloud QR dine-in orders use the same SaaS queue as storefront orders.
+    // Keep importing when either channel is enabled; otherwise a restaurant
+    // with storefront ordering off but QR ordering on never receives its QR
+    // approvals in Billing.
+    const enabled = moduleEnabled(db, 'ONLINE_ORDERING') && (
+      getBooleanConfig(db, 'online_order_enabled', false)
+      || getBooleanConfig(db, 'qr_ordering_enabled', true)
+    );
     db.close();
     if (!enabled) return;
     await importSaasOnlineOrders(restaurantId, { id: null, role: 'SYSTEM', name: 'Cloud order sync' });

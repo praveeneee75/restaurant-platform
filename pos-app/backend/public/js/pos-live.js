@@ -58,9 +58,6 @@ const state = {
   ,parcelSuggestionIndex: -1
   ,pendingParcelDraft: null
 };
-const qrApprovalPanel = document.getElementById("qrApprovalPanel");
-const qrApprovalList = document.getElementById("qrApprovalList");
-const qrNotificationCount = document.getElementById("qrNotificationCount");
 let tableSelectionRequest = 0;
 
 const amount = (value) => Number(value || 0).toFixed(2);
@@ -322,7 +319,6 @@ async function refreshLiveState({ updateCart = false } = {}) {
   renderCategories();
   if (state.selectedCategoryId) renderItems(state.selectedCategoryId);
   if (updateCart) renderCart();
-  await refreshQrApprovals();
 }
 
 async function loadOpenOrdersForTable(tableId, selectedOrderId = null) {
@@ -508,37 +504,6 @@ function renderTables() {
     </button>
   `).join("");
 }
-
-async function refreshQrApprovals() {
-  if (!['OWNER', 'MANAGER_1', 'MANAGER_2', 'CAPTAIN', 'WAITER', 'CASHIER'].includes(role)) return;
-  const data = await fetch(`/qr/orders/pending?restaurantId=${encodeURIComponent(restaurantId)}`).then((res) => res.json()).catch(() => ({ orders: [] }));
-  const orders = data.orders || [];
-  qrApprovalPanel.hidden = orders.length === 0;
-  qrApprovalList.innerHTML = orders.map((order) => `
-    <article class="qr-approval-card">
-      <strong>${esc(order.table_no)} · ${esc(order.customer_name)}</strong>
-      <span>${esc(order.customer_phone)} · ${money(order.total_amount)}</span>
-      <small>${order.items.map((item) => `${esc(item.name)} x${item.quantity}`).join(', ')}</small>
-      <div class="qr-approval-actions"><button type="button" class="danger-btn" data-reject-qr="${order.id}">Reject</button><button type="button" data-approve-qr="${order.id}">Approve and send KOT</button></div>
-    </article>
-  `).join("");
-  window.dispatchEvent(new CustomEvent('pos:notifications-changed'));
-}
-
-document.addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-approve-qr],[data-reject-qr]");
-  if (!button) return;
-  const rejecting=Boolean(button.dataset.rejectQr);
-  button.disabled = true;
-  try { const result = await postJson(rejecting?'/qr/orders/reject':'/qr/orders/approve', { orderId: Number(button.dataset.rejectQr||button.dataset.approveQr), reason: rejecting?'Rejected from POS':undefined }); alert(result.message); await refreshQrApprovals(); await refreshLiveState(); }
-  catch (error) { button.disabled = false; }
-});
-
-document.getElementById("qrNotifications")?.addEventListener("click", (event) => {
-  if (qrApprovalPanel.hidden) return;
-  event.preventDefault();
-  qrApprovalPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-});
 
 function setSelectedTableStatus(status) {
   if (!state.selectedTable?.id) return;

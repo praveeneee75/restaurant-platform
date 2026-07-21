@@ -11,6 +11,8 @@ const checks=[
  [server.includes('kotResult = createKotJobs(db, targetOrderId)')&&server.includes('APPROVE_QR_ORDER'), 'approval creates KOT and audit'],
  [billing.includes('pendingQrApprovals.innerHTML')&&billing.includes('data-approve-qr')&&billing.includes('Approve & send KOT'), 'billing approval panel'],
  [read('pos-app/backend/public/js/nav-notifications.js').includes('/qr/orders/pending'), 'QR approval notification badge'],
- [server.includes('runSaasOrderImportTick().catch')&&server.includes('setInterval(runSaasOrderImportTick, 10 * 1000)'), 'internet orders automatically reach local approval queue']
+ [server.includes('runSaasOrderImportTick().catch')&&server.includes('setInterval(runSaasOrderImportTick, 10 * 1000)'), 'internet orders automatically reach local approval queue'],
+ [server.includes("getBooleanConfig(db, 'online_order_enabled', false)")&&server.includes("getBooleanConfig(db, 'qr_ordering_enabled', true)"), 'QR cloud imports remain active when storefront ordering is disabled']
+ ,[cloud.includes('async function assertPosOnline')&&cloud.includes("last_heartbeat_at > NOW() - INTERVAL '2 minutes'")&&cloud.includes('The restaurant POS is currently offline')&&cloud.includes('await assertPosOnline'), 'SaaS refuses shared web and QR orders with a clear validation error while the POS is offline']
 ];
 for(const [ok,label] of checks){if(!ok)throw new Error(`Missing QR regression contract: ${label}`);console.log(`PASS: ${label}`)}console.log(`QR approval regression passed (${checks.length} contracts)`);
