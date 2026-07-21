@@ -51,11 +51,16 @@ function calculateBill(payload) {
 
 function buildThermalEscPos(job, groupedItems) {
   const payload = typeof job.payload === 'string' ? JSON.parse(job.payload || '{}') : (job.payload || {});
-  const width = Number(job.paper_width_mm) === 80 ? 48 : 32;
   const layout = payload.printLayout || {};
-  const leftMarginDots = Math.max(0, Math.min(255, Number(layout.leftMarginDots ?? 10) || 0));
+  const width = Number(job.paper_width_mm) === 80
+    ? Math.max(32, Math.min(48, Number(layout.printWidth80) || 38))
+    : Math.max(24, Math.min(32, Number(layout.printWidth58) || 28));
+  const leftMarginDots = Math.max(0, Math.min(255, Number(layout.leftMarginDots ?? 0) || 0));
   const trailingFeedLines = Math.max(0, Math.min(8, Number(layout.trailingFeedLines ?? 0) || 0));
   const cutMode = String(layout.cutMode || 'PRINTER_DEFAULT').toUpperCase();
+  const fontSize = String(layout.fontSize || 'NORMAL').toUpperCase();
+  const fontType = fontSize === 'COMPACT' ? 'FONT_B' : String(layout.fontType || 'FONT_A').toUpperCase();
+  const lineSpacingDots = Math.max(16, Math.min(60, Number(layout.lineSpacingDots) || 24));
   const chunks = [];
   const bytes = (...values) => chunks.push(Buffer.from(values));
   const line = (value = '') => chunks.push(Buffer.from(`${text(value)}\n`, 'ascii'));
@@ -65,7 +70,9 @@ function buildThermalEscPos(job, groupedItems) {
   const size = (value) => bytes(GS, 0x21, value);
 
   bytes(ESC, 0x40); // Initialise. No leading feed and no page/form mode.
-  bytes(ESC, 0x32); // Default line spacing.
+  bytes(ESC, 0x4d, fontType === 'FONT_B' ? 1 : 0); // Select thermal font A/B.
+  bytes(ESC, 0x33, lineSpacingDots); // Explicit line spacing; avoids driver-dependent gaps.
+  if (fontSize === 'TALL') size(0x01);
   // Match proven thermal layouts: a small left inset and no top/bottom form margin.
   // GS L changes the printable origin without introducing a page-sized canvas.
   bytes(GS, 0x4c, leftMarginDots & 0xff, (leftMarginDots >> 8) & 0xff);
@@ -86,8 +93,8 @@ function buildThermalEscPos(job, groupedItems) {
     if (payload.printCustomer && payload.customerName) line(`Customer: ${payload.customerName}`);
     if (payload.printKitchen && payload.kitchen) line(`Kitchen: ${payload.kitchen}`);
     align(0); line('-'.repeat(width));
-    const itemWidth = width === 48 ? 23 : 15;
-    const noteWidth = width === 48 ? 19 : 12;
+    const itemWidth = Math.floor(width * 0.48);
+    const noteWidth = Math.floor(width * 0.39);
     lines(columns(['Item', 'Special Note', 'Qty'], [itemWidth, noteWidth, width - itemWidth - noteWidth], ['left', 'left', 'right']));
     line('-'.repeat(width));
     for (const item of payload.items || []) {
@@ -109,7 +116,7 @@ function buildThermalEscPos(job, groupedItems) {
     line('-'.repeat(width));
     line(payload.finalBill ? 'FINAL BILL' : (profile.gstin ? 'TAX INVOICE' : 'BILL / RECEIPT'));
     line('-'.repeat(width)); bold(false); align(0);
-    const labelWidth = width === 48 ? 16 : 12;
+    const labelWidth = Math.max(10, Math.floor(width * 0.34));
     const meta = (label, value) => lines(columns([label, value], [labelWidth, width - labelWidth]));
     meta(payload.finalBill ? 'Bill Ref.' : 'Invoice No.', payload.invoiceNo || '');
     meta('Date / Time', payload.settledAt || '');
@@ -123,7 +130,7 @@ function buildThermalEscPos(job, groupedItems) {
       meta('Reverse chg.', 'No');
     }
     line('-'.repeat(width));
-    const qtyWidth = 4; const amountWidth = width === 48 ? 10 : 8; const itemWidth = width - qtyWidth - amountWidth;
+    const qtyWidth = 4; const amountWidth = width >= 40 ? 11 : 9; const itemWidth = width - qtyWidth - amountWidth;
     lines(columns(['Item', 'Qty', 'Amount'], [itemWidth, qtyWidth, amountWidth], ['left', 'right', 'right']));
     line('-'.repeat(width));
     items.forEach((item) => lines(columns([item.name, item.quantity, (Number(item.quantity || 0) * Number(item.price || 0)).toFixed(2)], [itemWidth, qtyWidth, amountWidth], ['left', 'right', 'right'])));

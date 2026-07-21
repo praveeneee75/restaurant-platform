@@ -972,9 +972,14 @@ function renderSettings() {
   setChecked(settingBillPrintAuthorisedSignatory, settings.bill_print_authorised_signatory);
   settingBillFooterText.value = settings.bill_footer_text || 'THANK YOU. VISIT AGAIN.';
   settingBillTemplate.value = settings.bill_template || 'BORDERED';
-  settingBillLeftMarginDots.value = settings.bill_left_margin_dots ?? '10';
+  settingBillLeftMarginDots.value = settings.bill_left_margin_dots ?? '0';
   settingBillTrailingFeedLines.value = settings.bill_trailing_feed_lines ?? '0';
   settingBillCutMode.value = settings.bill_cut_mode || 'PRINTER_DEFAULT';
+  settingBillPrintWidth58.value = settings.bill_print_width_58 ?? '28';
+  settingBillPrintWidth80.value = settings.bill_print_width_80 ?? '38';
+  settingBillFontType.value = settings.bill_font_type || 'FONT_A';
+  settingBillFontSize.value = settings.bill_font_size || 'NORMAL';
+  settingBillLineSpacingDots.value = settings.bill_line_spacing_dots ?? '24';
   renderBillTemplatePreview();
   setChecked(settingQrRequireTablePin, settings.qr_require_table_pin === undefined ? true : settings.qr_require_table_pin);
   settingQrSessionMinutes.value = settings.qr_session_minutes || '30';
@@ -995,9 +1000,14 @@ function renderSettings() {
   setChecked(settingKotPrintCustomer, settings.kot_print_customer);
   setChecked(settingKotPrintKitchen, settings.kot_print_kitchen);
   setChecked(settingKotCompactSpacing, settings.kot_compact_spacing === undefined ? true : settings.kot_compact_spacing);
-  settingKotLeftMarginDots.value = settings.kot_left_margin_dots ?? '10';
+  settingKotLeftMarginDots.value = settings.kot_left_margin_dots ?? '0';
   settingKotTrailingFeedLines.value = settings.kot_trailing_feed_lines ?? '0';
   settingKotCutMode.value = settings.kot_cut_mode || 'PRINTER_DEFAULT';
+  settingKotPrintWidth58.value = settings.kot_print_width_58 ?? '28';
+  settingKotPrintWidth80.value = settings.kot_print_width_80 ?? '38';
+  settingKotFontType.value = settings.kot_font_type || 'FONT_A';
+  settingKotFontSize.value = settings.kot_font_size || 'NORMAL';
+  settingKotLineSpacingDots.value = settings.kot_line_spacing_dots ?? '24';
   renderKotTemplatePreview();
   setChecked(settingRequireOpenRegisterForCashPayment, settings.require_open_register_for_cash_payment);
   setChecked(settingAllowCashierRegisterClose, settings.allow_cashier_register_close);
@@ -1066,9 +1076,14 @@ function collectSettings() {
     bill_print_authorised_signatory: checkedValue(settingBillPrintAuthorisedSignatory),
     bill_footer_text: settingBillFooterText.value.trim(),
     bill_template: settingBillTemplate.value,
-    bill_left_margin_dots: settingBillLeftMarginDots.value || '10',
+    bill_left_margin_dots: settingBillLeftMarginDots.value || '0',
     bill_trailing_feed_lines: settingBillTrailingFeedLines.value || '0',
     bill_cut_mode: settingBillCutMode.value,
+    bill_print_width_58: settingBillPrintWidth58.value || '28',
+    bill_print_width_80: settingBillPrintWidth80.value || '38',
+    bill_font_type: settingBillFontType.value,
+    bill_font_size: settingBillFontSize.value,
+    bill_line_spacing_dots: settingBillLineSpacingDots.value || '24',
     qr_require_table_pin: checkedValue(settingQrRequireTablePin),
     qr_session_minutes: settingQrSessionMinutes.value || '30',
     qr_ordering_enabled: checkedValue(settingQrOrderingEnabled),
@@ -1088,9 +1103,14 @@ function collectSettings() {
     kot_print_customer: checkedValue(settingKotPrintCustomer),
     kot_print_kitchen: checkedValue(settingKotPrintKitchen),
     kot_compact_spacing: checkedValue(settingKotCompactSpacing),
-    kot_left_margin_dots: settingKotLeftMarginDots.value || '10',
+    kot_left_margin_dots: settingKotLeftMarginDots.value || '0',
     kot_trailing_feed_lines: settingKotTrailingFeedLines.value || '0',
     kot_cut_mode: settingKotCutMode.value,
+    kot_print_width_58: settingKotPrintWidth58.value || '28',
+    kot_print_width_80: settingKotPrintWidth80.value || '38',
+    kot_font_type: settingKotFontType.value,
+    kot_font_size: settingKotFontSize.value,
+    kot_line_spacing_dots: settingKotLineSpacingDots.value || '24',
     require_open_register_for_cash_payment: checkedValue(settingRequireOpenRegisterForCashPayment),
     allow_cashier_register_close: checkedValue(settingAllowCashierRegisterClose),
     cash_discrepancy_threshold: settingCashDiscrepancyThreshold.value,
@@ -1114,8 +1134,8 @@ const SETTINGS_KEYS_BY_SECTION = {
   profile: ["restaurant_display_name", "legal_name", "gstin", "fssai_license_no", "state_code", "address_line_1", "address_line_2", "city", "state", "country", "phone", "email", "currency", "timezone", "logo_path"],
   pos: ["default_order_type", "allow_non_invoice_orders", "allow_discount", "allow_manual_price_override", "allow_refund", "allow_order_cancel", "require_manager_pin_for_discount", "require_manager_pin_for_refund", "require_manager_pin_for_void", "require_clock_in_before_order"],
   billing: ["invoice_prefix", "invoice_reset_frequency", "show_tax_on_bill", "tax_name", "tax_rate", "sac_code", "show_qr_on_bill", "qr_require_table_pin", "qr_session_minutes", "qr_ordering_enabled", "qr_pending_order_limit", "upi_id", "service_charge_enabled", "service_charge_percent", "round_off_enabled"],
-  "bill-print": ["bill_template", "bill_print_contact", "bill_print_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text", "bill_left_margin_dots", "bill_trailing_feed_lines", "bill_cut_mode"],
-  kot: ["auto_print_kot", "print_kot_on_save", "print_kot_on_submit", "allow_kot_reprint", "kot_header_text", "kot_footer_text", "kot_template", "kot_print_table", "kot_print_customer", "kot_print_kitchen", "kot_compact_spacing", "kot_left_margin_dots", "kot_trailing_feed_lines", "kot_cut_mode"],
+  "bill-print": ["bill_template", "bill_print_contact", "bill_print_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text", "bill_left_margin_dots", "bill_trailing_feed_lines", "bill_cut_mode", "bill_print_width_58", "bill_print_width_80", "bill_font_type", "bill_font_size", "bill_line_spacing_dots"],
+  kot: ["auto_print_kot", "print_kot_on_save", "print_kot_on_submit", "allow_kot_reprint", "kot_header_text", "kot_footer_text", "kot_template", "kot_print_table", "kot_print_customer", "kot_print_kitchen", "kot_compact_spacing", "kot_left_margin_dots", "kot_trailing_feed_lines", "kot_cut_mode", "kot_print_width_58", "kot_print_width_80", "kot_font_type", "kot_font_size", "kot_line_spacing_dots"],
   online: ["mobile_app_enabled", "online_order_enabled", "online_storefront_slug", "online_theme", "online_primary_color", "online_accent_color", "online_logo_path", "online_payment_methods", "online_require_otp", "online_allow_loyalty_credit", "online_delivery_enabled", "online_takeaway_enabled", "online_min_order_amount"]
 };
 

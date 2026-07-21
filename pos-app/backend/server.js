@@ -823,6 +823,10 @@ app.use('/cloud-sync', moduleGate('CLOUD_REPORTING'));
 
 const SETTINGS_PERCENT_KEYS = new Set(['service_charge_percent', 'tax_rate']);
 const SETTINGS_NON_NEGATIVE_NUMBER_KEYS = new Set(['cash_discrepancy_threshold', 'online_min_order_amount']);
+const SETTINGS_PRINT_NUMBER_KEYS = new Set([
+  'bill_left_margin_dots', 'bill_trailing_feed_lines', 'bill_print_width_58', 'bill_print_width_80', 'bill_line_spacing_dots',
+  'kot_left_margin_dots', 'kot_trailing_feed_lines', 'kot_print_width_58', 'kot_print_width_80', 'kot_line_spacing_dots'
+]);
 
 function normaliseSettingsInput(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -871,6 +875,30 @@ function normaliseSettingsInput(input) {
       const threshold = Number(value);
       if (!Number.isFinite(threshold) || threshold < 0) throw new Error(`${key} must be numeric and >= 0`);
       output[key] = String(threshold);
+      return;
+    }
+    if (SETTINGS_PRINT_NUMBER_KEYS.has(key)) {
+      const number = Number(value);
+      if (!Number.isInteger(number) || number < 0 || number > 255) throw new Error(`${key} must be a whole number between 0 and 255`);
+      output[key] = String(number);
+      return;
+    }
+    if (key.endsWith('_cut_mode')) {
+      const mode = String(value || '').toUpperCase();
+      if (!['PRINTER_DEFAULT', 'PARTIAL', 'FULL'].includes(mode)) throw new Error(`${key} is invalid`);
+      output[key] = mode;
+      return;
+    }
+    if (key.endsWith('_font_type')) {
+      const font = String(value || '').toUpperCase();
+      if (!['FONT_A', 'FONT_B'].includes(font)) throw new Error(`${key} is invalid`);
+      output[key] = font;
+      return;
+    }
+    if (key.endsWith('_font_size')) {
+      const size = String(value || '').toUpperCase();
+      if (!['COMPACT', 'NORMAL', 'TALL'].includes(size)) throw new Error(`${key} is invalid`);
+      output[key] = size;
       return;
     }
     if (key === 'online_theme') {
@@ -3013,7 +3041,12 @@ app.get('/print-jobs/pending', (req, res) => {
         leftMarginDots: Math.max(0, Math.min(255, Number(getConfigValue(db, `${prefix}_left_margin_dots`, '10')) || 0)),
         trailingFeedLines: Math.max(0, Math.min(8, Number(getConfigValue(db, `${prefix}_trailing_feed_lines`, '0')) || 0)),
         cutMode: ['PRINTER_DEFAULT', 'PARTIAL', 'FULL'].includes(String(getConfigValue(db, `${prefix}_cut_mode`, 'PRINTER_DEFAULT')).toUpperCase())
-          ? String(getConfigValue(db, `${prefix}_cut_mode`, 'PRINTER_DEFAULT')).toUpperCase() : 'PRINTER_DEFAULT'
+          ? String(getConfigValue(db, `${prefix}_cut_mode`, 'PRINTER_DEFAULT')).toUpperCase() : 'PRINTER_DEFAULT',
+        printWidth58: Math.max(24, Math.min(32, Number(getConfigValue(db, `${prefix}_print_width_58`, '28')) || 28)),
+        printWidth80: Math.max(32, Math.min(48, Number(getConfigValue(db, `${prefix}_print_width_80`, '38')) || 38)),
+        fontType: String(getConfigValue(db, `${prefix}_font_type`, 'FONT_A')).toUpperCase() === 'FONT_B' ? 'FONT_B' : 'FONT_A',
+        fontSize: ['COMPACT', 'NORMAL', 'TALL'].includes(String(getConfigValue(db, `${prefix}_font_size`, 'NORMAL')).toUpperCase()) ? String(getConfigValue(db, `${prefix}_font_size`, 'NORMAL')).toUpperCase() : 'NORMAL',
+        lineSpacingDots: Math.max(16, Math.min(60, Number(getConfigValue(db, `${prefix}_line_spacing_dots`, '24')) || 24))
       };
       return { ...job, payload: JSON.stringify(payload) };
     });
