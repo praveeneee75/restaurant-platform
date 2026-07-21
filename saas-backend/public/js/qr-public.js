@@ -1,7 +1,7 @@
 const params = new URLSearchParams(location.search);
 const restaurantId = String(params.get('restaurantId') || '').trim().toUpperCase();
 const tableId = String(params.get('tableId') || '').trim();
-const state = { storefront: null, categories: [], items: [], cart: [], currency: 'INR', categoryId: null };
+const state = { storefront: null, categories: [], items: [], cart: [], currency: 'INR', categoryId: null, loyaltyExisting: false, loyaltyPhone: '' };
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const money = (value) => `${state.currency} ${Number(value || 0).toFixed(2)}`;
 
@@ -10,6 +10,28 @@ function render() {
   qrItems.innerHTML = state.items.filter((item) => String(item.category_id) === String(state.categoryId)).map((item) => `<article class="card"><strong>${esc(item.name)}</strong><span>${money(item.price)}</span><button type="button" data-item="${item.id}">Add</button></article>`).join('') || '<p>No items in this category.</p>';
   qrCartItems.innerHTML = state.cart.map((item) => `<div class="card"><strong>${esc(item.name)}</strong><span>${item.quantity} × ${money(item.price)}</span><button type="button" data-minus="${item.id}">−</button><button type="button" data-plus="${item.id}">+</button></div>`).join('') || '<p>Your cart is empty.</p>';
   qrTotal.textContent = `Total: ${money(state.cart.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0))}`;
+}
+
+async function refreshLoyaltyStatus() {
+  const phone = qrCustomerPhone.value.replace(/\D/g, '').slice(-10);
+  state.loyaltyExisting = false;
+  state.loyaltyPhone = phone;
+  qrLoyaltyConsentRow.hidden = true;
+  qrLoyaltyConsentError.textContent = '';
+  if (!/^\d{10}$/.test(phone) || !state.storefront) {
+    qrLoyaltyStatus.textContent = 'Enter your 10-digit mobile number to check cross-branch rewards.';
+    return;
+  }
+  const amount = state.cart.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
+  const response = await fetch(`/online-ordering/storefront/${encodeURIComponent(state.storefront.slug)}/loyalty-status`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone, amount })
+  });
+  const data = await response.json();
+  if (!response.ok || !data.success) throw new Error(data.message || 'Unable to check rewards');
+  if (state.loyaltyPhone !== phone) return;
+  state.loyaltyExisting = Boolean(data.existingCustomer);
+  qrLoyaltyStatus.textContent = data.message;
+  qrLoyaltyConsentRow.hidden = state.loyaltyExisting;
 }
 
 async function loadMenu() {
@@ -60,9 +82,15 @@ placeQrOrder.addEventListener('click', async () => {
     if (!state.storefront || !state.cart.length) throw new Error('Add at least one item first.');
     if (!customerName) { qrCustomerNameError.textContent = 'Customer name is required.'; qrCustomerName.setAttribute('aria-invalid','true'); qrCustomerName.focus(); throw new Error('Customer name is required.'); }
     if (!/^\d{10}$/.test(customerPhone)) { qrCustomerPhoneError.textContent = 'Enter a valid 10-digit mobile number.'; qrCustomerPhone.setAttribute('aria-invalid','true'); qrCustomerPhone.focus(); throw new Error('Enter a valid 10-digit mobile number.'); }
+    if (state.loyaltyPhone !== customerPhone) await refreshLoyaltyStatus();
+    if (!state.loyaltyExisting && !qrLoyaltyConsent.checked) {
+      qrLoyaltyConsentError.textContent = 'Please confirm rewards consent before we save a new customer mobile number.';
+      qrLoyaltyConsent.focus();
+      throw new Error('Rewards consent is required for a new customer.');
+    }
     const response = await fetch(`/online-ordering/storefront/${encodeURIComponent(state.storefront.slug)}/orders`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orderType: 'DINE_IN', tableId, customerName, customerPhone, paymentMode: 'COD', notes: qrOrderNotes.value.trim(), items: state.cart.map((item) => ({ itemId: item.id, itemName: item.name, quantity: item.quantity, unitPrice: item.price })) })
+      body: JSON.stringify({ orderType: 'DINE_IN', tableId, customerName, customerPhone, loyaltyConsent: state.loyaltyExisting || qrLoyaltyConsent.checked, paymentMode: 'COD', notes: qrOrderNotes.value.trim(), items: state.cart.map((item) => ({ itemId: item.id, itemName: item.name, quantity: item.quantity, unitPrice: item.price })) })
     });
     const data = await response.json();
     if (!response.ok || !data.success) {
@@ -74,6 +102,12 @@ placeQrOrder.addEventListener('click', async () => {
     render();
     qrStatus.textContent = `Order placed: ${data.order.order_no}. Waiting for billing approval before the table is occupied and KOT is printed.`;
   } catch (error) { qrStatus.textContent = error.message; }
+});
+
+let loyaltyTimer;
+qrCustomerPhone.addEventListener('input', () => {
+  clearTimeout(loyaltyTimer);
+  loyaltyTimer = setTimeout(() => refreshLoyaltyStatus().catch((error) => { qrLoyaltyStatus.textContent = error.message; }), 350);
 });
 
 loadMenu().catch((error) => { qrStatus.textContent = error.message; });

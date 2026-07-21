@@ -675,6 +675,9 @@ button:hover,
 .parcel-item-entry .item-search span { display:none; }
 .parcel-item-entry .item-grid { position:absolute; top:100%; left:0; right:0; z-index:20; display:grid; grid-template-columns:1fr; max-height:300px; overflow:auto; gap:0; border:1px solid var(--border); border-radius:0 0 8px 8px; background:#fff; box-shadow:0 12px 24px rgba(15,23,42,.16); }
 .parcel-item-entry .item-grid:empty { display:none; }
+.parcel-item-entry .item-grid .item-suggestion { background:#fff; border:0; border-bottom:1px solid var(--border); border-radius:0; color:var(--text); min-height:72px; }
+.parcel-item-entry .item-grid .item-suggestion:hover,
+.parcel-item-entry .item-grid .item-suggestion.keyboard-active { background:#eef5ff; border-color:var(--border); }
 .pos-mode-parcel .pos-menu .item-tile { min-height:0; padding:10px 12px; border:0; border-bottom:1px solid var(--border); border-radius:0; display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:10px; align-items:center; }
 .pos-mode-parcel .pos-menu .item-tile:last-child { border-bottom:0; }
 .pos-mode-parcel .pos-menu .item-tile.keyboard-active { background:#dbeafe; box-shadow:inset 4px 0 #2563eb; }

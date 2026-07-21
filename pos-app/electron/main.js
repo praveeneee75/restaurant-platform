@@ -1,10 +1,13 @@
 const { app, BrowserWindow, dialog, ipcMain, screen, shell } = require('electron');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const http = require('http');
 const net = require('net');
+const os = require('os');
 const path = require('path');
 const { groupPrintableItems } = require('../backend/services/printItemGrouping');
+const { buildThermalEscPos } = require('./thermalEscPos');
 const {
   checkedToday,
   isExpired,
@@ -201,67 +204,50 @@ function thermalPrintHtml(job) {
 }
 
 async function printToConfiguredPrinter(job) {
-  const html = thermalPrintHtml(job);
-  const paperWidthMm = Number(job.paper_width_mm) === 80 ? 80 : 58;
-  const win = await printableWindow(html, paperWidthMm);
+  const data = buildThermalEscPos(job, groupPrintableItems);
+  const connection = String(job.printer_connection || '').trim().toUpperCase();
+  const configuredAddress = String(job.printer_address || '').trim();
+  if (connection === 'NETWORK' || /^tcp:\/\//i.test(configuredAddress)) {
+    const match = configuredAddress.match(/^(?:tcp:\/\/)?([^:/\s]+)(?::(\d+))?$/i);
+    if (!match) throw new Error('Network printer address must be an IP/host name, optionally followed by port 9100.');
+    await new Promise((resolve, reject) => {
+      const socket = net.createConnection({ host: match[1], port: Number(match[2] || 9100), timeout: 8000 }, () => socket.end(data));
+      socket.once('error', reject);
+      socket.once('timeout', () => socket.destroy(new Error('Network thermal printer timed out')));
+      socket.once('close', (hadError) => { if (!hadError) resolve(); });
+    });
+    return;
+  }
+
+  // USB, Bluetooth and Windows printers must receive RAW ESC/POS bytes. Browser
+  // printing uses the Windows form height (often A4), which produced the large
+  // blank feeds and split receipt footer seen on physical 58/80 mm printers.
+  const lookup = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  let printer;
   try {
-    const printers = await win.webContents.getPrintersAsync();
+    const printers = await lookup.webContents.getPrintersAsync();
     const address = String(job.printer_address || '').trim().toLowerCase();
     const configuredName = String(job.printer_name || '').trim().toLowerCase();
-    const printer = printers.find((item) => String(item.name).toLowerCase() === address)
+    printer = printers.find((item) => String(item.name).toLowerCase() === address)
       || printers.find((item) => String(item.displayName || '').toLowerCase() === address)
       || printers.find((item) => String(item.name).toLowerCase() === configuredName)
       || printers.find((item) => item.isDefault);
     if (!printer) throw new Error('Configured printer was not found in Windows. Search printers again in Admin > Printers.');
-    // BrowserWindow has a tall viewport; scrollHeight therefore measured the window rather
-    // than the receipt and some thermal drivers bottom-aligned the content on that blank page.
-    // Measure the actual rendered children so continuous-roll jobs start immediately.
-    const contentHeightPx = await win.webContents.executeJavaScript(`(() => {
-      const body = document.body;
-      document.documentElement.style.setProperty('height', 'auto', 'important');
-      document.documentElement.style.setProperty('min-height', '0', 'important');
-      body.style.setProperty('height', 'auto', 'important');
-      body.style.setProperty('min-height', '0', 'important');
-      body.style.setProperty('display', 'block', 'important');
-      const top = body.getBoundingClientRect().top;
-      const visible = [...body.querySelectorAll('*')].filter((node) => {
-        const style = getComputedStyle(node);
-        const rect = node.getBoundingClientRect();
-        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-      });
-      const bottoms = visible.map((node) => node.getBoundingClientRect().bottom - top);
-      return Math.ceil(Math.max(1, ...bottoms));
-    })()`);
-    const contentHeightMicrons = Math.ceil(Number(contentHeightPx || 0) * 25400 / 96);
-    // Keep a small cutter allowance only. Explicit CSS page size is required in
-    // addition to Electron's pageSize because several Windows thermal drivers
-    // ignore the latter and fall back to their very long default roll page.
-    const pageHeightMicrons = Math.max(20000, Math.min(contentHeightMicrons + 1200, 1000000));
-    const pageHeightMm = pageHeightMicrons / 1000;
-    await win.webContents.insertCSS(`
-      @media print {
-        @page { size: ${paperWidthMm}mm ${pageHeightMm}mm; margin: 0 !important; }
-        html, body { height: auto !important; min-height: 0 !important; display: block !important; }
-        body { position: static !important; }
-        body > * { break-inside: avoid-page; page-break-inside: avoid; }
-        .footer, .thanks { position: static !important; margin-bottom: 0 !important; }
-      }
-    `);
-    const pageSize = {
-      width: paperWidthMm * 1000,
-      height: pageHeightMicrons
-    };
-    await new Promise((resolve, reject) => win.webContents.print({
-      silent: true,
-      deviceName: printer.name,
-      printBackground: true,
-      landscape: false,
-      scaleFactor: 100,
-      pageSize,
-      margins: { marginType: 'none' }
-    }, (success, reason) => success ? resolve() : reject(new Error(reason || 'Printer rejected the job'))));
   } finally {
-    if (!win.isDestroyed()) win.destroy();
+    if (!lookup.isDestroyed()) lookup.destroy();
+  }
+  const tempFile = path.join(os.tmpdir(), `kmaster-print-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.bin`);
+  fs.writeFileSync(tempFile, data);
+  try {
+    await new Promise((resolve, reject) => {
+      const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'rawPrint.ps1'), '-PrinterName', printer.name, '-DataFile', tempFile], { windowsHide: true });
+      let errorText = '';
+      child.stderr.on('data', (chunk) => { errorText += chunk; });
+      child.once('error', reject);
+      child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(errorText.trim() || `Windows RAW print failed (${code})`)));
+    });
+  } finally {
+    try { fs.unlinkSync(tempFile); } catch { /* best-effort cleanup */ }
   }
 }
 

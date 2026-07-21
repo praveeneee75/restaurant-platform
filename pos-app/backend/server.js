@@ -6637,7 +6637,7 @@ app.post('/orders/invoices/:id/reprint', (req, res) => {
   } catch (err) { sendError(res, err); } finally { db.close(); }
 });
 
-app.post('/orders/settle', (req, res) => {
+app.post('/orders/settle', async (req, res) => {
   const { restaurantId, actor, orderId, customerId, redeemPoints, payments, isInvoice = true, printBill = false } = req.body;
   if (!restaurantId || !orderId || !Array.isArray(payments) || !canSell(actor?.role)) {
     return res.status(400).json({ success: false, message: 'Order, payments and sales permission are required' });
@@ -6652,6 +6652,50 @@ app.post('/orders/settle', (req, res) => {
   try {
     requirePermission(db, actor?.role, 'billing.settle', 'Billing settlement permission required');
     if (isInvoice === false) requirePermission(db, actor?.role, 'billing.non_invoice', 'Non-invoice settlement requires manager permission');
+    const settlementOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+    if (!settlementOrder) throw new Error('Order not found');
+    const settlementCustomerId = isPositiveId(customerId) ? Number(customerId) : settlementOrder.customer_id;
+    let centralLoyalty = null;
+    if (settlementCustomerId) {
+      const settlementCustomer = db.prepare('SELECT id, name, phone FROM customers WHERE id = ? AND active = 1').get(settlementCustomerId);
+      if (!settlementCustomer) throw new Error('Customer not found');
+      if (!/^\d{10}$/.test(String(settlementCustomer.phone || '').replace(/\D/g, '').slice(-10))) throw new Error('A valid customer mobile number is required for central rewards');
+      const centralStatus = await centralLoyaltyRequest(db, restaurantId, 'lookup', { phone: settlementCustomer.phone });
+      db.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('loyalty_earn_amount', ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP").run(String(centralStatus.earnAmount));
+      db.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('loyalty_point_value', ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP").run(String(centralStatus.pointValue));
+      const preflightItems = db.prepare(`
+        SELECT COUNT(*) item_count,
+               COALESCE(SUM(CASE WHEN kot_id IS NOT NULL THEN 1 ELSE 0 END), 0) submitted_count,
+               COALESCE(SUM(CASE WHEN kot_id IS NULL THEN 1 ELSE 0 END), 0) draft_count,
+               COALESCE(SUM(CASE WHEN kot_id IS NOT NULL THEN quantity * price ELSE 0 END), 0) gross
+        FROM order_items WHERE order_id = ?
+      `).get(orderId);
+      if (!Number(preflightItems.item_count)) throw new Error('Cannot settle an order without items');
+      if (!Number(preflightItems.submitted_count)) throw new Error('Submit the order to KOT before settlement');
+      if (Number(preflightItems.draft_count)) throw new Error('Submit all saved items to KOT before settlement');
+      const preflightGross = Number(preflightItems.gross || 0);
+      if (preflightGross <= 0) throw new Error('Cannot settle an order with a zero item total');
+      const preflightService = serviceChargeForAmount(db, preflightGross);
+      const preflightDiscounts = tableExists(db, 'discounts') ? db.prepare('SELECT value, value_type FROM discounts WHERE order_id = ?').all(orderId) : [];
+      const preflightDiscount = preflightDiscounts.reduce((sum, discount) => sum + (String(discount.value_type || '').toUpperCase() === 'PERCENT' ? preflightGross * Number(discount.value || 0) / 100 : Number(discount.value || 0)), 0);
+      const preflightRedeemValue = Number(redeemPoints || 0) * Number(centralStatus.pointValue || 1);
+      const preflightPayable = applyRoundOff(db, Math.max(preflightGross + preflightService - Math.min(preflightDiscount, preflightGross + preflightService) - Math.min(preflightRedeemValue, preflightGross + preflightService), 0));
+      const preflightPaid = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+      if (Math.abs(preflightPaid - preflightPayable) > 0.005) throw new Error(`Payment must equal payable total (paid ${preflightPaid.toFixed(2)}, payable ${preflightPayable.toFixed(2)})`);
+      centralLoyalty = await settleCentralLoyalty(db, restaurantId, {
+        phone: settlementCustomer.phone,
+        name: settlementCustomer.name,
+        orderRef: settlementOrder.order_reference || String(orderId),
+        invoiceRef: settlementOrder.invoice_no || null,
+        paidAmount: payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
+        redeemPoints: Number(redeemPoints || 0),
+        consent: true
+      });
+      db.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('loyalty_earn_amount', ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP").run(String(centralLoyalty.earnAmount));
+      db.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('loyalty_point_value', ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP").run(String(centralLoyalty.pointValue));
+    } else if (Number(redeemPoints || 0) > 0) {
+      throw new Error('Customer required to redeem points');
+    }
     const settled = db.transaction(() => {
       const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
       if (!order) throw new Error('Order not found');
@@ -6666,7 +6710,9 @@ app.post('/orders/settle', (req, res) => {
       if (redeem > 0) requireModule(db, 'LOYALTY');
       if (!Number.isInteger(redeem) || redeem < 0) throw new Error('Redeem points must be a whole number');
       if (redeem > 0 && !linkedCustomerId) throw new Error('Customer required to redeem points');
-      const balance = linkedCustomerId ? customerLoyaltyBalance(db, linkedCustomerId) : 0;
+      const balance = centralLoyalty
+        ? Number(centralLoyalty.balance || 0) + Number(centralLoyalty.redeemedPoints || 0) - Number(centralLoyalty.earnedPoints || 0)
+        : (linkedCustomerId ? customerLoyaltyBalance(db, linkedCustomerId) : 0);
       if (redeem > balance) throw new Error('Insufficient loyalty points');
       // Billing settles only kitchen-submitted lines. Draft lines saved in POS
       // remain outside the payable amount until their KOT is submitted.
@@ -6721,7 +6767,7 @@ app.post('/orders/settle', (req, res) => {
         ? (order.invoice_no || `RCP-${crypto.randomBytes(5).toString('hex').toUpperCase()}`)
         : (order.invoice_no || invoiceNumberForOrder(db, orderId));
 
-      if (redeem > 0) {
+      if (redeem > 0 && !db.prepare("SELECT id FROM loyalty_points WHERE customer_id = ? AND order_id = ? AND type = 'REDEEM' LIMIT 1").get(linkedCustomerId, orderId)) {
         const memberId = memberIdForCustomer(db, linkedCustomerId);
         db.prepare(`
           INSERT INTO loyalty_points (member_id, customer_id, order_id, points, type, note)
@@ -6752,7 +6798,7 @@ app.post('/orders/settle', (req, res) => {
         db.prepare('INSERT INTO customer_visits (customer_id, order_id, amount) VALUES (?, ?, ?)')
           .run(linkedCustomerId, orderId, paid);
         const earnAmount = getSettingNumber(db, 'loyalty_earn_amount', 100);
-        const earnedPoints = Math.floor(paid / earnAmount);
+        const earnedPoints = centralLoyalty ? Number(centralLoyalty.earnedPoints || 0) : Math.floor(paid / earnAmount);
         if (earnedPoints > 0 && !db.prepare("SELECT id FROM loyalty_points WHERE customer_id = ? AND order_id = ? AND type = 'EARN' LIMIT 1").get(linkedCustomerId, orderId)) {
           const memberId = memberIdForCustomer(db, linkedCustomerId);
           db.prepare(`
@@ -6857,7 +6903,7 @@ app.post('/orders/settle', (req, res) => {
       return { invoiceNo, paid, payable, redeemedPoints: redeem, loyaltyDiscount, serviceCharge, roundOff, printQueued };
     })();
 
-    res.json({ success: true, invoiceNo: settled.invoiceNo, paidAmount: settled.paid, payable: settled.payable, redeemedPoints: settled.redeemedPoints, loyaltyDiscount: settled.loyaltyDiscount, serviceCharge: settled.serviceCharge, roundOff: settled.roundOff, printRequested: Boolean(printBill), printQueued: Boolean(settled.printQueued), printMessage: settled.printQueued ? 'Bill sent to the configured BILL printer' : 'Printer is not configured. Invoice was created. Configure an active printer with type BILL in Admin > Printers, then retry printing.' });
+    res.json({ success: true, invoiceNo: settled.invoiceNo, paidAmount: settled.paid, payable: settled.payable, redeemedPoints: settled.redeemedPoints, loyaltyBalance: centralLoyalty?.balance ?? null, earnedPoints: centralLoyalty?.earnedPoints ?? 0, loyaltyDiscount: settled.loyaltyDiscount, serviceCharge: settled.serviceCharge, roundOff: settled.roundOff, printRequested: Boolean(printBill), printQueued: Boolean(settled.printQueued), printMessage: settled.printQueued ? 'Bill sent to the configured BILL printer' : 'Printer is not configured. Invoice was created. Configure an active printer with type BILL in Admin > Printers, then retry printing.' });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -7378,13 +7424,20 @@ app.post('/kds/order-status', (req, res) => {
 // CUSTOMER CRM & LOYALTY
 // ========================
 
-app.get('/customers/search', (req, res) => {
+app.get('/customers/search', async (req, res) => {
   const { restaurantId, phone } = req.query;
   if (!restaurantId || !hasText(phone)) return res.status(400).json({ success: false, message: 'Phone is required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
-    const customer = db.prepare('SELECT * FROM customers WHERE phone = ? AND active = 1 LIMIT 1').get(normaliseText(phone));
-    res.json({ success: true, customer: customerWithBalance(db, customer) });
+    const normalizedPhone = String(phone || '').replace(/\D/g, '').slice(-10);
+    if (!/^\d{10}$/.test(normalizedPhone)) throw new Error('Enter a valid 10-digit mobile number');
+    const cloud = await centralLoyaltyRequest(db, restaurantId, 'lookup', { phone: normalizedPhone });
+    let customer = db.prepare('SELECT * FROM customers WHERE phone = ? AND active = 1 LIMIT 1').get(normalizedPhone);
+    if (!customer && cloud.customer) {
+      const created = db.prepare('INSERT INTO customers (name, phone) VALUES (?, ?)').run(cloud.customer.name || 'Customer', normalizedPhone);
+      customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(created.lastInsertRowid);
+    }
+    res.json({ success: true, customer: customer ? { ...customer, loyaltyBalance: Number(cloud.balance || 0), loyaltySyncedAt: new Date().toISOString(), loyaltyScope: 'SAAS' } : null, loyaltyProgram: { earnAmount: cloud.earnAmount, pointValue: cloud.pointValue, active: cloud.active } });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -9570,12 +9623,28 @@ async function updateSaasOnlineOrderStatus(restaurantId, orderId, status, posOrd
 function importSaasOnlineOrderLocal(db, restaurantId, actor, saasOrder) {
   const existing = db.prepare('SELECT * FROM saas_online_order_imports WHERE saas_order_id = ?').get(saasOrder.id);
   if (existing?.local_order_id) {
+    // Repair orders imported by older builds that stored the QR contact only in
+    // the cloud payload. Pulls are idempotent, but customer/loyalty attachment
+    // must also be idempotent so an already-imported QR customer is not lost.
+    const importedOrder = db.prepare('SELECT id, customer_id FROM orders WHERE id = ?').get(existing.local_order_id);
+    if (importedOrder && !importedOrder.customer_id) {
+      let original = saasOrder;
+      try { original = { ...(JSON.parse(existing.payload || '{}')), ...saasOrder }; } catch { /* use current SaaS row */ }
+      const phone = normalisePhone(original.customer_phone || original.customerPhone || '');
+      const name = normaliseText(original.customer_name || original.customerName || 'Online Customer');
+      if (/^\d{10}$/.test(phone)) {
+        const customer = db.prepare('SELECT id FROM customers WHERE phone = ? AND active = 1 LIMIT 1').get(phone);
+        const customerId = customer?.id || db.prepare('INSERT INTO customers (name, phone) VALUES (?, ?)').run(name, phone).lastInsertRowid;
+        if (customer) db.prepare('UPDATE customers SET name = COALESCE(NULLIF(?, \'\'), name), updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(name, customer.id);
+        db.prepare('UPDATE orders SET customer_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(customerId, importedOrder.id);
+      }
+    }
     return { imported: false, orderId: existing.local_order_id, duplicate: true };
   }
 
   const selectedOrderType = normaliseOrderType(saasOrder.order_type) || 'TAKEAWAY';
-  const customerPhone = normalisePhone(saasOrder.customer_phone || '');
-  const customerName = normaliseText(saasOrder.customer_name || 'Online Customer');
+  const customerPhone = normalisePhone(saasOrder.customer_phone || saasOrder.customerPhone || '');
+  const customerName = normaliseText(saasOrder.customer_name || saasOrder.customerName || 'Online Customer');
   const deliveryAddress = normaliseText(saasOrder.delivery_address || '');
   const dineInTable = selectedOrderType === 'DINE_IN' && isPositiveId(saasOrder.table_id)
     ? db.prepare('SELECT id, table_name FROM tables WHERE id = ? AND active = 1').get(Number(saasOrder.table_id))
@@ -9796,6 +9865,28 @@ async function sendPosHeartbeat() {
   } finally {
     if (db) db.close();
   }
+}
+
+async function centralLoyaltyRequest(db, restaurantId, route, payload) {
+  const saasUrl = process.env.SAAS_URL;
+  if (!saasUrl) throw new Error('Internet connection to SaaS is required for customer rewards');
+  const credentials = saasCredentials(db, restaurantId);
+  try {
+    const response = await axios.post(`${saasUrl.replace(/\/$/, '')}/online-ordering/pos/loyalty/${route}`, {
+      restaurantId,
+      ...credentials,
+      ...payload
+    }, { timeout: 10000 });
+    if (!response.data?.success) throw new Error(response.data?.message || 'Central rewards request failed');
+    return response.data;
+  } catch (error) {
+    const message = error.response?.data?.message || error.message || 'Central rewards service is unavailable';
+    throw new Error(`Rewards require an internet connection: ${message}`);
+  }
+}
+
+async function settleCentralLoyalty(db, restaurantId, payload) {
+  return centralLoyaltyRequest(db, restaurantId, 'settle', payload);
 }
 
 async function runSaasOrderImportTick() {

@@ -18,6 +18,7 @@ const actor = { id: sessionUser.id, role };
 const modeParam = String(new URLSearchParams(window.location.search).get("mode") || "DINE_IN").toUpperCase();
 const posMode = ["DINE_IN", "PARCEL", "PARTY"].includes(modeParam) ? modeParam : "DINE_IN";
 const cashierDineLayout = posMode === "DINE_IN" && new URLSearchParams(window.location.search).get("layout") === "cashier";
+const usesStructuredItemEntry = posMode === "PARCEL" || cashierDineLayout;
 const requestedTableId = Number(new URLSearchParams(window.location.search).get("tableId") || 0);
 const restaurantId = new URLSearchParams(window.location.search).get("restaurantId") || localStorage.getItem("restaurantId");
 if (restaurantId) localStorage.setItem("restaurantId", restaurantId);
@@ -592,11 +593,16 @@ function renderCategories() {
 
 function renderItems(categoryId) {
   const query = (itemSearch?.value || "").trim().toLowerCase();
-  if (posMode === "PARCEL" && !query) {
+  if (usesStructuredItemEntry && !query) {
     items.innerHTML = "";
     return;
   }
   const itemTiles = state.items.filter((item) => (categoryId === "ALL" || item.category_id === categoryId) && (!query || `${item.item_code || ""} ${item.name}`.toLowerCase().includes(query))).map((item) => {
+    if (usesStructuredItemEntry) return `
+      <button class="item-tile item-suggestion" data-item="${item.id}" ${state.billingReady ? 'disabled title="Final bill requested for this order"' : ''}>
+        <strong>${esc(displayItemCode(item))} · ${esc(item.name)}</strong>
+        <span class="item-price">${money(item.price)}</span>
+      </button>`;
     const matchingLines = state.cart.filter((line) => line.id === item.id && !line.comboId);
     const quantity = matchingLines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
     const stateClass = matchingLines.some((line) => line.sentToKitchen) ? "saved" : matchingLines.some((line) => line.savedLocally) ? "pending-save" : quantity > 0 ? "new-item" : "";
@@ -609,6 +615,10 @@ function renderItems(categoryId) {
     `;
   }).join("");
   const comboTiles = state.combos.filter((combo) => (categoryId === "ALL" || !combo.category_id || Number(combo.category_id) === Number(categoryId)) && (!query || combo.name.toLowerCase().includes(query))).map((combo) => {
+    if (usesStructuredItemEntry) return `
+      <button class="item-tile item-suggestion combo-tile" data-combo="${combo.id}" ${state.billingReady ? 'disabled title="Final bill requested for this order"' : ''}>
+        <strong>${esc(combo.name)}</strong><span>${money(combo.price)}</span>
+      </button>`;
     const matchingLines = state.cart.filter((line) => line.comboId === combo.id);
     const quantity = matchingLines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
     const stateClass = matchingLines.some((line) => line.sentToKitchen) ? "saved" : matchingLines.some((line) => line.savedLocally) ? "pending-save" : quantity > 0 ? "new-item" : "";
@@ -675,7 +685,7 @@ function addSingleSearchResult() {
     && combo.name.toLowerCase().includes(query)
   );
   if (matchingItems.length !== 1 || matchingCombos.length !== 0) return false;
-  if (posMode === "PARCEL") selectParcelDraftItem(matchingItems[0]);
+  if (usesStructuredItemEntry) selectParcelDraftItem(matchingItems[0]);
   else openModifierModal(Number(matchingItems[0].id));
   return true;
 }
@@ -683,7 +693,7 @@ function addSingleSearchResult() {
 function renderCart() {
   cartTitle.textContent = isDineIn() ? (state.selectedTable ? state.selectedTable.table_name : "Select a table") : orderType.options[orderType.selectedIndex].text;
   orderMeta.textContent = state.orderId ? `Order ${state.orderReference || state.orderId}` : "New order";
-  cartItems.innerHTML = state.cart.map((item) => posMode === "PARCEL" ? `
+  cartItems.innerHTML = state.cart.map((item) => usesStructuredItemEntry ? `
     <div class="cart-line parcel-cart-row ${state.selectedCartKey === item.key ? "selected" : ""} ${item.sentToKitchen ? "saved" : item.savedLocally ? "pending-save" : "new-item"}" data-cart-line="${item.key}" role="button" tabindex="0" aria-label="Edit ${esc(item.name)}">
       <div><strong>${esc(item.name)}</strong>${(item.modifiers || []).map((modifier) => `<small>+ ${esc(modifier.name)}</small>`).join("")}</div>
       <span class="parcel-line-note">${item.notes ? esc(item.notes) : "--"}</span>
@@ -1198,7 +1208,7 @@ document.addEventListener("click", async (event) => {
   }
   if (target.dataset.item) {
     const selectedItem = state.items.find((item) => Number(item.id) === Number(target.dataset.item));
-    if (posMode === "PARCEL" && selectedItem) {
+    if (usesStructuredItemEntry && selectedItem) {
       selectParcelDraftItem(selectedItem);
       return;
     }
@@ -1334,7 +1344,7 @@ orderType.addEventListener("change", () => { if (state.cart.length) state.dirty 
 });
 let itemSearchTimer;
 itemSearch.addEventListener("input", () => {
-  if (posMode === "PARCEL") {
+  if (usesStructuredItemEntry) {
     state.parcelDraftItem = null;
     state.parcelSuggestionIndex = -1;
   }
@@ -1342,7 +1352,7 @@ itemSearch.addEventListener("input", () => {
   itemSearchTimer = setTimeout(() => renderItems(state.selectedCategoryId), 120);
 });
 itemSearch.addEventListener("keydown", (event) => {
-  if (posMode === "PARCEL" && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+  if (usesStructuredItemEntry && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
     if (!(itemSearch.value || "").trim()) return;
     event.preventDefault();
     clearTimeout(itemSearchTimer);
@@ -1355,13 +1365,13 @@ itemSearch.addEventListener("keydown", (event) => {
     suggestions[state.parcelSuggestionIndex].scrollIntoView({ block: "nearest" });
     return;
   }
-  const parcelSelectKey = posMode === "PARCEL" && (event.key === "Tab" || event.key === "Enter");
+  const parcelSelectKey = usesStructuredItemEntry && (event.key === "Tab" || event.key === "Enter");
   if ((!parcelSelectKey && event.key !== "Enter") || event.isComposing) return;
-  if (posMode === "PARCEL" && !(itemSearch.value || "").trim()) return;
+  if (usesStructuredItemEntry && !(itemSearch.value || "").trim()) return;
   event.preventDefault();
   clearTimeout(itemSearchTimer);
   renderItems(state.selectedCategoryId);
-  if (posMode === "PARCEL") {
+  if (usesStructuredItemEntry) {
     const matches = filteredMenuItems();
     const selectedMatch = state.parcelSuggestionIndex >= 0 ? matches[state.parcelSuggestionIndex] : (event.key === "Tab" ? matches[0] : (matches.length === 1 ? matches[0] : null));
     if (selectedMatch) selectParcelDraftItem(selectedMatch);

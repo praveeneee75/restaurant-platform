@@ -59,6 +59,35 @@ async function onlineOrderingEnabled(tenantId) {
   return result.rowCount > 0;
 }
 
+function loyaltyScope(tenant) {
+  return {
+    id: tenant.organization_id || tenant.id,
+    type: tenant.organization_id ? 'ORGANIZATION' : 'TENANT'
+  };
+}
+
+async function loyaltyProgram(client, scope) {
+  await client.query(`
+    INSERT INTO loyalty_programs (scope_id, scope_type)
+    VALUES ($1, $2) ON CONFLICT (scope_id) DO NOTHING
+  `, [scope.id, scope.type]);
+  const result = await client.query('SELECT * FROM loyalty_programs WHERE scope_id = $1', [scope.id]);
+  return result.rows[0];
+}
+
+async function loyaltyCustomerStatus(client, tenant, phone) {
+  const scope = loyaltyScope(tenant);
+  const program = await loyaltyProgram(client, scope);
+  const customer = await client.query(`
+    SELECT c.*, COALESCE(SUM(l.points_delta), 0)::int AS balance
+    FROM loyalty_customers c
+    LEFT JOIN loyalty_ledger l ON l.customer_id = c.id
+    WHERE c.scope_id = $1 AND c.phone = $2
+    GROUP BY c.id
+  `, [scope.id, phone]);
+  return { scope, program, customer: customer.rows[0] || null };
+}
+
 async function qrOrderingPolicy(client, tenantId) {
   const snapshot = await client.query('SELECT configuration_snapshot FROM tenant_operational_snapshots WHERE tenant_id = $1', [tenantId]);
   const config = snapshot.rows[0]?.configuration_snapshot?.onlineOrdering || {};
@@ -139,8 +168,38 @@ router.get('/storefront/:slug/menu', async (req, res) => {
   }
 });
 
+router.post('/storefront/:slug/loyalty-status', async (req, res) => {
+  const phone = String(req.body?.phone || '').replace(/\D/g, '').slice(-10);
+  const amount = money(req.body?.amount);
+  if (!/^\d{10}$/.test(phone)) return res.status(400).json({ success: false, message: 'Enter a valid 10-digit mobile number.' });
+  try {
+    const storefront = await pool.query(`
+      SELECT sf.tenant_id, sf.organization_id
+      FROM online_storefronts sf
+      JOIN licenses l ON l.tenant_id = sf.tenant_id
+      WHERE sf.slug = $1 AND sf.active = true AND l.status = 'ACTIVE' AND l.expires_at >= NOW()
+      LIMIT 1
+    `, [req.params.slug]);
+    if (!storefront.rowCount) return res.status(404).json({ success: false, message: 'Storefront not found' });
+    const status = await loyaltyCustomerStatus(pool, storefront.rows[0], phone);
+    const estimatedPoints = status.program.active ? Math.floor(amount / Number(status.program.earn_amount || 100)) : 0;
+    res.json({
+      success: true,
+      existingCustomer: Boolean(status.customer),
+      balance: Number(status.customer?.balance || 0),
+      estimatedPoints,
+      pointValue: Number(status.program.point_value || 1),
+      message: status.customer
+        ? `You have ${Number(status.customer.balance || 0)} reward points. This order can earn approximately ${estimatedPoints} more after settlement; available points can be redeemed by the cashier during billing.`
+        : 'Join rewards to earn points centrally and redeem them at any participating branch.'
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
 router.post('/storefront/:slug/orders', async (req, res) => {
-  const { orderType, tableId, customerName, customerPhone, customerEmail, deliveryAddress, paymentMode, notes, items } = req.body || {};
+  const { orderType, tableId, customerName, customerPhone, customerEmail, deliveryAddress, paymentMode, notes, items, loyaltyConsent } = req.body || {};
   const selectedType = cleanText(orderType, 20).toUpperCase();
   const normalizedName = cleanText(customerName, 120);
   const normalizedPhone = String(customerPhone || '').replace(/\D/g, '').slice(-10);
@@ -205,13 +264,32 @@ router.post('/storefront/:slug/orders', async (req, res) => {
     if (total < money(storefront.rows[0].min_order_amount)) throw new Error(`Minimum order amount is ${storefront.rows[0].min_order_amount}`);
     const orderNo = `WEB-${Date.now()}-${Math.floor(Math.random() * 900 + 100)}`;
 
+    const tenantIdentity = { id: storefront.rows[0].tenant_id, organization_id: storefront.rows[0].organization_id };
+    const loyaltyStatus = await loyaltyCustomerStatus(client, tenantIdentity, normalizedPhone);
+    if (!loyaltyStatus.customer && loyaltyConsent !== true) {
+      const consentError = new Error('Please confirm that we may save your mobile number for cross-branch rewards before placing the order.');
+      consentError.statusCode = 400;
+      consentError.field = 'loyaltyConsent';
+      throw consentError;
+    }
+    if (loyaltyStatus.customer || loyaltyConsent === true) {
+      await client.query(`
+        INSERT INTO loyalty_customers (scope_id, scope_type, phone, name, consent_at)
+        VALUES ($1, $2, $3, $4, NOW())
+        ON CONFLICT (scope_id, phone) DO UPDATE SET
+          name = EXCLUDED.name,
+          consent_at = COALESCE(loyalty_customers.consent_at, EXCLUDED.consent_at),
+          updated_at = NOW()
+      `, [loyaltyStatus.scope.id, loyaltyStatus.scope.type, normalizedPhone, normalizedName]);
+    }
+
     const order = await client.query(`
       INSERT INTO online_orders (
         tenant_id, organization_id, storefront_id, order_no, order_type,
         customer_name, customer_phone, customer_email, delivery_address,
-        payment_mode, subtotal, delivery_fee, total_amount, notes, table_id
+        payment_mode, subtotal, delivery_fee, total_amount, notes, table_id, loyalty_consent
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *
     `, [
       storefront.rows[0].tenant_id,
@@ -228,7 +306,8 @@ router.post('/storefront/:slug/orders', async (req, res) => {
       deliveryFee,
       total,
       cleanText(notes, 500) || null,
-      cleanText(tableId, 30) || null
+      cleanText(tableId, 30) || null,
+      loyaltyConsent === true || Boolean(loyaltyStatus.customer)
     ]);
 
     for (const item of safeItems) {
@@ -241,7 +320,7 @@ router.post('/storefront/:slug/orders', async (req, res) => {
     res.json({ success: true, order: order.rows[0], items: safeItems });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(err.statusCode || 400).json({ success: false, message: publicError(err) });
+    res.status(err.statusCode || 400).json({ success: false, field: err.field, message: publicError(err) });
   } finally {
     client.release();
   }
@@ -344,6 +423,76 @@ router.post('/pos/orders/status', async (req, res) => {
     res.json({ success: true, order: result.rows[0] });
   } catch (err) {
     res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.post('/pos/loyalty/lookup', async (req, res) => {
+  const { restaurantId, licenseKey, syncToken, phone } = req.body || {};
+  const normalizedPhone = String(phone || '').replace(/\D/g, '').slice(-10);
+  if (!/^\d{10}$/.test(normalizedPhone)) return res.status(400).json({ success: false, message: 'Valid 10-digit mobile number required' });
+  try {
+    const tenant = await tenantFromSyncCredentials(restaurantId, licenseKey, syncToken);
+    if (!tenant) return res.status(401).json({ success: false, message: 'Invalid or expired credentials' });
+    const status = await loyaltyCustomerStatus(pool, tenant, normalizedPhone);
+    res.json({ success: true, customer: status.customer ? { name: status.customer.name, phone: normalizedPhone } : null, balance: Number(status.customer?.balance || 0), earnAmount: Number(status.program.earn_amount), pointValue: Number(status.program.point_value), active: status.program.active });
+  } catch (err) {
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.post('/pos/loyalty/settle', async (req, res) => {
+  const { restaurantId, licenseKey, syncToken, phone, name, orderRef, invoiceRef, paidAmount, redeemPoints, consent } = req.body || {};
+  const normalizedPhone = String(phone || '').replace(/\D/g, '').slice(-10);
+  const redeem = Number(redeemPoints || 0);
+  if (!/^\d{10}$/.test(normalizedPhone) || !cleanText(orderRef, 120) || !Number.isInteger(redeem) || redeem < 0 || money(paidAmount) <= 0) {
+    return res.status(400).json({ success: false, message: 'Phone, order reference, positive settlement amount and valid redemption are required' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const tenant = await tenantFromSyncCredentials(restaurantId, licenseKey, syncToken);
+    if (!tenant) throw Object.assign(new Error('Invalid or expired credentials'), { statusCode: 401 });
+    const scope = loyaltyScope(tenant);
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${scope.id}:${normalizedPhone}`]);
+    const program = await loyaltyProgram(client, scope);
+    if (!program.active) throw Object.assign(new Error('The organization loyalty program is disabled'), { statusCode: 409 });
+    let customer = (await client.query('SELECT * FROM loyalty_customers WHERE scope_id = $1 AND phone = $2 FOR UPDATE', [scope.id, normalizedPhone])).rows[0];
+    if (!customer) {
+      if (consent !== true) throw Object.assign(new Error('Customer consent is required before creating a rewards account'), { statusCode: 409 });
+      customer = (await client.query(`
+        INSERT INTO loyalty_customers (scope_id, scope_type, phone, name, consent_at)
+        VALUES ($1, $2, $3, $4, NOW()) RETURNING *
+      `, [scope.id, scope.type, normalizedPhone, cleanText(name, 120) || 'Customer'])).rows[0];
+    }
+    const prior = await client.query(`
+      SELECT transaction_type, points_delta FROM loyalty_ledger
+      WHERE scope_id = $1 AND idempotency_key LIKE $2
+    `, [scope.id, `${tenant.id}:${cleanText(orderRef, 120)}:%`]);
+    if (prior.rowCount) {
+      const balanceResult = await client.query('SELECT COALESCE(SUM(points_delta), 0)::int balance FROM loyalty_ledger WHERE customer_id = $1', [customer.id]);
+      await client.query('COMMIT');
+      return res.json({ success: true, idempotent: true, balance: Number(balanceResult.rows[0].balance), redeemedPoints: Math.abs(Number(prior.rows.find((row) => row.transaction_type === 'REDEEM')?.points_delta || 0)), earnedPoints: Number(prior.rows.find((row) => row.transaction_type === 'EARN')?.points_delta || 0), earnAmount: Number(program.earn_amount), pointValue: Number(program.point_value) });
+    }
+    const balance = Number((await client.query('SELECT COALESCE(SUM(points_delta), 0)::int balance FROM loyalty_ledger WHERE customer_id = $1', [customer.id])).rows[0].balance);
+    if (redeem > balance) throw Object.assign(new Error(`Insufficient central loyalty balance. Available: ${balance} points.`), { statusCode: 409 });
+    const earned = Math.floor(money(paidAmount) / Number(program.earn_amount || 100));
+    const keyPrefix = `${tenant.id}:${cleanText(orderRef, 120)}`;
+    if (redeem > 0) await client.query(`
+      INSERT INTO loyalty_ledger (scope_id, scope_type, tenant_id, customer_id, transaction_type, points_delta, order_ref, invoice_ref, idempotency_key, metadata)
+      VALUES ($1,$2,$3,$4,'REDEEM',$5,$6,$7,$8,$9::jsonb)
+    `, [scope.id, scope.type, tenant.id, customer.id, -redeem, cleanText(orderRef, 120), cleanText(invoiceRef, 120) || null, `${keyPrefix}:REDEEM`, JSON.stringify({ restaurantId })]);
+    if (earned > 0) await client.query(`
+      INSERT INTO loyalty_ledger (scope_id, scope_type, tenant_id, customer_id, transaction_type, points_delta, order_ref, invoice_ref, idempotency_key, metadata)
+      VALUES ($1,$2,$3,$4,'EARN',$5,$6,$7,$8,$9::jsonb)
+    `, [scope.id, scope.type, tenant.id, customer.id, earned, cleanText(orderRef, 120), cleanText(invoiceRef, 120) || null, `${keyPrefix}:EARN`, JSON.stringify({ restaurantId, paidAmount: money(paidAmount) })]);
+    const newBalance = Number((await client.query('SELECT COALESCE(SUM(points_delta), 0)::int balance FROM loyalty_ledger WHERE customer_id = $1', [customer.id])).rows[0].balance);
+    await client.query('COMMIT');
+    res.json({ success: true, balance: newBalance, redeemedPoints: redeem, earnedPoints: earned, earnAmount: Number(program.earn_amount), pointValue: Number(program.point_value) });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(err.statusCode || 500).json({ success: false, message: publicError(err) });
+  } finally {
+    client.release();
   }
 });
 

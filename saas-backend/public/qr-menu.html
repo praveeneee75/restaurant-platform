@@ -27,11 +27,14 @@
         <p id="qrCustomerNameError" class="field-error" role="alert"></p>
         <label for="qrCustomerPhone"><span>Mobile number</span><input id="qrCustomerPhone" required inputmode="numeric" maxlength="10" pattern="[0-9]{10}" autocomplete="tel" placeholder="10-digit mobile number" aria-describedby="qrCustomerPhoneError"></label>
         <p id="qrCustomerPhoneError" class="field-error" role="alert"></p>
+        <p id="qrLoyaltyStatus" role="status">Enter your mobile number to check cross-branch rewards.</p>
+        <label id="qrLoyaltyConsentRow" for="qrLoyaltyConsent" hidden><input id="qrLoyaltyConsent" type="checkbox"> <span>Yes, securely save my number for rewards that I can earn and redeem at participating branches.</span></label>
+        <p id="qrLoyaltyConsentError" class="field-error" role="alert"></p>
         <label for="qrOrderNotes"><span>Order notes (optional)</span><textarea id="qrOrderNotes" placeholder="Order notes"></textarea></label>
         <button id="placeQrOrder" type="button">Place Dine-in Order</button>
       </div>
     </section>
   </main>
-  <script src="/js/qr-public.js?v=1.0.101"></script>
+  <script src="/js/qr-public.js?v=1.0.120"></script>
 </body>
 </html>

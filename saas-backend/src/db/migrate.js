@@ -579,6 +579,52 @@ async function migrate() {
     )
   `);
 
+  // Loyalty is deliberately scoped to the organization (or to the tenant when
+  // the restaurant has not yet been attached to an organization).  The SaaS
+  // ledger is authoritative; POS databases only keep a local read cache.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS loyalty_programs (
+      scope_id UUID PRIMARY KEY,
+      scope_type TEXT NOT NULL CHECK (scope_type IN ('ORGANIZATION', 'TENANT')),
+      earn_amount NUMERIC(12,2) NOT NULL DEFAULT 100,
+      point_value NUMERIC(12,2) NOT NULL DEFAULT 1,
+      active BOOLEAN NOT NULL DEFAULT true,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query('ALTER TABLE online_orders ADD COLUMN IF NOT EXISTS loyalty_consent BOOLEAN NOT NULL DEFAULT false');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS loyalty_customers (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      scope_id UUID NOT NULL,
+      scope_type TEXT NOT NULL CHECK (scope_type IN ('ORGANIZATION', 'TENANT')),
+      phone TEXT NOT NULL,
+      name TEXT NOT NULL,
+      consent_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(scope_id, phone)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS loyalty_ledger (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      scope_id UUID NOT NULL,
+      scope_type TEXT NOT NULL CHECK (scope_type IN ('ORGANIZATION', 'TENANT')),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
+      customer_id UUID NOT NULL REFERENCES loyalty_customers(id) ON DELETE RESTRICT,
+      transaction_type TEXT NOT NULL CHECK (transaction_type IN ('EARN', 'REDEEM', 'REVERSAL', 'ADJUSTMENT')),
+      points_delta INTEGER NOT NULL,
+      order_ref TEXT,
+      invoice_ref TEXT,
+      idempotency_key TEXT NOT NULL,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(scope_id, idempotency_key)
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS loyalty_ledger_customer_idx ON loyalty_ledger(customer_id, created_at)');
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS tenant_remote_configs (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
