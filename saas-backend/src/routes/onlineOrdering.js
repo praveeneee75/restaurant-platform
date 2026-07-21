@@ -60,8 +60,9 @@ async function onlineOrderingEnabled(tenantId) {
 }
 
 function loyaltyScope(tenant) {
+  const tenantId = tenant.id || tenant.tenant_id;
   return {
-    id: tenant.organization_id || tenant.id,
+    id: tenant.organization_id || tenantId,
     type: tenant.organization_id ? 'ORGANIZATION' : 'TENANT'
   };
 }

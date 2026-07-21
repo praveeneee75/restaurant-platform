@@ -14,6 +14,7 @@ const contracts = [
   ['central customer table', migration.includes('CREATE TABLE IF NOT EXISTS loyalty_customers')],
   ['immutable central ledger', migration.includes('CREATE TABLE IF NOT EXISTS loyalty_ledger')],
   ['organization or tenant scope', migration.includes("scope_type IN ('ORGANIZATION', 'TENANT')")],
+  ['public storefront falls back to tenant scope', saas.includes('tenant.id || tenant.tenant_id')],
   ['idempotency enforced in database', migration.includes('UNIQUE(scope_id, idempotency_key)')],
   ['branch attribution retained', migration.includes('tenant_id UUID NOT NULL REFERENCES tenants')],
   ['atomic customer lock', saas.includes('pg_advisory_xact_lock')],
