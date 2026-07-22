@@ -353,9 +353,8 @@ function calculateCartTotal(lines) {
 
 function calculateOrderTotal(db, orderId) {
   const rows = db.prepare(`
-    SELECT oi.quantity, i.price
+    SELECT oi.quantity, oi.price
     FROM order_items oi
-    JOIN items i ON oi.item_id = i.id
     WHERE oi.order_id = ? AND oi.kot_id IS NOT NULL
   `).all(orderId);
 
@@ -5166,7 +5165,7 @@ app.post('/pos/item-availability', (req, res) => {
   }
 });
 
-function createKotJobs(db, orderId) {
+function createKotJobs(db, orderId, fulfillmentType = null) {
   const kotSettings = {
     headerText: getConfigValue(db, 'kot_header_text', ''),
     footerText: getConfigValue(db, 'kot_footer_text', ''),
@@ -5194,14 +5193,18 @@ function createKotJobs(db, orderId) {
     WHERE o.id = ?
   `).get(orderId);
   const rows = db.prepare(`
-    SELECT oi.id AS order_item_id, oi.item_id, oi.quantity, oi.price, oi.combo_id, oi.combo_name, oi.notes, i.name, c.kitchen_id, k.printer_id, k.name AS kitchen_name
+    SELECT oi.id AS order_item_id, oi.item_id, oi.quantity, oi.price, oi.combo_id, oi.combo_name, oi.notes,
+           COALESCE(oi.fulfillment_type, o.order_type, 'DINE_IN') AS fulfillment_type,
+           i.name, c.kitchen_id, k.printer_id, k.name AS kitchen_name
     FROM order_items oi
+    JOIN orders o ON o.id = oi.order_id
     JOIN items i ON i.id = oi.item_id
     JOIN categories c ON c.id = i.category_id
     JOIN kitchens k ON k.id = c.kitchen_id
     WHERE oi.order_id = ? AND oi.kot_id IS NULL
+      AND (? IS NULL OR COALESCE(oi.fulfillment_type, o.order_type, 'DINE_IN') = ?)
     ORDER BY c.kitchen_id
-  `).all(orderId);
+  `).all(orderId, fulfillmentType, fulfillmentType);
   const modifiersByOrderItem = rows.length === 0 ? {} : db.prepare(`
     SELECT order_item_id, name, price_delta
     FROM order_item_modifiers
@@ -5214,8 +5217,9 @@ function createKotJobs(db, orderId) {
   }, {});
 
   const grouped = rows.reduce((map, row) => {
-    map[row.kitchen_id] ||= { kitchenId: row.kitchen_id, kitchenName: row.kitchen_name, printerId: row.printer_id || 1, items: [] };
-    map[row.kitchen_id].items.push({ ...row, modifiers: modifiersByOrderItem[row.order_item_id] || [] });
+    const groupKey = `${row.kitchen_id}:${row.fulfillment_type}`;
+    map[groupKey] ||= { kitchenId: row.kitchen_id, kitchenName: row.kitchen_name, printerId: row.printer_id || 1, fulfillmentType: row.fulfillment_type, items: [] };
+    map[groupKey].items.push({ ...row, modifiers: modifiersByOrderItem[row.order_item_id] || [] });
     return map;
   }, {});
   if (Object.keys(grouped).length === 0) throw new Error('There are no new items to submit as KOT');
@@ -5242,7 +5246,7 @@ function createKotJobs(db, orderId) {
       printCustomer: kotSettings.printCustomer,
       printKitchen: kotSettings.printKitchen,
       compactSpacing: kotSettings.compactSpacing,
-      orderType: orderMeta?.order_type || 'DINE_IN',
+      orderType: group.fulfillmentType || orderMeta?.order_type || 'DINE_IN',
       tableName: orderMeta?.table_no || null,
       customerName: orderMeta?.customer_name || null,
       deliveryNote: orderMeta?.delivery_address || null,
@@ -5255,7 +5259,7 @@ function createKotJobs(db, orderId) {
       kotReference: `${orderMeta?.order_reference || orderId}-${suborderNo}`,
       orderId,
       kitchen: group.kitchenName,
-      orderType: orderMeta?.order_type || 'DINE_IN',
+      orderType: group.fulfillmentType || orderMeta?.order_type || 'DINE_IN',
       tableName: orderMeta?.table_no || null,
       customerName: orderMeta?.customer_name || null,
       items: group.items
@@ -5791,7 +5795,8 @@ app.post('/orders/save', (req, res) => {
     orderSource,
     managerOverride,
     lockId,
-    latestUpdatedAt
+    latestUpdatedAt,
+    linkedFulfillment
   } = req.body;
   if (!restaurantId || !Array.isArray(items) || items.length === 0 || !canSell(actor?.role)) {
     return res.status(400).json({ success: false, message: 'Restaurant, order items and sales permission are required' });
@@ -5836,9 +5841,10 @@ app.post('/orders/save', (req, res) => {
     requireClockInIfConfigured(db, actor);
     const saved = db.transaction(() => {
       let total = 0;
+      const isLinkedFulfillment = Boolean(orderId && linkedFulfillment);
       const safeDeliveryFee = selectedOrderType === 'DELIVERY' ? Number(deliveryFee || 0) : 0;
-      const safeTableId = selectedOrderType === 'DINE_IN' ? tableId : null;
-      const safeTableName = selectedOrderType === 'DINE_IN' ? tableName : selectedOrderType.replace(/_/g, ' ');
+      const safeTableId = selectedOrderType === 'DINE_IN' || isLinkedFulfillment ? tableId : null;
+      const safeTableName = selectedOrderType === 'DINE_IN' || isLinkedFulfillment ? tableName : selectedOrderType.replace(/_/g, ' ');
 
       let id = orderId;
       let itemsToSave = items;
@@ -5861,19 +5867,22 @@ app.post('/orders/save', (req, res) => {
           db.prepare('UPDATE orders SET order_sequence = ?, customer_ref = ?, order_reference = ? WHERE id = ?')
             .run(oldValue?.order_sequence || identity.orderSequence, oldValue?.customer_ref || identity.customerRef, oldValue?.order_reference || identity.orderReference, id);
         }
-        db.prepare("UPDATE orders SET order_type = ?, table_id = ?, table_no = ?, total_amount = ?, status = 'OPEN', billing_ready = 0, customer_id = COALESCE(?, customer_id), delivery_fee = ?, order_source = COALESCE(order_source, 'POS'), updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-          .run(selectedOrderType, safeTableId || null, safeTableName || null, 0, isPositiveId(customerId) ? customerId : null, safeDeliveryFee, id);
+        db.prepare("UPDATE orders SET order_type = CASE WHEN ? THEN order_type ELSE ? END, table_id = ?, table_no = ?, total_amount = ?, status = 'OPEN', billing_ready = 0, customer_id = COALESCE(?, customer_id), delivery_fee = ?, order_source = COALESCE(order_source, 'POS'), updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+          .run(isLinkedFulfillment ? 1 : 0, selectedOrderType, safeTableId || null, safeTableName || null, 0, isPositiveId(customerId) ? customerId : null, safeDeliveryFee, id);
         // KOT-submitted lines are historical kitchen records. Preserve them so the next
         // submission contains only newly added lines, rather than reprinting the full order.
-        const editableOrderItems = db.prepare('SELECT id FROM order_items WHERE order_id = ? AND kot_id IS NULL').all(id).map((row) => row.id);
+        const editableOrderItems = isLinkedFulfillment
+          ? db.prepare("SELECT id FROM order_items WHERE order_id = ? AND kot_id IS NULL AND COALESCE(fulfillment_type, 'DINE_IN') = ?").all(id, selectedOrderType).map((row) => row.id)
+          : db.prepare('SELECT id FROM order_items WHERE order_id = ? AND kot_id IS NULL').all(id).map((row) => row.id);
         if (editableOrderItems.length > 0) {
           db.prepare(`DELETE FROM order_item_modifiers WHERE order_item_id IN (${editableOrderItems.map(() => '?').join(',')})`).run(...editableOrderItems);
         }
-        db.prepare('DELETE FROM order_items WHERE order_id = ? AND kot_id IS NULL').run(id);
+        if (isLinkedFulfillment) db.prepare("DELETE FROM order_items WHERE order_id = ? AND kot_id IS NULL AND COALESCE(fulfillment_type, 'DINE_IN') = ?").run(id, selectedOrderType);
+        else db.prepare('DELETE FROM order_items WHERE order_id = ? AND kot_id IS NULL').run(id);
 
         const submittedItemIds = new Set(db.prepare('SELECT id FROM order_items WHERE order_id = ? AND kot_id IS NOT NULL').all(id).map((row) => Number(row.id)));
-        const submittedLines = db.prepare('SELECT quantity, price FROM order_items WHERE order_id = ? AND kot_id IS NOT NULL').all(id);
-        total = submittedLines.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.price || 0), 0);
+        const retainedLines = db.prepare('SELECT quantity, price FROM order_items WHERE order_id = ?').all(id);
+        total = retainedLines.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.price || 0), 0);
 
         // The client includes orderItemId for lines already sent to the kitchen. They cannot
         // be silently rewritten; changes must be a new line/KOT or a KDS cancellation.
@@ -5911,8 +5920,8 @@ app.post('/orders/save', (req, res) => {
             const componentQuantity = quantity * Number(comboItem.quantity || 1);
             const pricedQuantity = index === 0 ? componentQuantity : 1;
             const componentPrice = index === 0 ? Number(combo.price) * quantity / pricedQuantity : 0;
-            db.prepare('INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price, combo_id, combo_name, combo_quantity, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-              .run(id, comboItem.item_id, componentQuantity, comboItem.kitchen_id, componentPrice, combo.id, combo.name, quantity, normaliseText(item.notes) || null);
+            db.prepare('INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price, combo_id, combo_name, combo_quantity, notes, fulfillment_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+              .run(id, comboItem.item_id, componentQuantity, comboItem.kitchen_id, componentPrice, combo.id, combo.name, quantity, normaliseText(item.notes) || null, selectedOrderType);
           });
           total += Number(combo.price) * quantity;
           return;
@@ -5936,8 +5945,8 @@ app.post('/orders/save', (req, res) => {
         if (!channelAllowed) throw new Error('This menu item is not available for the selected order type');
         const modifiers = validateSelectedModifiers(db, itemId, selectedModifierIds(item));
         const unitPrice = Number(menu.price) + modifiers.reduce((sum, modifier) => sum + Number(modifier.price_delta || 0), 0);
-        const result = db.prepare('INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price, notes) VALUES (?, ?, ?, ?, ?, ?)')
-          .run(id, itemId, quantity, menu.kitchen_id, unitPrice, normaliseText(item.notes) || null);
+        const result = db.prepare('INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price, notes, fulfillment_type) VALUES (?, ?, ?, ?, ?, ?, ?)')
+          .run(id, itemId, quantity, menu.kitchen_id, unitPrice, normaliseText(item.notes) || null, selectedOrderType);
         insertOrderItemModifiers(db, result.lastInsertRowid, modifiers);
         total += unitPrice * quantity;
       });
@@ -6011,9 +6020,11 @@ app.get('/orders/open', (req, res) => {
     }
     const items = order ? db.prepare(`
       SELECT oi.id AS order_item_id, oi.item_id AS id, i.name, oi.quantity, oi.price, oi.kot_id,
+             COALESCE(oi.fulfillment_type, order_row.order_type, 'DINE_IN') AS fulfillment_type,
              COALESCE(k.suborder_no, k.id) AS kot_sequence,
              oi.combo_id, oi.combo_name, oi.combo_quantity, oi.notes
       FROM order_items oi JOIN items i ON i.id = oi.item_id
+      JOIN orders order_row ON order_row.id = oi.order_id
       LEFT JOIN kots k ON k.id = oi.kot_id
       WHERE oi.order_id = ?
     `).all(order.id) : [];
@@ -6047,6 +6058,7 @@ app.get('/orders/open', (req, res) => {
         name: item.combo_name,
         quantity: item.combo_quantity || 1,
           price: 0,
+          fulfillment_type: item.fulfillment_type,
           // A combo is submitted only when every component row belongs to a
           // KOT. A mixed submitted/draft combo must remain visibly pending.
           kot_id: item.kot_id || null,
@@ -6290,7 +6302,7 @@ app.post('/orders/split-check', (req, res) => {
     const sourceOrder = db.prepare('SELECT * FROM orders WHERE id = ? AND status = \'OPEN\' AND payment_status != \'PAID\'').get(orderId);
     if (!sourceOrder) throw new Error('Open order not found');
     const sourceItems = db.prepare(`
-      SELECT oi.id AS order_item_id, oi.item_id, oi.quantity, oi.kitchen_id, oi.price, oi.combo_id, oi.combo_name, oi.combo_quantity
+      SELECT oi.id AS order_item_id, oi.item_id, oi.quantity, oi.kitchen_id, oi.price, oi.combo_id, oi.combo_name, oi.combo_quantity, oi.kot_id, oi.notes, oi.status
       FROM order_items oi
       WHERE oi.order_id = ?
       ORDER BY oi.id
@@ -6306,6 +6318,10 @@ app.post('/orders/split-check', (req, res) => {
         splitCustomerId = existing?.id || db.prepare('INSERT INTO customers (name, phone) VALUES (?, ?)').run(normaliseText(customerName) || 'Table guest', cleanPhone).lastInsertRowid;
       }
       const identity = nextOrderIdentity(db, sourceOrder.table_id);
+      const baseReference = String(sourceOrder.order_reference || sourceOrder.id).replace(/#\d+$/, '');
+      const priorSplits = db.prepare('SELECT order_reference FROM orders WHERE order_reference LIKE ?').all(`${baseReference}#%`);
+      const splitNumber = Math.max(0, ...priorSplits.map((row) => Number(String(row.order_reference || '').split('#').pop()) || 0)) + 1;
+      const splitReference = `${baseReference}#${splitNumber}`;
       const newOrderResult = db.prepare(`
         INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, created_by, customer_id, delivery_fee, order_source, order_sequence, customer_ref, order_reference)
         VALUES (?, ?, ?, 'OPEN', 0, 'UNPAID', ?, ?, ?, ?, ?, ?, ?)
@@ -6319,7 +6335,7 @@ app.post('/orders/split-check', (req, res) => {
         'SPLIT',
         identity.orderSequence,
         identity.customerRef,
-        identity.orderReference
+        splitReference
       );
       const newOrderId = newOrderResult.lastInsertRowid;
       let sourceTotal = Number(sourceOrder.total_amount || 0);
@@ -6331,9 +6347,9 @@ app.post('/orders/split-check', (req, res) => {
           WHERE order_item_id = ?
         `).all(item.order_item_id);
         const inserted = db.prepare(`
-          INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price, combo_id, combo_name, combo_quantity)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(newOrderId, item.item_id, item.quantity, item.kitchen_id, item.price, item.combo_id || null, item.combo_name || null, item.combo_quantity || null);
+          INSERT INTO order_items (order_id, item_id, quantity, kitchen_id, price, combo_id, combo_name, combo_quantity, kot_id, notes, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(newOrderId, item.item_id, item.quantity, item.kitchen_id, item.price, item.combo_id || null, item.combo_name || null, item.combo_quantity || null, item.kot_id || null, item.notes || null, item.status || 'PLACED');
         modifiers.forEach((modifier) => {
           db.prepare('INSERT INTO order_item_modifiers (order_item_id, modifier_id, group_id, name, price_delta) VALUES (?, ?, ?, ?, ?)')
             .run(inserted.lastInsertRowid, modifier.modifier_id, modifier.group_id, modifier.name, modifier.price_delta);
@@ -6347,7 +6363,7 @@ app.post('/orders/split-check', (req, res) => {
       db.prepare('UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(Math.max(splitTotal, 0), newOrderId);
       writeOrderStatusHistory(db, actor, newOrderId, 'OPEN', 'ORDER', `Split from order #${orderId}${checkName ? ` (${normaliseText(checkName)})` : ''}`);
       writeAudit(db, actor, 'SPLIT', 'ORDER', newOrderId, sourceOrder, { sourceOrderId: orderId, itemKeys });
-      res.json({ success: true, orderId: newOrderId });
+      res.json({ success: true, orderId: newOrderId, orderReference: splitReference });
     })();
   } catch (err) {
     sendError(res, err);
@@ -6613,7 +6629,7 @@ app.post('/orders/force-unlock', (req, res) => {
 });
 
 app.post('/orders/submit-kot', (req, res) => {
-  const { restaurantId, actor, orderId } = req.body;
+  const { restaurantId, actor, orderId, fulfillmentType } = req.body;
   if (!restaurantId || !orderId || !canSell(actor?.role)) return res.status(400).json({ success: false, message: 'Order and sales permission are required' });
 
   const db = openRestaurantDatabase(restaurantId);
@@ -6623,7 +6639,9 @@ app.post('/orders/submit-kot', (req, res) => {
     if (Number(orderState.billing_ready) === 1) throw new Error('Final bill has been requested for this order. It cannot accept another KOT.');
     let kotResult = null;
     db.transaction(() => {
-      kotResult = createKotJobs(db, orderId);
+      const safeFulfillmentType = fulfillmentType ? normaliseOrderType(fulfillmentType) : null;
+      if (fulfillmentType && !safeFulfillmentType) throw new Error('Invalid KOT fulfilment type');
+      kotResult = createKotJobs(db, orderId, safeFulfillmentType);
       deductInventoryForOrder(db, actor, orderId, 'KOT_SUBMIT');
       const order = db.prepare('SELECT order_type FROM orders WHERE id = ?').get(orderId);
       if (order && DELIVERY_ORDER_TYPES.includes(order.order_type)) {
@@ -6641,12 +6659,19 @@ app.post('/orders/submit-kot', (req, res) => {
 });
 
 app.post('/orders/cancel', (req, res) => {
-  const { restaurantId, actor, orderId } = req.body;
-  if (!restaurantId || !orderId || !canManage(actor?.role)) return res.status(400).json({ success: false, message: 'Order and manager permission are required' });
+  const { restaurantId, actor, orderId, pin } = req.body;
+  if (!restaurantId || !orderId) return res.status(400).json({ success: false, message: 'Order is required' });
 
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, actor?.role, 'orders.cancel', 'Order cancel permission required');
+    const role = String(actor?.role || '').toUpperCase();
+    const privileged = ['OWNER', 'ADMIN', 'MANAGER', 'MANAGER_1', 'MANAGER_2'].includes(role);
+    if (privileged) requirePermission(db, actor?.role, 'orders.cancel', 'Order cancel permission required');
+    else {
+      const security = db.prepare('SELECT invoice_reprint_pin_hash FROM printer_security WHERE id = 1').get();
+      if (!security?.invoice_reprint_pin_hash) throw new Error('An owner or manager must configure the six-digit cancellation PIN first');
+      if (!/^\d{6}$/.test(String(pin || '')) || !bcrypt.compareSync(String(pin), security.invoice_reprint_pin_hash)) throw new Error('The cancellation PIN is incorrect');
+    }
     if (!getBooleanConfig(db, 'allow_order_cancel', true)) throw new Error('Order cancellation is disabled in settings');
     const oldValue = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
     const order = db.prepare('SELECT table_id FROM orders WHERE id = ?').get(orderId);
@@ -6677,8 +6702,6 @@ app.post('/orders/final-bill', (req, res) => {
     const order = db.prepare("SELECT * FROM orders WHERE id = ? AND payment_status != 'PAID' AND status != 'CANCELLED'").get(orderId);
     if (!order) throw new Error('Open order not found');
     if (Number(order.billing_ready) === 1) throw new Error('Final bill has already been requested for this order');
-    const draftCount = Number(db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE order_id = ? AND kot_id IS NULL').get(orderId)?.count || 0);
-    if (draftCount > 0) throw new Error('Submit all new items to KOT before requesting the final bill');
     const items = db.prepare('SELECT i.name, oi.quantity, oi.price FROM order_items oi JOIN items i ON i.id = oi.item_id WHERE oi.order_id = ? AND oi.kot_id IS NOT NULL ORDER BY oi.id').all(orderId);
     if (!items.length) throw new Error('Submit a KOT before requesting the final bill');
     const grossAmount = items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.price || 0), 0);
@@ -7845,6 +7868,31 @@ app.get('/settings', (req, res) => {
   } finally {
     db.close();
   }
+});
+
+app.get('/reports/sales-detail', (req, res) => {
+  const { restaurantId, fromDate, toDate, role } = req.query;
+  if (!restaurantId) return res.status(400).json({ success:false, message:'restaurantId required' });
+  const from = fromDate || localIsoDateOnly();
+  const to = toDate || from;
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    if (role) requirePermission(db, role, canRole(db, role, 'reports.view_all') ? 'reports.view_all' : 'reports.view_invoice_only', 'Reports permission required');
+    const rows = db.prepare(`
+      SELECT COALESCE(o.order_reference, CAST(o.id AS TEXT)) AS order_reference,
+        COALESCE(o.settled_at, o.updated_at, o.created_at) AS settled_at,
+        o.order_type, COALESCE(o.total_amount,0) AS total_amount,
+        COALESCE(o.tax_amount,0) AS tax_amount,
+        COALESCE(o.service_charge_amount,0) AS additional_charge,
+        COALESCE((SELECT SUM(CASE WHEN UPPER(d.value_type)='PERCENT' THEN COALESCE(o.total_amount,0)*d.value/100.0 ELSE d.value END) FROM discounts d WHERE d.order_id=o.id),0) AS discount_amount,
+        MAX(COALESCE(o.total_amount,0)-COALESCE(o.tax_amount,0)-COALESCE(o.service_charge_amount,0),0) AS net_amount,
+        COALESCE(u.name, u.username, '') AS assigned_to
+      FROM orders o LEFT JOIN users u ON u.id=o.created_by
+      WHERE o.payment_status='PAID' AND DATE(COALESCE(o.settled_at,o.updated_at,o.created_at)) BETWEEN DATE(?) AND DATE(?)
+      ORDER BY COALESCE(o.settled_at,o.updated_at,o.created_at) DESC, o.id DESC
+    `).all(from, to);
+    res.json({ success:true, rows, summary:{ total:rows.reduce((sum,row)=>sum+Number(row.total_amount||0),0) } });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
 });
 
 const CLOUD_SHARED_SETTING_KEYS = new Set([

@@ -1572,6 +1572,9 @@ loadReports.addEventListener("click", async () => {
   try {
     reportStatus.textContent = "Loading reports...";
     const data = await fetchJson(`/reports/dashboard?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`);
+    const sales = await fetchJson(`/reports/sales-detail?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`);
+    salesReportRows.innerHTML = (sales.rows || []).map((row) => `<tr><td>${esc(row.order_reference)}</td><td>${esc(row.settled_at)}</td><td>${esc(row.order_type)}</td><td>${money(row.net_amount)}</td><td>${money(row.discount_amount)}</td><td>${money(row.additional_charge)}</td><td>${money(row.tax_amount)}</td><td><strong>${money(row.total_amount)}</strong></td><td>${esc(row.assigned_to || '-')}</td></tr>`).join('') || '<tr><td colspan="9">No settled sales for the selected period.</td></tr>';
+    salesReportSummary.textContent = `${sales.rows?.length || 0} settled order(s) · ${money(sales.summary?.total || 0)} total sales`;
     dailySales.innerHTML = (data.dailySales || []).map((row) => `<p><strong>${esc(row.day)}</strong>: ${money(row.total)} · ${row.orders} order(s)</p>`).join("") || "<p>No paid sales for the selected period.</p>";
     topItems.innerHTML = (data.topSellingItems || []).map((row) => `<p><strong>${esc(row.name)}</strong>: ${row.quantity} · ${money(row.total)}</p>`).join("") || "<p>No paid item sales for the selected period.</p>";
     orderSummary.innerHTML = (data.orderSummary || []).map((row) => `<p><strong>${esc(row.status)} / ${esc(row.payment_status)}</strong>: ${row.count} · ${money(row.total)}</p>`).join("") || "<p>No orders for the selected period.</p>";

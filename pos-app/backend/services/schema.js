@@ -222,6 +222,15 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'order_items', 'ready_at DATETIME');
   addColumn(db, 'order_items', 'served_at DATETIME');
   addColumn(db, 'order_items', 'notes TEXT');
+  // A dine-in check may also contain parcel items. Keep the billing order
+  // shared while allowing KOTs to retain their own fulfilment channel.
+  addColumn(db, 'order_items', "fulfillment_type TEXT DEFAULT 'DINE_IN'");
+  db.prepare(`
+    UPDATE order_items
+    SET fulfillment_type = COALESCE((SELECT order_type FROM orders WHERE orders.id = order_items.order_id), 'DINE_IN')
+    WHERE fulfillment_type IS NULL
+       OR (fulfillment_type = 'DINE_IN' AND COALESCE((SELECT order_type FROM orders WHERE orders.id = order_items.order_id), 'DINE_IN') != 'DINE_IN')
+  `).run();
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS kots (

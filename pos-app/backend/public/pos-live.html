@@ -86,7 +86,7 @@
       <select id="orderSelector">
         <option value="">Current check</option>
       </select>
-      <button id="splitBillBtn" type="button" class="secondary-btn">Split Bill</button>
+      <button id="splitBillBtn" type="button" hidden>Split Bill</button>
       <button id="newCheckBtn" type="button" class="secondary-btn">New customer check</button>
       <button id="parcelCheckBtn" type="button" class="secondary-btn">Parcel check</button>
     </div>
@@ -141,7 +141,7 @@
         <button id="moveTableBtn" type="button" class="secondary-btn">Move Table</button>
       </div>
       <div class="cart-actions pos-primary-actions">
-        <button id="saveOrder">Save</button>
+        <button id="saveOrder" hidden>Save</button>
         <button id="submitKot" data-action-shortcut="F11">Submit KOT</button>
         <button id="finalBillPrintOrder" data-action-shortcut="F12" type="button" class="primary-btn">Final Bill &amp; Print</button>
         <button id="settleOrder">Settle</button>
@@ -192,9 +192,9 @@
   <div class="modal-backdrop" id="posConfirmModal" hidden>
     <div class="modifier-modal pos-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="posConfirmTitle">
       <header><h2 id="posConfirmTitle">Confirm action</h2></header>
-      <pre id="posConfirmMessage"></pre>
+      <div id="posConfirmMessage" class="pos-confirm-message"></div>
       <input id="posConfirmInput" hidden>
-      <div class="cart-actions">
+      <div class="cart-actions pos-confirm-actions">
         <button id="cancelPosConfirm" type="button" class="secondary-btn">Cancel</button>
         <button id="acceptPosConfirm" type="button">Confirm</button>
       </div>

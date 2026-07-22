@@ -104,12 +104,12 @@ async function main() {
       : await json('POST', '/orders/apply-discount', { restaurantId, actor, orderId: saved.orderId, type: 'PROMO', value: 1, valueType: 'FLAT', promoCode, appliedByRole: 'OWNER' });
     let settled;
     try {
-      settled = await json('POST', '/orders/settle', { restaurantId, actor, orderId: saved.orderId, payments: [{ method: 'CASH', amount: Math.ceil(Number(discount.netPayable)) }] });
+      settled = await json('POST', '/orders/settle', { restaurantId, actor, orderId: saved.orderId, payments: [{ method: 'CASH', amount: Number(discount.netPayable) }] });
     } catch (error) {
       console.error(JSON.stringify({ case: index + 1, orderId: saved.orderId, discount }, null, 2));
       throw error;
     }
-    if (Number(settled.payable) > Math.ceil(Number(discount.netPayable)) || Number(settled.paidAmount) < Number(settled.payable)) throw new Error(`case ${index + 1}: settlement total mismatch`);
+    if (Math.abs(Number(settled.payable) - Number(discount.netPayable)) > 0.01 || Number(settled.paidAmount) < Number(settled.payable)) throw new Error(`case ${index + 1}: settlement total mismatch`);
     const invoice = await json('GET', `/orders/invoices/${saved.orderId}?restaurantId=${restaurantId}`);
     if (!invoice.invoice && !invoice.order && !invoice.success) throw new Error(`case ${index + 1}: invoice retrieval failed`);
     results.push({ case: index + 1, table: table.table_name, orderId: saved.orderId, discount: index % 2 === 0 ? 'cash' : 'promo', payable: settled.payable });

@@ -60,6 +60,7 @@ const state = {
   ,parcelDraftItem: null
   ,parcelSuggestionIndex: -1
   ,pendingParcelDraft: null
+  ,linkedParcelMode: false
 };
 let tableSelectionRequest = 0;
 
@@ -124,6 +125,16 @@ async function postJson(url, body) {
 
 function isDineIn() {
   return posMode === "DINE_IN" && orderType.value === "DINE_IN";
+}
+
+function currentFulfillmentType() {
+  if (posMode === "DINE_IN") return state.linkedParcelMode ? "TAKEAWAY" : "DINE_IN";
+  return orderType.value;
+}
+
+function itemsForCurrentFulfillment(items) {
+  const expected = currentFulfillmentType();
+  return (items || []).filter((item) => String(item.fulfillment_type || "DINE_IN").toUpperCase() === expected);
 }
 
 function applyRoleAndModeUI() {
@@ -194,7 +205,7 @@ function applyRoleAndModeUI() {
     parcelItemSuggestionsSlot.appendChild(items);
     categories.hidden = true;
     if (!cashierDineLayout) {
-      splitBillBtn.hidden = true;
+      if (splitBillBtn) splitBillBtn.hidden = true;
       parcelCheckBtn.hidden = true;
       saveOrder.hidden = true;
     }
@@ -423,7 +434,7 @@ async function restoreCurrentContextOrder() {
   state.customer = data.customer || null;
   customerPhone.value = state.customer?.phone || "";
   customerName.value = state.customer?.name || "";
-  state.cart = (data.items || []).map(cartItemFromOrderItem);
+  state.cart = itemsForCurrentFulfillment(data.items).map(cartItemFromOrderItem);
   state.selectedCartKey = state.cart[0]?.key || null;
   state.reviewBaselineQuantities = reviewBaselineForCart();
   renderOrderSelector();
@@ -446,7 +457,23 @@ function askPosConfirmation(message, title = "Confirm action") {
     const cancel = () => finish(false);
     acceptPosConfirm.addEventListener("click", accept);
     cancelPosConfirm.addEventListener("click", cancel);
-    cancelPosConfirm.focus();
+    acceptPosConfirm.focus();
+  });
+}
+
+function askKotConfirmation({ orderRef, submittedItems, previousItems, newItems }) {
+  return new Promise((resolve) => {
+    const list = (items) => items.length ? items.map((item) => `<div>${esc(itemLabel(item))}</div>`).join("") : "<div>None</div>";
+    posConfirmTitle.textContent = "Confirm KOT";
+    posConfirmMessage.innerHTML = `<p>Order ${esc(orderRef || "new")}</p><div class="kot-confirm-columns"><section><strong>Already submitted:</strong>${list(submittedItems)}</section><section><strong>Previously in this check:</strong>${list(previousItems)}</section><section><strong>New in this KOT:</strong>${list(newItems)}</section></div><p>Submit this KOT?</p>`;
+    posConfirmInput.hidden = true;
+    posConfirmModal.hidden = false;
+    const finish = (accepted) => { posConfirmModal.hidden = true; acceptPosConfirm.removeEventListener("click", accept); cancelPosConfirm.removeEventListener("click", cancel); resolve(accepted); };
+    const accept = () => finish(true);
+    const cancel = () => finish(false);
+    acceptPosConfirm.addEventListener("click", accept);
+    cancelPosConfirm.addEventListener("click", cancel);
+    acceptPosConfirm.focus();
   });
 }
 
@@ -488,7 +515,7 @@ async function reloadCurrentOrderCart() {
   state.orderReference = data.order.order_reference || state.orderReference;
   state.billingReady = Number(data.order.billing_ready) === 1;
   state.kotSubmitted = (data.items || []).some((item) => item.kot_id);
-  state.cart = (data.items || []).map(cartItemFromOrderItem);
+  state.cart = itemsForCurrentFulfillment(data.items).map(cartItemFromOrderItem);
   state.selectedCartKey = state.cart.find((item) => Number(item.orderItemId) === Number(selectedOrderItemId))?.key || state.cart[0]?.key || null;
   state.reviewBaselineQuantities = reviewBaselineForCart();
   renderCart();
@@ -534,7 +561,7 @@ function refreshCartAndMenu() {
 let posAutosaveTimer;
 let posAutosaveRunning = false;
 function schedulePosAutosave() {
-  if (!(["PARCEL", "PARTY"].includes(posMode) || cashierDineLayout) || !state.dirty || !state.cart.length || state.billingReady) return;
+  if (!["DINE_IN", "PARCEL", "PARTY"].includes(posMode) || !state.dirty || !state.cart.length || state.billingReady) return;
   clearTimeout(posAutosaveTimer);
   posAutosaveTimer = setTimeout(async () => {
     if (posAutosaveRunning || !state.dirty || !state.cart.length || state.billingReady) return;
@@ -744,6 +771,7 @@ function cartItemFromOrderItem(item) {
     quantity: item.quantity,
     modifiers: item.modifiers || [],
     notes: item.notes || "",
+    fulfillmentType: item.fulfillment_type || "DINE_IN",
     sentToKitchen: Boolean(item.kot_id),
     savedLocally: !item.kot_id
   };
@@ -761,13 +789,17 @@ function reviewBaselineForCart() {
 
 function updateOrderTypeView() {
   deliveryFields.hidden = orderType.value !== "DELIVERY";
-  if (!isDineIn()) state.selectedTable = null;
+  // A parcel check opened from POS Dine In remains attached to the selected
+  // table/order. Only standalone Parcel/Party modes should clear the table.
+  if (posMode !== "DINE_IN" && !isDineIn()) state.selectedTable = null;
   renderTables();
   refreshCartAndMenu();
 }
 
 async function selectTable(tableId, options = {}) {
   const requestId = ++tableSelectionRequest;
+  state.linkedParcelMode = false;
+  if (posMode === "DINE_IN") orderType.value = "DINE_IN";
   state.activeTableId = Number(tableId);
   state.parcelTableId = null;
   localStorage.setItem("posActiveTableId", String(tableId));
@@ -790,6 +822,7 @@ async function selectTable(tableId, options = {}) {
   state.cart = [];
   state.selectedCartKey = null;
   state.orderId = null;
+  state.linkedParcelMode = false;
   state.orderReference = null;
   state.dirty = false;
   state.kotSubmitted = false;
@@ -810,7 +843,7 @@ async function selectTable(tableId, options = {}) {
     state.customer = data.customer || null;
     customerPhone.value = state.customer?.phone || "";
     customerName.value = state.customer?.name || "";
-    state.cart = (data.items || []).map(cartItemFromOrderItem);
+    state.cart = itemsForCurrentFulfillment(data.items).map(cartItemFromOrderItem);
     state.selectedCartKey = state.cart[0]?.key || null;
     state.reviewBaselineQuantities = reviewBaselineForCart();
   }
@@ -972,8 +1005,9 @@ async function saveCurrentOrder(force = false) {
   const data = await postJson("/orders/save", {
     orderId: state.orderId,
     orderType: orderType.value,
-    tableId: isDineIn() ? (state.selectedTable?.id || null) : (state.parcelTableId || null),
-    tableName: isDineIn() ? (state.selectedTable?.table_name || null) : (state.tables.find((table) => table.id === state.parcelTableId)?.table_name || null),
+    linkedFulfillment: state.linkedParcelMode,
+    tableId: posMode === "DINE_IN" ? (state.selectedTable?.id || state.parcelTableId || null) : (state.parcelTableId || null),
+    tableName: posMode === "DINE_IN" ? (state.selectedTable?.table_name || state.tables.find((table) => table.id === state.parcelTableId)?.table_name || null) : (state.tables.find((table) => table.id === state.parcelTableId)?.table_name || null),
     customerId: state.customer?.id || null,
     deliveryAddress: deliveryAddress.value,
     deliveryPhone: deliveryPhone.value || customerPhone.value,
@@ -1075,10 +1109,11 @@ async function submitCurrentKot() {
     ...(newItems.length ? newItems.map(itemLabel) : ["None"])
   ].join("\n");
   if (!newItems.length) return alert(`${summary}\n\nThere are no unsent items to submit. Add an item or save a new item before sending the KOT.`);
-  if (!await askPosConfirmation(`${summary}\n\nSubmit this KOT?`, "Confirm KOT")) return;
+  if (!await askKotConfirmation({ orderRef: state.orderReference || state.orderId, submittedItems, previousItems, newItems })) return;
   const saved = await saveCurrentOrder();
   if (!saved) return;
-  const data = await postJson("/orders/submit-kot", { orderId: state.orderId });
+  const submittedFulfillment = currentFulfillmentType();
+  const data = await postJson("/orders/submit-kot", { orderId: state.orderId, fulfillmentType: submittedFulfillment });
   if (data.success) {
     state.kotSubmitted = true;
     state.dirty = false;
@@ -1090,6 +1125,16 @@ async function submitCurrentKot() {
     await loadOpenOrdersForCurrentContext(state.orderId);
     await reloadCurrentOrderCart();
     refreshCartAndMenu();
+    if (cashierDineLayout && new URLSearchParams(location.search).get("returnTo") === "billing") {
+      location.href = `/billing.html?restaurantId=${encodeURIComponent(restaurantId)}`;
+      return;
+    }
+    if (state.linkedParcelMode) {
+      state.linkedParcelMode = false;
+      orderType.value = "DINE_IN";
+      await reloadCurrentOrderCart();
+      updateOrderTypeView();
+    } else if (["PARCEL", "PARTY"].includes(posMode)) newCheckBtn.click();
   }
   alert(data.message || "KOT submitted");
 }
@@ -1141,7 +1186,6 @@ async function settleCurrentOrder(printBill = false) {
 
 async function requestFinalBillAndPrint() {
   if (!state.orderId) return alert("Save the order and submit its KOT first");
-  if (state.dirty || state.cart.some((item) => !item.sentToKitchen)) return alert("Submit all new items to KOT before requesting the final bill");
   if (!await askPosConfirmation(`Print the final bill and mark ${state.selectedTable?.table_name || 'this table'} ready for billing?`, "Final bill")) return;
   finalBillPrintOrder.disabled = true;
   try {
@@ -1154,6 +1198,11 @@ async function requestFinalBillAndPrint() {
     refreshCartAndMenu();
     window.dispatchEvent(new Event('pos:notifications-changed'));
     alert(data.message);
+    if (cashierDineLayout && new URLSearchParams(location.search).get("returnTo") === "billing") {
+      location.href = `/billing.html?restaurantId=${encodeURIComponent(restaurantId)}`;
+      return;
+    }
+    if (["PARCEL", "PARTY"].includes(posMode)) newCheckBtn.click();
   } finally { finalBillPrintOrder.disabled = state.billingReady; }
 }
 
@@ -1411,7 +1460,7 @@ orderSelector.addEventListener("change", async () => {
     state.customer = data.customer || null;
     customerPhone.value = state.customer?.phone || "";
     customerName.value = state.customer?.name || "";
-    state.cart = (data.items || []).map(cartItemFromOrderItem);
+    state.cart = itemsForCurrentFulfillment(data.items).map(cartItemFromOrderItem);
     state.selectedCartKey = state.cart[0]?.key || null;
     state.reviewBaselineQuantities = reviewBaselineForCart();
     orderMeta.textContent = `Order ${state.orderReference}`;
@@ -1448,7 +1497,7 @@ moveTableBtn.addEventListener("click", async () => {
     alert(error.message || "The order could not be moved. Choose another destination table.");
   }
 });
-splitBillBtn.addEventListener("click", openSplitBillModal);
+splitBillBtn?.addEventListener("click", openSplitBillModal);
 newCheckBtn.addEventListener("click", async () => {
   if (posMode === "DINE_IN" && !state.selectedTable) return alert("Select a table first");
   if (state.cart.length && state.dirty && !state.billingReady) {
@@ -1456,6 +1505,7 @@ newCheckBtn.addEventListener("click", async () => {
     if (!saved) return;
   }
   state.orderId = null;
+  state.linkedParcelMode = false;
   state.parcelTableId = null;
   state.orderReference = null;
   state.billingReady = false;
@@ -1471,24 +1521,21 @@ newCheckBtn.addEventListener("click", async () => {
   kotStatus.textContent = "New customer check started";
   updateOrderTypeView();
 });
-parcelCheckBtn.addEventListener("click", () => {
+parcelCheckBtn.addEventListener("click", async () => {
   if (posMode !== "DINE_IN") return alert("Use the current POS mode for this order");
   if (!state.selectedTable) return alert("Select the customer's table first");
+  if (state.cart.length && state.dirty && !state.billingReady) await saveCurrentOrder();
+  if (!state.orderId) return alert("Add and save the dine-in order before opening its parcel check");
   state.parcelTableId = state.selectedTable.id;
-  const parcelCustomer = state.customer;
-  state.orderId = null;
-  state.orderReference = null;
-  state.billingReady = false;
-  state.openOrders = [];
+  state.linkedParcelMode = true;
   state.cart = [];
   state.selectedCartKey = null;
-  state.customer = parcelCustomer;
   state.dirty = false;
-  state.kotSubmitted = false;
   customerPhone.value = state.customer?.phone || "";
   customerName.value = state.customer?.name || "";
   orderType.value = "TAKEAWAY";
-  kotStatus.textContent = "Separate parcel check started";
+  await reloadCurrentOrderCart();
+  kotStatus.textContent = "Parcel items for this dine-in order";
   updateOrderTypeView();
 });
 closeSplitBillModal.addEventListener("click", () => {
@@ -1510,7 +1557,7 @@ createSplitCheckBtn.addEventListener("click", async () => {
   if (latest.order) {
     state.orderId = latest.order.id;
     state.orderReference = latest.order.order_reference || `${latest.order.order_sequence || latest.order.id}-${latest.order.customer_ref || `A${latest.order.id}`}`;
-    state.cart = (latest.items || []).map(cartItemFromOrderItem);
+    state.cart = itemsForCurrentFulfillment(latest.items).map(cartItemFromOrderItem);
     state.selectedCartKey = state.cart[0]?.key || null;
     renderCart();
   }
@@ -1553,7 +1600,11 @@ cashOutBtn.addEventListener("click", async () => {
 */
 cancelOrder.addEventListener("click", async () => {
   if (!state.orderId || !await askPosConfirmation("Cancel this order?", "Cancel order")) return;
-  await postJson("/orders/cancel", { orderId: state.orderId });
+  const role = String(actor?.role || '').toUpperCase();
+  const privileged = ['OWNER', 'ADMIN', 'MANAGER', 'MANAGER_1', 'MANAGER_2'].includes(role);
+  const pin = privileged ? null : await askPosInput('Enter the six-digit cancellation PIN', 'Cancellation approval');
+  if (!privileged && pin === null) return;
+  await postJson("/orders/cancel", { orderId: state.orderId, pin });
   state.cart = [];
   state.selectedCartKey = null;
   state.orderId = null;

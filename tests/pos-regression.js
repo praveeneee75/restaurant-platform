@@ -65,7 +65,11 @@ assert.match(server, /String\(req\.body\?\.restaurantId/);
 assert.match(server, /String\(req\.body\?\.licenseKey/);
 assert.match(live, /rememberedOrderId/);
 assert.match(live, /parcelTableId/);
-assert.match(live, /parcelCustomer/);
+assert.match(live, /linkedParcelMode/);
+assert.match(live, /linkedFulfillment: state\.linkedParcelMode/);
+assert.match(live, /fulfillmentType: submittedFulfillment/);
+assert.match(server, /fulfillment_type/);
+assert.match(server, /group\.fulfillmentType/);
 assert.match(billing, /open bills/);
 assert.match(live, /const requestId = \+\+tableSelectionRequest/);
 assert.match(live, /Number\(data\.order\?\.id\) !== orderId/);
@@ -114,5 +118,5 @@ assert.doesNotMatch(electronPreload, /nodeIntegration/);
 
 console.log(JSON.stringify({
   passed: true,
-  cases: ['POS-003', 'POS-004', 'POS-005', 'POS-006', 'POS-009', 'POS-010', 'POS-011', 'POS-013', 'POS-014', 'POS-015', 'POS-016', 'POS-KOT-SEQUENCE', 'POS-NATIVE-PRINT', 'POS-MULTI-CUSTOMER']
+  cases: ['POS-003', 'POS-004', 'POS-005', 'POS-006', 'POS-009', 'POS-010', 'POS-011', 'POS-013', 'POS-014', 'POS-015', 'POS-016', 'POS-KOT-SEQUENCE', 'POS-NATIVE-PRINT', 'POS-MULTI-CUSTOMER', 'POS-LINKED-PARCEL-KOT']
 }, null, 2));

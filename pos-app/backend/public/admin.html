@@ -44,7 +44,6 @@
       <div class="nav-group">
         <p class="nav-group-title">Business</p>
         <button class="nav-btn" data-view="inventory">Inventory</button>
-        <button class="nav-btn" data-view="reports">Reports</button>
         <button class="nav-btn" data-view="invoices">Invoices</button>
         <button class="nav-btn" data-view="audit">Audit</button>
         <button class="nav-btn" data-view="commercial">Commercial Tools</button>
@@ -64,6 +63,11 @@
         <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="online">Online Ordering</button>
         <button class="nav-btn" data-view="permissions">Permissions</button>
         <button class="nav-btn" data-view="updates">Updates</button>
+      </div>
+
+      <div class="nav-group">
+        <p class="nav-group-title">Reports</p>
+        <button class="nav-btn" data-view="reports">Sales Report</button>
       </div>
 
       <div class="nav-group nav-group-links">
@@ -370,12 +374,14 @@
     </section>
 
     <section class="admin-view" id="view-reports">
+      <div class="section-heading"><div><h2>Sales Report</h2><p id="salesReportSummary">Review settled sales without exposing invoice line details.</p></div></div>
       <div class="toolbar admin-filter-toolbar">
         <label>From date<input id="reportFrom" type="date"></label>
         <label>To date<input id="reportTo" type="date"></label>
         <button id="loadReports">Load Reports</button>
         <p id="reportStatus" class="form-hint" role="status" aria-live="polite"></p>
       </div>
+      <div class="table-panel sales-report-table"><table><thead><tr><th>Order</th><th>Date</th><th>Order type</th><th>Net amount</th><th>Discount</th><th>Additional charge</th><th>Tax</th><th>Total</th><th>Assigned to</th></tr></thead><tbody id="salesReportRows"></tbody></table></div>
       <div class="report-grid">
         <article><h3>Daily Sales</h3><div id="dailySales"></div></article>
         <article><h3>Top Selling Items</h3><div id="topItems"></div></article>
