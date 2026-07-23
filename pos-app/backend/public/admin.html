@@ -18,8 +18,18 @@
       <span class="brand-mark">POS</span>
       <strong>Admin</strong>
     </div>
-    <nav class="admin-nav" aria-label="Admin sections">
-      <div class="nav-group">
+    <div class="admin-nav-layout">
+      <nav class="admin-category-nav" aria-label="Admin categories">
+        <button type="button" class="admin-category-btn active" data-nav-category="menu">Menu Setup</button>
+        <button type="button" class="admin-category-btn" data-nav-category="tables">Table Management</button>
+        <button type="button" class="admin-category-btn" data-nav-category="users">User Management</button>
+        <button type="button" class="admin-category-btn" data-nav-category="business">Business</button>
+        <button type="button" class="admin-category-btn" data-nav-category="printing">Printer Configuration</button>
+        <button type="button" class="admin-category-btn" data-nav-category="reports">Reports</button>
+        <button type="button" class="admin-category-btn" data-nav-category="links">Quick Links</button>
+      </nav>
+      <nav class="admin-nav" aria-label="Admin subsections">
+      <div class="nav-group" data-nav-group="menu">
         <p class="nav-group-title">Menu Setup</p>
         <button class="nav-btn active" data-view="kitchens">Kitchens</button>
         <button class="nav-btn" data-view="categories">Categories</button>
@@ -27,29 +37,30 @@
         <button class="nav-btn" data-view="modifiers">Modifiers & Combos</button>
       </div>
 
-      <div class="nav-group">
+      <div class="nav-group" data-nav-group="tables" hidden>
         <p class="nav-group-title">Table Management</p>
         <button class="nav-btn" data-view="tables">Tables</button>
         <button class="nav-btn" data-view="reservations">Reservations</button>
         <button class="nav-btn" data-view="qr">QR Links</button>
       </div>
 
-      <div class="nav-group">
+      <div class="nav-group" data-nav-group="users" hidden>
         <p class="nav-group-title">User Management</p>
         <button class="nav-btn" data-view="staff-cash">Staff & Cash</button>
         <button class="nav-btn" data-view="devices">Devices</button>
         <button class="nav-btn" data-view="users">Users</button>
       </div>
 
-      <div class="nav-group">
+      <div class="nav-group" data-nav-group="business" hidden>
         <p class="nav-group-title">Business</p>
         <button class="nav-btn" data-view="inventory">Inventory</button>
+        <button class="nav-btn" data-view="expenses">Expenses</button>
         <button class="nav-btn" data-view="invoices">Invoices</button>
         <button class="nav-btn" data-view="audit">Audit</button>
         <button class="nav-btn" data-view="commercial">Commercial Tools</button>
       </div>
 
-      <div class="nav-group">
+      <div class="nav-group" data-nav-group="printing" hidden>
         <p class="nav-group-title">Printer Configuration</p>
         <button class="nav-btn" data-view="printers">Printers</button>
         <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="kot">KOT Configuration</button>
@@ -65,19 +76,25 @@
         <button class="nav-btn" data-view="updates">Updates</button>
       </div>
 
-      <div class="nav-group">
+      <div class="nav-group" data-nav-group="reports" hidden>
         <p class="nav-group-title">Reports</p>
-        <button class="nav-btn" data-view="reports">Sales Report</button>
+        <button class="nav-btn nav-sub-btn" data-view="reports" data-report-type="sales">Sales Summary</button>
+        <button class="nav-btn nav-sub-btn" data-view="reports" data-report-type="orders">Order Summary</button>
+        <button class="nav-btn nav-sub-btn" data-view="reports" data-report-type="categories">Category Summary</button>
+        <button class="nav-btn nav-sub-btn" data-view="reports" data-report-type="items">Item Summary</button>
+        <button class="nav-btn nav-sub-btn" data-view="reports" data-report-type="employees">Employee Summary</button>
+        <button class="nav-btn nav-sub-btn" data-view="reports" data-report-type="captains">Captain Summary</button>
       </div>
 
-      <div class="nav-group nav-group-links">
+      <div class="nav-group nav-group-links" data-nav-group="links" hidden>
         <p class="nav-group-title">Quick Links</p>
         <a class="nav-link" href="/pos-live.html">Open POS</a>
         <a class="nav-link" href="/orders.html">Orders</a>
         <a class="nav-link" href="/kds.html">Open KDS</a>
         <a class="nav-link" href="/customer.html">Customers</a>
       </div>
-    </nav>
+      </nav>
+    </div>
   </aside>
 
   <main class="admin-main">
@@ -374,22 +391,30 @@
     </section>
 
     <section class="admin-view" id="view-reports">
-      <div class="section-heading"><div><h2>Sales Report</h2><p id="salesReportSummary">Review settled sales without exposing invoice line details.</p></div></div>
+      <div class="section-heading"><div><h2 id="reportHeading">Sales Summary</h2><p id="salesReportSummary">Review settled sales and operational summaries.</p></div></div>
       <div class="toolbar admin-filter-toolbar">
         <label>From date<input id="reportFrom" type="date"></label>
         <label>To date<input id="reportTo" type="date"></label>
         <button id="loadReports">Load Reports</button>
+        <button id="printOperationalReport" type="button">Print</button>
+        <button id="exportOperationalReport" type="button">Export CSV</button>
         <p id="reportStatus" class="form-hint" role="status" aria-live="polite"></p>
       </div>
-      <div class="table-panel sales-report-table"><table><thead><tr><th>Order</th><th>Date</th><th>Order type</th><th>Net amount</th><th>Discount</th><th>Additional charge</th><th>Tax</th><th>Total</th><th>Assigned to</th></tr></thead><tbody id="salesReportRows"></tbody></table></div>
+      <div class="report-type-tabs" role="tablist" aria-label="Report type">
+        <button type="button" data-report-tab="sales">Sales</button><button type="button" data-report-tab="orders">Orders</button><button type="button" data-report-tab="categories">Categories</button><button type="button" data-report-tab="items">Items</button><button type="button" data-report-tab="employees">Employees</button><button type="button" data-report-tab="captains">Captains</button>
+      </div>
+      <div class="table-panel sales-report-table" id="operationalReportPanel"><table><thead id="operationalReportHead"></thead><tbody id="salesReportRows"></tbody></table></div>
       <div class="report-grid">
         <article><h3>Daily Sales</h3><div id="dailySales"></div></article>
         <article><h3>Top Selling Items</h3><div id="topItems"></div></article>
         <article><h3>Order Summary</h3><div id="orderSummary"></div></article>
         <article><h3>Tax Summary</h3><div id="taxSummary"></div></article>
       </div>
+    </section>
+
+    <section class="admin-view" id="view-expenses">
+      <div class="section-heading"><div><h2>Expenses</h2><p>Record and review restaurant operating expenses.</p></div></div>
       <div class="editor-panel">
-        <h3>Expenses & Profit</h3>
         <form id="expenseForm">
           <label>Category<select id="expenseCategory"></select></label>
           <label>Description<input id="expenseDescription"></label>
@@ -397,7 +422,7 @@
           <label>Date<input id="expenseDate" type="date"></label>
           <button>Add Expense</button>
         </form>
-        <button id="loadProfitDashboard" type="button">Load Profit</button>
+        <button id="loadProfitDashboard" type="button">Load Expense Summary</button>
         <button id="exportProfitCsv" type="button">Export CSV</button>
         <div id="profitDashboard"></div>
       </div>

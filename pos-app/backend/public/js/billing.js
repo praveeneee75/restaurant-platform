@@ -41,7 +41,52 @@ function renderRecent() { const rows = visibleOrders().filter(o => state.filter 
 async function showOrder(orderId) { const d = await getJson(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(orderId)}`); state.selected = d.order; billingDetail.innerHTML = `<header><div><h2>${esc(d.order.order_reference || `Order ${d.order.id}`)}</h2><p>${esc(d.order.table_no || d.order.order_type)} · ${esc(d.customer?.name || 'No customer')}</p></div><a class="primary-btn" href="/pos-live.html?restaurantId=${encodeURIComponent(restaurantId)}">Open POS</a></header><div class="bill-lines">${(d.items || []).map(i => `<div><span>${esc(i.name)} × ${i.quantity}</span><strong>${money(i.price * i.quantity)}</strong></div>`).join('') || '<p>No items</p>'}</div><div class="bill-total"><span>Total</span><strong>${money(d.order.total_amount)}</strong></div><div class="billing-payment"><h3>Payment</h3><select id="billingPaymentMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></select><input id="billingPaymentAmount" type="number" step="0.01" value="${Number(d.order.total_amount || 0).toFixed(2)}"><button id="settleBilling" class="primary-btn" data-settle-order="${d.order.id}">Settle and create invoice</button></div>`; }
 async function load() { const [boot, live, pendingQr] = await Promise.all([getJson(`/pos/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`), getJson(`/orders/live?restaurantId=${encodeURIComponent(restaurantId)}`), getJson(`/qr/orders/pending?restaurantId=${encodeURIComponent(restaurantId)}`)]); state.tables = boot.tables || []; state.orders = live.orders || []; const restaurantName = boot.settings?.restaurantName || restaurantId; const nameElement = document.getElementById('billingRestaurantName'); if (nameElement) nameElement.textContent = restaurantName; openBills.textContent = state.orders.filter(o => o.payment_status !== 'PAID').length; paidToday.textContent = state.orders.filter(o => o.payment_status === 'PAID').length; collectionTotal.textContent = money(state.orders.filter(o => o.payment_status === 'PAID').reduce((s,o) => s + Number(o.total_amount || 0), 0)); billingStatus.textContent = `${state.tables.length} tables · ${state.orders.length} orders`; pendingQrApprovals.innerHTML=(pendingQr.orders||[]).map(o=>`<article class="qr-approval-row"><div><strong>${esc(o.table_no)} · ${esc(o.customer_name)}</strong><span>${(o.items||[]).map(i=>`${esc(i.name)} × ${i.quantity}`).join(', ')}</span><b>${money(o.total_amount)}</b></div><div class="qr-approval-actions"><button type="button" data-reject-qr="${o.id}" class="danger-btn">Reject</button><button type="button" data-approve-qr="${o.id}" class="primary-btn">Approve & send KOT</button></div></article>`).join('')||'<p>No QR orders waiting.</p>'; renderTables(); renderRecent(); }
 document.addEventListener('click', e => { const order = e.target.closest('[data-order-id]'); if (order?.dataset.orderId) { showOrder(order.dataset.orderId); return; } const table = e.target.closest('[data-cashier-table-id]'); if (table) { location.href = `/pos-live.html?mode=DINE_IN&layout=cashier&returnTo=billing&restaurantId=${encodeURIComponent(restaurantId)}&tableId=${encodeURIComponent(table.dataset.cashierTableId)}`; return; } const filter = e.target.closest('[data-recent-filter]'); if (filter) { state.filter = filter.dataset.recentFilter; document.querySelectorAll('[data-recent-filter]').forEach(x => x.classList.toggle('active', x === filter)); renderRecent(); } });
-document.addEventListener('click', async e => { const button = e.target.closest('[data-settle-order]'); if (!button) return; const amount = Number(document.getElementById('billingPaymentAmount').value); const method = document.getElementById('billingPaymentMethod').value; const redeemPoints = Number(document.getElementById('billingRedeemPoints')?.value || 0); const printBill = button.dataset.printBill === 'true'; if (!Number.isFinite(amount) || amount <= 0) return alert('Enter a valid payment amount'); if (!Number.isInteger(redeemPoints) || redeemPoints < 0) return alert('Redeem points must be a whole number'); button.disabled = true; try { const user = JSON.parse(localStorage.getItem('user') || '{}'); const r = await fetch('/orders/settle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ restaurantId, actor: { id: user.id, role: user.role || 'CASHIER' }, orderId: Number(button.dataset.settleOrder), redeemPoints, payments: [{ method, amount }], printBill }) }); const d = await r.json(); if (!r.ok || d.success === false) throw Error(d.message || 'Settlement failed'); alert(printBill ? `${d.printMessage} Invoice ${d.invoiceNo}` : `Invoice ${d.invoiceNo} created`); window.dispatchEvent(new Event('pos:notifications-changed')); await load(); billingDetail.innerHTML = '<div class="billing-empty">Bill settled. Select another open customer bill.</div>'; } catch (err) { alert(err.message); button.disabled = false; } });
+document.addEventListener('click', async e => {
+  const button = e.target.closest('[data-settle-order]');
+  if (!button) return;
+  const amount = Number(document.getElementById('billingPaymentAmount').value);
+  const method = document.getElementById('billingPaymentMethod').value;
+  const redeemPoints = Number(document.getElementById('billingRedeemPoints')?.value || 0);
+  const settlementMode = button.dataset.settlementMode || 'INVOICE';
+  const isInvoice = settlementMode !== 'NO_INVOICE';
+  const printBill = settlementMode === 'PRINT';
+  if (!Number.isFinite(amount) || amount <= 0) return alert('Enter a valid payment amount');
+  if (!Number.isInteger(redeemPoints) || redeemPoints < 0) return alert('Redeem points must be a whole number');
+  button.disabled = true;
+  try {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const r = await fetch('/orders/settle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        restaurantId,
+        actor: { id: user.id, role: user.role || 'CASHIER' },
+        orderId: Number(button.dataset.settleOrder),
+        redeemPoints,
+        payments: [{ method, amount }],
+        isInvoice,
+        printBill,
+        discardSavedItems: true
+      })
+    });
+    const d = await r.json();
+    if (!r.ok || d.success === false) throw Error(d.message || 'Settlement failed');
+    const discarded = Number(d.discardedSavedItemCount || 0);
+    const discardMessage = discarded ? ` ${discarded} saved item${discarded === 1 ? '' : 's'} discarded.` : '';
+    const resultMessage = settlementMode === 'NO_INVOICE'
+      ? 'Order settled without an invoice. An invoice can be generated later from Invoices.'
+      : printBill
+        ? `${d.printMessage} Invoice ${d.invoiceNo}`
+        : `Invoice ${d.invoiceNo} created without printing`;
+    alert(resultMessage + discardMessage);
+    window.dispatchEvent(new Event('pos:notifications-changed'));
+    await load();
+    billingDetail.innerHTML = '<div class="billing-empty">Bill settled. Select another open customer bill.</div>';
+  } catch (err) {
+    alert(err.message);
+    button.disabled = false;
+  }
+});
 billingSearch.addEventListener('input', () => { renderTables(); renderRecent(); });
 refreshBilling.addEventListener('click', () => Promise.all([load(), loadBillingQrSettings()]).catch(e => billingStatus.textContent = e.message));
 saveBillingQrSettings.addEventListener('click', async () => {
@@ -75,7 +120,7 @@ async function showSubmittedOrder(orderId) {
   const kotSections = [...kotGroups.entries()].map(([reference, kotItems]) => `<section class="bill-kot-group"><h3>KOT ${esc(reference)}</h3>${kotItems.map(i => `<div><span>${esc(i.name)} × ${i.quantity}</span><strong>${money(i.price * i.quantity)}</strong></div>`).join('')}</section>`).join('');
   const submittedTotal = items.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
   const cashierUrl = `/pos-live.html?mode=DINE_IN&layout=cashier&returnTo=billing&restaurantId=${encodeURIComponent(restaurantId)}&tableId=${encodeURIComponent(d.order.table_id || '')}&orderId=${encodeURIComponent(d.order.id)}`;
-  billingDetail.innerHTML = `<header><div><h2>${esc(d.order.order_reference || `Order ${d.order.id}`)}</h2><p>${esc(d.order.table_no || d.order.order_type)} · ${esc(d.customer?.name || 'No customer')}</p></div><div class="billing-detail-actions"><button type="button" class="secondary-btn" id="billingSplitBill">Split Bill</button><a class="primary-btn" href="${cashierUrl}">Open POS</a></div></header><div class="bill-lines">${kotSections || '<p>No submitted items</p>'}</div><div class="bill-total"><span>Submitted total</span><strong>${money(submittedTotal)}</strong></div><div class="billing-payment"><h3>Payment</h3><p class="billing-hint">Only KOT-submitted items are shown here. Save additional items in POS and submit a new KOT before billing them.</p><select id="billingPaymentMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></select><input id="billingPaymentAmount" type="number" step="0.01" value="${submittedTotal.toFixed(2)}"><button id="settleBilling" class="primary-btn" data-action-shortcut="F11" data-settle-order="${d.order.id}">Settle and create invoice</button></div>`;
+  billingDetail.innerHTML = `<header><div><h2>${esc(d.order.order_reference || `Order ${d.order.id}`)}</h2><p>${esc(d.order.table_no || d.order.order_type)} · ${esc(d.customer?.name || 'No customer')}</p></div><div class="billing-detail-actions"><button type="button" class="secondary-btn" id="billingSplitBill">Split Bill</button><a class="primary-btn" href="${cashierUrl}">Open POS</a></div></header><div class="bill-lines">${kotSections || '<p>No submitted items</p>'}</div><div class="bill-total"><span>Submitted total</span><strong>${money(submittedTotal)}</strong></div><div class="billing-payment"><h3>Payment</h3><p class="billing-hint">Only KOT-submitted items are billed. Any saved draft items are discarded when settling.</p><select id="billingPaymentMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></select><input id="billingPaymentAmount" type="number" step="0.01" value="${submittedTotal.toFixed(2)}"><div class="billing-settlement-actions"><button id="settleWithoutInvoice" class="primary-btn" data-settlement-mode="NO_INVOICE" data-settle-order="${d.order.id}">Settle</button><button id="settleBilling" class="primary-btn" data-action-shortcut="F11" data-settlement-mode="INVOICE" data-settle-order="${d.order.id}">Settle &amp; Create Invoice</button><button id="settlePrintBilling" class="primary-btn" data-action-shortcut="F12" data-settlement-mode="PRINT" data-settle-order="${d.order.id}">Settle &amp; Print</button></div></div>`;
   document.getElementById('billingSplitBill')?.addEventListener('click', () => openBillingSplit(d, items));
   const adjustments = document.createElement('section');
   adjustments.className = 'billing-adjustments';
@@ -89,18 +134,7 @@ async function showSubmittedOrder(orderId) {
     + '<div class="billing-adjustment-row"><input id="billingRedeemPoints" type="number" min="0" step="1" value="0" inputmode="numeric" autocomplete="off" placeholder="Enter points"><button type="button" class="secondary-btn" id="applyBillingRedeemPoints">Apply reward points</button></div>'
     + '</div><p class="billing-hint">Enter only the adjustment you want to use. Each adjustment is checked again when the bill is settled.</p><p id="billingAdjustmentStatus" role="status" aria-live="polite"></p>';
   billingDetail.querySelector('.billing-payment')?.before(adjustments);
-  if (canSettleAndPrint) {
-    const payment = billingDetail.querySelector('.billing-payment');
-    const settle = payment?.querySelector('#settleBilling');
-    if (payment && settle && !payment.querySelector('#settlePrintBilling')) {
-      const print = settle.cloneNode(true);
-      print.id = 'settlePrintBilling';
-      print.textContent = 'Settle & Print';
-      print.dataset.actionShortcut = 'F12';
-      print.dataset.printBill = 'true';
-      settle.insertAdjacentElement('afterend', print);
-    }
-  }
+  document.getElementById('settlePrintBilling').hidden = !canSettleAndPrint;
   document.getElementById('applyBillingPromo')?.addEventListener('click', async () => {
     const status = document.getElementById('billingAdjustmentStatus');
     const code = document.getElementById('billingPromoCode').value.trim().toUpperCase();
@@ -139,11 +173,15 @@ async function showSubmittedOrder(orderId) {
 function openBillingSplit(data, submittedItems) {
   const eligible = submittedItems.filter((item) => Number(item.order_item_id) > 0);
   if (!eligible.length) return alert('There are no submitted items to split');
+  document.querySelector('.modifier-modal-backdrop[data-billing-split]')?.remove();
   const backdrop = document.createElement('div');
   backdrop.className = 'modifier-modal-backdrop';
+  backdrop.dataset.billingSplit = 'true';
   backdrop.innerHTML = `<div class="modifier-modal"><header><h2>Split Bill</h2><button type="button" class="secondary-btn" data-close-split>Close</button></header><p>Select items for the new bill.</p><div class="split-item-list">${eligible.map((item) => `<label><input type="checkbox" value="${item.order_item_id}"><span>${esc(item.name)} × ${item.quantity} · ${money(item.price * item.quantity)}</span></label>`).join('')}</div><div class="cart-actions"><button type="button" data-create-split>Create Split Bill</button></div></div>`;
   document.body.appendChild(backdrop);
+  backdrop.querySelector('input')?.focus();
   backdrop.querySelector('[data-close-split]').onclick = () => backdrop.remove();
+  backdrop.addEventListener('click', (event) => { if (event.target === backdrop) backdrop.remove(); });
   backdrop.querySelector('[data-create-split]').onclick = async () => {
     const itemKeys = [...backdrop.querySelectorAll('input:checked')].map((input) => Number(input.value));
     if (!itemKeys.length) return alert('Select at least one item to split');

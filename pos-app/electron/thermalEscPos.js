@@ -165,7 +165,10 @@ function buildThermalDocument(job, groupedItems = (items) => items) {
 
   if (isKot) {
     const orderType = String(payload.orderType || 'DINE_IN').toUpperCase();
-    const orderLabel = orderType === 'DINE_IN' ? 'Dine In' : ['PARCEL', 'TAKEAWAY'].includes(orderType) ? 'Parcel' : orderType.replaceAll('_', ' ');
+    const baseOrderLabel = orderType === 'DINE_IN' ? 'Dine In' : ['PARCEL', 'TAKEAWAY'].includes(orderType) ? 'Parcel' : orderType.replaceAll('_', ' ');
+    const orderLabel = orderType !== 'DINE_IN' && payload.tableName
+      ? `${baseOrderLabel} order + Table ${String(payload.tableName).replace(/^Table\s*/i, '')}`
+      : baseOrderLabel;
     applyStyle('header', { alignment: 'CENTER' });
     if (payload.headerText) lines(wrap(payload.headerText, width));
     applyStyle('title', { alignment: 'CENTER', fontSize: 'LARGE', bold: true }); line('KOT');

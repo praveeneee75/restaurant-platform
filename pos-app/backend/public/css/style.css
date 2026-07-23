@@ -290,7 +290,7 @@ button:hover,
 
 .admin-shell {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: 340px 1fr;
   grid-template-rows: auto minmax(0, 1fr);
 }
 .admin-shell > .app-home-nav { grid-column: 1 / -1; }
@@ -331,6 +331,40 @@ button:hover,
 .admin-nav {
   display: grid;
   gap: 16px;
+}
+
+.admin-nav-layout {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.admin-category-nav {
+  display: grid;
+  gap: 6px;
+  position: sticky;
+  top: 0;
+}
+
+.admin-category-btn {
+  min-height: 42px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: left;
+}
+
+.admin-category-btn:hover,
+.admin-category-btn.active {
+  background: #eaf1ff;
+  color: #1e3a8a;
 }
 
 .nav-group {
@@ -618,6 +652,16 @@ button:hover,
 .pos-shell.pos-non-dine-in {
   grid-template-columns: minmax(0, 1fr) 500px;
 }
+.report-type-tabs { display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:.75rem; }
+.report-type-tabs button.active { background:#2563eb; color:#fff; }
+#operationalReportPanel table { table-layout:auto; width:100%; }
+#operationalReportPanel th, #operationalReportPanel td { white-space:nowrap; text-align:left; }
+@media print {
+  body * { visibility:hidden; }
+  #view-reports, #view-reports * { visibility:visible; }
+  #view-reports { position:absolute; inset:0; }
+  #view-reports .toolbar, #view-reports .report-type-tabs, #view-reports .report-grid, #view-reports .editor-panel { display:none !important; }
+}
 
 .parcel-intake { display: none; }
 .pos-shell.pos-mode-parcel {
@@ -721,10 +765,30 @@ button:hover,
 .pos-mode-dine-in .customer-panel > .pos-discount-tools,
 .pos-mode-dine-in .customer-panel > #discountStatus,
 .pos-mode-dine-in .customer-panel > #payableTotal { display:none!important; }
-.pos-mode-dine-in .payment-panel > .pos-primary-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.pos-mode-dine-in .payment-panel > .pos-primary-actions { display:grid; grid-template-columns:1fr; gap:8px; }
 .pos-mode-dine-in .payment-panel > .pos-primary-actions button { display:inline-flex; align-items:center; justify-content:center; gap:6px; width:100%; min-width:0; min-height:52px; margin:0; padding:10px 12px; line-height:1.15; text-align:center; }
 .pos-mode-party .payment-panel > .pos-primary-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:stretch; gap:10px; }
 .pos-mode-party .payment-panel > .pos-primary-actions button { display:inline-flex; align-items:center; justify-content:center; gap:6px; width:100%; min-width:0; min-height:48px; margin:0; padding:10px 12px; line-height:1.15; text-align:center; }
+.billing-settlement-actions { display:grid; grid-template-columns:1fr; gap:8px; margin-top:10px; }
+.billing-settlement-actions button { width:100%; min-height:44px; }
+
+.qr-outage {
+  min-height: 100vh;
+  grid-column: 1 / -1;
+  padding: 32px;
+  background: #f6f8fb;
+}
+.qr-outage > div {
+  max-width: 720px;
+  margin: 12vh auto 0;
+  padding: 36px;
+  text-align: center;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+.qr-outage h1 { margin-top: 0; }
 
 .pos-mode-nav {
   display: flex;
@@ -1307,7 +1371,35 @@ button:hover,
 .kot-confirm-columns strong { display:block; margin-bottom:6px; }
 .pos-confirm-actions { display:flex; justify-content:center; gap:8px; }
 .pos-confirm-actions button { flex:0 1 165px; }
-.recent-order, .recent-order strong, .recent-order span, .recent-order small { text-align:left; align-items:flex-start; }
+.recent-order {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+}
+.recent-order strong,
+.recent-order span,
+.recent-order small {
+  display: block;
+  width: 100%;
+  margin: 0;
+  text-align: left;
+  align-self: stretch;
+}
+
+/* Ready-for-billing is a per-order state. Keep every line readable on the
+   light ready card; after settlement the card is removed and BAU styling
+   applies to the remaining orders automatically. */
+.billing-open-bills button.ready-billing,
+.billing-open-bills button.ready-billing strong,
+.billing-open-bills button.ready-billing span,
+.billing-open-bills button.ready-billing span b,
+.billing-open-bills button.ready-billing span em,
+.billing-open-bills button.ready-billing small,
+.billing-open-bills button.ready-billing .billing-ready-label {
+  color: #000 !important;
+}
 .billing-detail-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; }
 .split-item-list { display:grid; gap:10px; margin:14px 0; }
 .split-item-list label { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:start; gap:8px; text-align:left; }
@@ -1382,6 +1474,21 @@ button:hover,
   border: 1px solid #dfe3e8;
   border-radius: 8px;
   box-shadow: 0 18px 45px rgba(15, 23, 42, 0.18);
+}
+
+.modifier-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  overflow: auto;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.modifier-modal-backdrop > .modifier-modal {
+  margin: auto;
 }
 
 .modifier-modal header {
@@ -1955,6 +2062,23 @@ button:hover,
 
   .admin-sidebar .brand-block {
     margin-bottom: 8px;
+  }
+
+  .admin-nav-layout {
+    display: flex;
+    gap: 12px;
+    width: max-content;
+  }
+
+  .admin-category-nav {
+    display: flex;
+    gap: 6px;
+    position: static;
+  }
+
+  .admin-category-btn {
+    width: auto;
+    white-space: nowrap;
   }
 
   .admin-nav {

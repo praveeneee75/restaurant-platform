@@ -5273,6 +5273,13 @@ app.get('/qr/menu', (req, res) => {
   if (!restaurantId || !isPositiveId(tableId)) return res.status(400).json({ success: false, message: 'A valid restaurant and table are required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    if (!getBooleanConfig(db, 'qr_ordering_enabled', true)) {
+      return res.status(503).json({
+        success: false,
+        code: 'QR_DISABLED',
+        message: 'QR ordering is temporarily unavailable. Please place your order through a waiter.'
+      });
+    }
     const table = db.prepare('SELECT * FROM tables WHERE id = ? AND active = 1').get(tableId);
     if (!table) throw new Error('Table not found');
     if (!qrPinRequired(db)) {
@@ -5447,6 +5454,29 @@ app.post('/qr/orders/approve', async (req, res) => {
       : null;
     if (saasOrderId || saasImport?.saas_order_id) await updateSaasOnlineOrderStatus(restaurantId, saasOrderId || saasImport.saas_order_id, 'ACCEPTED', orderId);
     res.json({ success: true, kotReference: kotResult.kotReference, message: `QR order approved and KOT ${kotResult.kotReference} submitted` });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/qr/status', (req, res) => {
+  const { restaurantId, tableId } = req.query;
+  if (!restaurantId || !isPositiveId(tableId)) return res.status(400).json({ success: false, message: 'A valid restaurant and table are required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const enabled = getBooleanConfig(db, 'qr_ordering_enabled', true);
+    const table = db.prepare('SELECT id, table_name FROM tables WHERE id = ? AND active = 1').get(tableId);
+    if (!table) return res.status(404).json({ success: false, message: 'This QR table is unavailable. Please contact a waiter.' });
+    res.status(enabled ? 200 : 503).json({
+      success: enabled,
+      enabled,
+      code: enabled ? 'QR_ENABLED' : 'QR_DISABLED',
+      table,
+      restaurant: { displayName: getConfigValue(db, 'restaurant_display_name', 'Restaurant POS') },
+      message: enabled ? 'QR ordering is available' : 'QR ordering is temporarily unavailable. Please place your order through a waiter.'
+    });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -6094,6 +6124,7 @@ app.get('/orders/invoices', (req, res) => {
         o.table_id,
         o.order_reference,
         o.invoice_no,
+        o.is_invoice,
         o.table_no,
         o.order_type,
         o.total_amount,
@@ -6717,6 +6748,14 @@ app.post('/orders/final-bill', (req, res) => {
     const kotReferences = db.prepare(`SELECT GROUP_CONCAT(kot_ref, ', ') AS kot_refs FROM (SELECT DISTINCT COALESCE(o.order_reference, CAST(o.id AS TEXT)) || '-' || COALESCE(k.suborder_no, k.id) AS kot_ref FROM kots k JOIN orders o ON o.id = k.order_id WHERE k.order_id = ? ORDER BY COALESCE(k.suborder_no, k.id))`).get(orderId)?.kot_refs || '';
     let printQueued = false;
     db.transaction(() => {
+    const savedItems = db.prepare('SELECT id FROM order_items WHERE order_id = ? AND kot_id IS NULL').all(orderId);
+    if (savedItems.length) {
+      const savedItemIds = savedItems.map((item) => Number(item.id));
+      const placeholders = savedItemIds.map(() => '?').join(',');
+      db.prepare(`DELETE FROM order_item_modifiers WHERE order_item_id IN (${placeholders})`).run(...savedItemIds);
+      db.prepare('DELETE FROM order_items WHERE order_id = ? AND kot_id IS NULL').run(orderId);
+      writeAudit(db, actor, 'DISCARD', 'ORDER_DRAFT_ITEMS', orderId, { itemCount: savedItemIds.length }, { reason: 'Final Bill and Print' });
+    }
     if (billPrinter) {
       db.prepare("INSERT INTO print_jobs (type, ref_id, kitchen_id, printer_id, payload, status) VALUES ('BILL', ?, NULL, ?, ?, 'PENDING')").run(orderId, billPrinter.id, JSON.stringify({
         orderId, orderReference: order.order_reference || String(orderId), invoiceNo: `FINAL-${order.order_reference || orderId}`, finalBill: true, items,
@@ -6740,6 +6779,28 @@ app.post('/orders/final-bill', (req, res) => {
     res.json({ success:true, billingReady:true, printQueued, message:'Final bill sent to the configured BILL printer. Order marked ready for billing.' });
   } catch (err) { sendError(res, err); }
   finally { db.close(); }
+});
+
+app.post('/orders/invoices/:id/generate', (req, res) => {
+  const invoiceId = Number(req.params.id);
+  const { restaurantId, actor } = req.body || {};
+  if (!restaurantId || !isPositiveId(invoiceId)) return res.status(400).json({ success: false, message: 'Restaurant and order are required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'billing.settle', 'Billing permission required');
+    const order = db.prepare("SELECT id, status, is_invoice, invoice_no FROM orders WHERE id = ?").get(invoiceId);
+    if (!order || order.status !== 'PAID') throw new Error('Settled order not found');
+    const invoiceNo = Number(order.is_invoice) === 1 && order.invoice_no
+      ? order.invoice_no
+      : invoiceNumberForOrder(db, invoiceId);
+    db.prepare('UPDATE orders SET is_invoice = 1, invoice_no = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(invoiceNo, invoiceId);
+    writeAudit(db, actor, 'GENERATE', 'INVOICE', invoiceId, { isInvoice: order.is_invoice, invoiceNo: order.invoice_no }, { isInvoice: 1, invoiceNo });
+    res.json({ success: true, invoiceNo });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
 });
 
 app.get('/printer-security', (req, res) => {
@@ -6789,7 +6850,7 @@ app.post('/orders/invoices/:id/reprint', (req, res) => {
 });
 
 app.post('/orders/settle', async (req, res) => {
-  const { restaurantId, actor, orderId, customerId, redeemPoints, payments, isInvoice = true, printBill = false } = req.body;
+  const { restaurantId, actor, orderId, customerId, redeemPoints, payments, isInvoice = true, printBill = false, discardSavedItems = false } = req.body;
   if (!restaurantId || !orderId || !Array.isArray(payments) || !canSell(actor?.role)) {
     return res.status(400).json({ success: false, message: 'Order, payments and sales permission are required' });
   }
@@ -6823,7 +6884,7 @@ app.post('/orders/settle', async (req, res) => {
       `).get(orderId);
       if (!Number(preflightItems.item_count)) throw new Error('Cannot settle an order without items');
       if (!Number(preflightItems.submitted_count)) throw new Error('Submit the order to KOT before settlement');
-      if (Number(preflightItems.draft_count)) throw new Error('Submit all saved items to KOT before settlement');
+      if (Number(preflightItems.draft_count) && !discardSavedItems) throw new Error('Submit all saved items to KOT before settlement');
       const preflightGross = Number(preflightItems.gross || 0);
       if (preflightGross <= 0) throw new Error('Cannot settle an order with a zero item total');
       const preflightService = serviceChargeForAmount(db, preflightGross);
@@ -6850,6 +6911,17 @@ app.post('/orders/settle', async (req, res) => {
     const settled = db.transaction(() => {
       const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
       if (!order) throw new Error('Order not found');
+      let discardedSavedItemCount = 0;
+      if (discardSavedItems) {
+        const savedItems = db.prepare('SELECT id FROM order_items WHERE order_id = ? AND kot_id IS NULL').all(orderId);
+        if (savedItems.length) {
+          const savedItemIds = savedItems.map((item) => Number(item.id));
+          const placeholders = savedItemIds.map(() => '?').join(',');
+          db.prepare(`DELETE FROM order_item_modifiers WHERE order_item_id IN (${placeholders})`).run(...savedItemIds);
+          discardedSavedItemCount = db.prepare('DELETE FROM order_items WHERE order_id = ? AND kot_id IS NULL').run(orderId).changes;
+          writeAudit(db, actor, 'DISCARD', 'ORDER_DRAFT_ITEMS', orderId, { itemCount: discardedSavedItemCount }, { reason: 'Billing settlement' });
+        }
+      }
       const cashRegisterSessionId = activeCashSessionForPayment(db, actor, payments);
       const linkedCustomerId = isPositiveId(customerId) ? Number(customerId) : order.customer_id;
       if (linkedCustomerId) {
@@ -6915,8 +6987,8 @@ app.post('/orders/settle', async (req, res) => {
       if (paid + 0.005 < payable) throw new Error(`Payment is less than payable total (paid ${paid.toFixed(2)}, payable ${payable.toFixed(2)})`);
       if (paid - 0.005 > payable) throw new Error(`Payment exceeds payable total (paid ${paid.toFixed(2)}, payable ${payable.toFixed(2)})`);
       const invoiceNo = isInvoice === false
-        ? (order.invoice_no || `RCP-${crypto.randomBytes(5).toString('hex').toUpperCase()}`)
-        : (order.invoice_no || invoiceNumberForOrder(db, orderId));
+        ? null
+        : (Number(order.is_invoice) === 1 && order.invoice_no ? order.invoice_no : invoiceNumberForOrder(db, orderId));
 
       if (redeem > 0 && !db.prepare("SELECT id FROM loyalty_points WHERE customer_id = ? AND order_id = ? AND type = 'REDEEM' LIMIT 1").get(linkedCustomerId, orderId)) {
         const memberId = memberIdForCustomer(db, linkedCustomerId);
@@ -7052,10 +7124,10 @@ app.post('/orders/settle', async (req, res) => {
       if (Number(order.is_invoice) === 0) {
         writeCompliance(db, 'NON_INVOICE_ORDER', 'MEDIUM', `Non-invoice order settled #${orderId}`, 'ORDER', orderId);
       }
-      return { invoiceNo, paid, payable, redeemedPoints: redeem, loyaltyDiscount, serviceCharge, roundOff, printQueued };
+      return { invoiceNo, paid, payable, redeemedPoints: redeem, loyaltyDiscount, serviceCharge, roundOff, printQueued, discardedSavedItemCount };
     })();
 
-    res.json({ success: true, invoiceNo: settled.invoiceNo, paidAmount: settled.paid, payable: settled.payable, redeemedPoints: settled.redeemedPoints, loyaltyBalance: centralLoyalty?.balance ?? null, earnedPoints: centralLoyalty?.earnedPoints ?? 0, loyaltyDiscount: settled.loyaltyDiscount, serviceCharge: settled.serviceCharge, roundOff: settled.roundOff, printRequested: Boolean(printBill), printQueued: Boolean(settled.printQueued), printMessage: settled.printQueued ? 'Bill sent to the configured BILL printer' : 'Printer is not configured. Invoice was created. Configure an active printer with type BILL in Admin > Printers, then retry printing.' });
+    res.json({ success: true, invoiceNo: settled.invoiceNo, paidAmount: settled.paid, payable: settled.payable, redeemedPoints: settled.redeemedPoints, loyaltyBalance: centralLoyalty?.balance ?? null, earnedPoints: centralLoyalty?.earnedPoints ?? 0, loyaltyDiscount: settled.loyaltyDiscount, serviceCharge: settled.serviceCharge, roundOff: settled.roundOff, discardedSavedItemCount: settled.discardedSavedItemCount, printRequested: Boolean(printBill), printQueued: Boolean(settled.printQueued), printMessage: settled.printQueued ? 'Bill sent to the configured BILL printer' : 'Printer is not configured. Invoice was created. Configure an active printer with type BILL in Admin > Printers, then retry printing.' });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -7895,6 +7967,79 @@ app.get('/reports/sales-detail', (req, res) => {
   } catch (err) { sendError(res, err); } finally { db.close(); }
 });
 
+app.get('/reports/operational-summary', (req, res) => {
+  const { restaurantId, fromDate, toDate, role, type = 'sales' } = req.query;
+  if (!restaurantId) return res.status(400).json({ success:false, message:'restaurantId required' });
+  const from = fromDate || localIsoDateOnly();
+  const to = toDate || from;
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    if (role) requirePermission(db, role, canRole(db, role, 'reports.view_all') ? 'reports.view_all' : 'reports.view_invoice_only', 'Reports permission required');
+    const dateFilter = `DATE(COALESCE(o.settled_at,o.updated_at,o.created_at)) BETWEEN DATE(?) AND DATE(?)`;
+    let columns = [];
+    let rows = [];
+    if (type === 'categories' || type === 'items') {
+      const groupItem = type === 'items';
+      columns = groupItem
+        ? [['category','Category'],['item','Item'],['code','Code'],['orders','Orders'],['quantity','Qty'],['net_amount','Net amount'],['tax_amount','Tax'],['total_sales','Total sales']]
+        : [['category','Category'],['orders','Orders'],['quantity','Items'],['net_amount','Net amount'],['discount_amount','Discount'],['tax_amount','Tax'],['total_sales','Total sales'],['percentage','Percentage']];
+      rows = db.prepare(`
+        WITH paid_lines AS (
+          SELECT o.id order_id, c.name category, i.name item, printf('ITM-%04d', i.id) code,
+            oi.quantity, COALESCE(oi.price,i.price,0)*oi.quantity line_total,
+            COALESCE(o.tax_amount,0) order_tax, COALESCE(o.total_amount,0) order_total,
+            COALESCE((SELECT SUM(CASE WHEN UPPER(d.value_type)='PERCENT' THEN COALESCE(o.total_amount,0)*d.value/100.0 ELSE d.value END) FROM discounts d WHERE d.order_id=o.id),0) order_discount
+          FROM orders o JOIN order_items oi ON oi.order_id=o.id JOIN items i ON i.id=oi.item_id JOIN categories c ON c.id=i.category_id
+          WHERE o.payment_status='PAID' AND oi.kot_id IS NOT NULL AND ${dateFilter}
+        ), totals AS (SELECT *, SUM(line_total) OVER (PARTITION BY order_id) order_lines FROM paid_lines)
+        SELECT category${groupItem ? ', item, code' : ''}, COUNT(DISTINCT order_id) orders, SUM(quantity) quantity,
+          ROUND(SUM(line_total-CASE WHEN order_lines>0 THEN order_discount*line_total/order_lines ELSE 0 END-CASE WHEN order_lines>0 THEN order_tax*line_total/order_lines ELSE 0 END),2) net_amount,
+          ROUND(SUM(CASE WHEN order_lines>0 THEN order_discount*line_total/order_lines ELSE 0 END),2) discount_amount,
+          ROUND(SUM(CASE WHEN order_lines>0 THEN order_tax*line_total/order_lines ELSE 0 END),2) tax_amount,
+          ROUND(SUM(line_total),2) total_sales
+        FROM totals GROUP BY category${groupItem ? ', item, code' : ''} ORDER BY total_sales DESC
+      `).all(from, to);
+      const grand = rows.reduce((sum, row) => sum + Number(row.total_sales || 0), 0);
+      rows.forEach((row) => { row.percentage = grand ? `${(Number(row.total_sales) * 100 / grand).toFixed(2)}%` : '0.00%'; });
+    } else if (type === 'employees' || type === 'captains') {
+      const captain = type === 'captains';
+      columns = captain
+        ? [['employee','Captain'],['orders','Orders'],['pax','Pax'],['net_sales','Net sales'],['discount','Discount'],['tax','Tax'],['total_sales','Total sales']]
+        : [['employee','Employee'],['orders','Orders'],['cancelled','Cancelled'],['reprints','Reprints'],['cash','Cash'],['card','Card'],['upi','UPI'],['total_sales','Total sales']];
+      rows = db.prepare(`
+        SELECT COALESCE(u.name,u.username,'Unassigned') employee,
+          COUNT(DISTINCT CASE WHEN o.payment_status='PAID' THEN o.id END) orders,
+          COUNT(DISTINCT CASE WHEN o.status='CANCELLED' THEN o.id END) cancelled, 0 pax,
+          ROUND(SUM(CASE WHEN o.payment_status='PAID' THEN MAX(COALESCE(o.total_amount,0)-COALESCE(o.tax_amount,0),0) ELSE 0 END),2) net_sales,
+          ROUND(SUM(CASE WHEN o.payment_status='PAID' THEN COALESCE(o.tax_amount,0) ELSE 0 END),2) tax,
+          ROUND(SUM(CASE WHEN o.payment_status='PAID' THEN COALESCE(o.total_amount,0) ELSE 0 END),2) total_sales,
+          ROUND(SUM(CASE WHEN UPPER(COALESCE(p.payment_mode,''))='CASH' THEN p.amount ELSE 0 END),2) cash,
+          ROUND(SUM(CASE WHEN UPPER(COALESCE(p.payment_mode,''))='CARD' THEN p.amount ELSE 0 END),2) card,
+          ROUND(SUM(CASE WHEN UPPER(COALESCE(p.payment_mode,''))='UPI' THEN p.amount ELSE 0 END),2) upi,
+          COALESCE((SELECT COUNT(*) FROM invoice_reprints ir JOIN orders ro ON ro.id=ir.order_id WHERE ro.created_by=o.created_by AND DATE(ir.created_at) BETWEEN DATE(?) AND DATE(?)),0) reprints,
+          0 discount
+        FROM orders o LEFT JOIN users u ON u.id=o.created_by LEFT JOIN payments p ON p.order_id=o.id
+        WHERE ${dateFilter} GROUP BY o.created_by, employee ORDER BY total_sales DESC
+      `).all(from, to, from, to);
+    } else if (type === 'orders') {
+      columns = [['status','Order status'],['orders','Orders'],['net_amount','Net amount'],['tax','Tax'],['total','Total']];
+      rows = db.prepare(`SELECT CASE WHEN o.payment_status='PAID' THEN 'Settled' ELSE COALESCE(o.status,'Saved') END status,
+        COUNT(*) orders, ROUND(SUM(MAX(COALESCE(o.total_amount,0)-COALESCE(o.tax_amount,0),0)),2) net_amount,
+        ROUND(SUM(COALESCE(o.tax_amount,0)),2) tax, ROUND(SUM(COALESCE(o.total_amount,0)),2) total
+        FROM orders o WHERE ${dateFilter} GROUP BY status ORDER BY total DESC`).all(from, to);
+    } else {
+      columns = [['order_reference','Order'],['settled_at','Date'],['order_type','Order type'],['net_amount','Net amount'],['discount_amount','Discount'],['additional_charge','Additional charge'],['tax_amount','Tax'],['total_amount','Total'],['assigned_to','Assigned to']];
+      rows = db.prepare(`SELECT COALESCE(o.order_reference,CAST(o.id AS TEXT)) order_reference, COALESCE(o.settled_at,o.updated_at,o.created_at) settled_at,
+        o.order_type, ROUND(MAX(COALESCE(o.total_amount,0)-COALESCE(o.tax_amount,0)-COALESCE(o.service_charge_amount,0),0),2) net_amount,
+        COALESCE((SELECT SUM(CASE WHEN UPPER(d.value_type)='PERCENT' THEN COALESCE(o.total_amount,0)*d.value/100.0 ELSE d.value END) FROM discounts d WHERE d.order_id=o.id),0) discount_amount,
+        COALESCE(o.service_charge_amount,0) additional_charge, COALESCE(o.tax_amount,0) tax_amount, COALESCE(o.total_amount,0) total_amount,
+        COALESCE(u.name,u.username,'-') assigned_to FROM orders o LEFT JOIN users u ON u.id=o.created_by
+        WHERE o.payment_status='PAID' AND ${dateFilter} ORDER BY COALESCE(o.settled_at,o.updated_at,o.created_at) DESC`).all(from, to);
+    }
+    res.json({ success:true, type, columns, rows });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
+});
+
 const CLOUD_SHARED_SETTING_KEYS = new Set([
   'qr_ordering_enabled', 'qr_require_table_pin', 'qr_session_minutes', 'qr_pending_order_limit',
   'mobile_app_enabled', 'online_order_enabled', 'online_storefront_slug', 'online_theme',
@@ -7914,18 +8059,6 @@ async function validateCloudSharedSettings(db, restaurantId, safeSettings, oldVa
   ));
   if (!changedCloudKeys.length) return;
 
-  const effectiveQrEnabled = Object.hasOwn(safeSettings, 'qr_ordering_enabled')
-    ? settingEnabled(safeSettings.qr_ordering_enabled)
-    : getBooleanConfig(db, 'qr_ordering_enabled', true);
-  const effectiveOnlineEnabled = Object.hasOwn(safeSettings, 'online_order_enabled')
-    ? settingEnabled(safeSettings.online_order_enabled)
-    : getBooleanConfig(db, 'online_order_enabled', false);
-  const effectiveMobileEnabled = Object.hasOwn(safeSettings, 'mobile_app_enabled')
-    ? settingEnabled(safeSettings.mobile_app_enabled)
-    : getBooleanConfig(db, 'mobile_app_enabled', false);
-
-  // Disabling cloud features must always remain possible during an outage.
-  if (!effectiveQrEnabled && !effectiveOnlineEnabled && !effectiveMobileEnabled) return;
   if (!process.env.SAAS_URL) {
     const error = new Error('Internet and SaaS connection are required before enabling or changing cloud-shared features. SAAS_URL is not configured.');
     error.status = 503;
@@ -7969,6 +8102,24 @@ app.post('/settings/update', async (req, res) => {
     Object.keys(safeSettings).forEach((key) => {
       newValue[key] = getConfigValue(db, key, DEFAULT_SYSTEM_SETTINGS[key]);
     });
+    if (Object.keys(safeSettings).some((key) => CLOUD_SHARED_SETTING_KEYS.has(key))) {
+      const saasUrl = String(process.env.SAAS_URL || '').replace(/\/$/, '');
+      const credentials = saasCredentials(db, restaurantId);
+      try {
+        const pushed = await axios.post(`${saasUrl}/owner-control/pos/push-snapshot`, {
+          restaurantId,
+          ...credentials,
+          ...buildOwnerControlSnapshot(db)
+        }, { timeout: 10000 });
+        if (!pushed.data?.success) throw new Error(pushed.data?.message || 'SaaS rejected the settings update');
+      } catch (cause) {
+        setConfigValues(db, oldValue);
+        const detail = cause.response?.data?.message || cause.message || 'SaaS is unreachable';
+        const error = new Error(`Cloud-shared settings were not changed because POS could not confirm the update with SaaS. ${detail}`);
+        error.status = 503;
+        throw error;
+      }
+    }
     writeAudit(db, actorFromRole(role), 'UPDATE', 'SETTINGS', Object.keys(safeSettings).join(','), oldValue, newValue);
     res.json({ success: true, settings: getAllSettings(db) });
   } catch (err) {
@@ -10206,7 +10357,7 @@ function applyRemoteConfiguration(db, domain, payload) {
   const allowedSettings = {
     BILLING: ['service_charge_enabled','service_charge_percent','round_off_enabled','allow_refund','require_manager_pin_for_refund','allow_discount','require_manager_pin_for_discount'],
     BACKUP: ['backup_enabled','backup_folder_path','onedrive_folder_path','backup_interval_minutes'],
-    ONLINE_ORDERING: Object.keys(DEFAULT_SYSTEM_SETTINGS).filter((key) => key.startsWith('online_'))
+    ONLINE_ORDERING: Object.keys(DEFAULT_SYSTEM_SETTINGS).filter((key) => key.startsWith('online_') || key.startsWith('qr_'))
   };
   if (domain === 'MENU') return applyRemoteMenu(db, payload);
   const settings = payload.settings || payload;

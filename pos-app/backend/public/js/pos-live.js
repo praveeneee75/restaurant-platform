@@ -160,8 +160,8 @@ function applyRoleAndModeUI() {
   document.querySelectorAll('[data-role-nav="live-orders"]').forEach((el) => { el.hidden = !["CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role); });
   document.querySelectorAll('[data-role-nav="qr-notifications"]').forEach((el) => { el.hidden = !["CAPTAIN", "CASHIER", "WAITER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role); });
   if (moveTableBtn) moveTableBtn.hidden = !canMove;
-  if (settleOrder) settleOrder.hidden = !canSettle;
-  if (settlePrintOrder) settlePrintOrder.hidden = !canSettleAndPrint;
+  if (settleOrder) settleOrder.hidden = true;
+  if (settlePrintOrder) settlePrintOrder.hidden = true;
   if (settlementType) settlementType.hidden = role !== "MANAGER_1";
   if (posMode !== "DINE_IN") document.body.classList.add("pos-non-dine-in");
   else document.body.classList.add("pos-mode-dine-in");
@@ -1134,7 +1134,7 @@ async function submitCurrentKot() {
       orderType.value = "DINE_IN";
       await reloadCurrentOrderCart();
       updateOrderTypeView();
-    } else if (["PARCEL", "PARTY"].includes(posMode)) newCheckBtn.click();
+    } else if (["PARCEL", "PARTY"].includes(posMode)) await startNewCheck();
   }
   alert(data.message || "KOT submitted");
 }
@@ -1202,7 +1202,11 @@ async function requestFinalBillAndPrint() {
       location.href = `/billing.html?restaurantId=${encodeURIComponent(restaurantId)}`;
       return;
     }
-    if (["PARCEL", "PARTY"].includes(posMode)) newCheckBtn.click();
+    if (["PARCEL", "PARTY"].includes(posMode)) {
+      await startNewCheck();
+      location.href = `/billing.html?restaurantId=${encodeURIComponent(restaurantId)}`;
+      return;
+    }
   } finally { finalBillPrintOrder.disabled = state.billingReady; }
 }
 
@@ -1498,7 +1502,7 @@ moveTableBtn.addEventListener("click", async () => {
   }
 });
 splitBillBtn?.addEventListener("click", openSplitBillModal);
-newCheckBtn.addEventListener("click", async () => {
+async function startNewCheck() {
   if (posMode === "DINE_IN" && !state.selectedTable) return alert("Select a table first");
   if (state.cart.length && state.dirty && !state.billingReady) {
     const saved = await saveCurrentOrder();
@@ -1519,8 +1523,11 @@ newCheckBtn.addEventListener("click", async () => {
   customerName.value = "";
   orderType.value = posMode === "PARCEL" ? "TAKEAWAY" : posMode === "PARTY" ? "PHONE_ORDER" : "DINE_IN";
   kotStatus.textContent = "New customer check started";
+  renderOrderSelector();
+  renderCart();
   updateOrderTypeView();
-});
+}
+newCheckBtn.addEventListener("click", startNewCheck);
 parcelCheckBtn.addEventListener("click", async () => {
   if (posMode !== "DINE_IN") return alert("Use the current POS mode for this order");
   if (!state.selectedTable) return alert("Select the customer's table first");

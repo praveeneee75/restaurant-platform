@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body class="pos-shell">
-  <main class="pos-center">
+  <main class="pos-center" id="qrMenuPane">
     <header>
       <h1 id="restaurantName">Menu</h1>
     <p id="tableName"></p>
@@ -18,7 +18,7 @@
     <nav id="qrCategories" class="category-tabs" hidden></nav>
     <section id="qrItems" class="item-grid" hidden></section>
   </main>
-  <aside class="pos-cart">
+  <aside class="pos-cart" id="qrOrderPane">
     <h2>Your Order</h2>
     <div id="qrCartItems"></div>
     <strong id="qrTotal">Total: 0</strong>
@@ -30,6 +30,12 @@
     <button id="placeQrOrder">Place Order</button>
     <p id="qrStatus"></p>
   </aside>
-  <script src="/js/qr-menu.js?v=1.0.90"></script>
+  <section id="qrOutage" class="qr-outage" hidden>
+    <div>
+      <h1>Ordering is temporarily unavailable</h1>
+      <p id="qrOutageMessage">Please place your order through a waiter.</p>
+    </div>
+  </section>
+  <script src="/js/qr-menu.js?v=1.0.128"></script>
 </body>
 </html>

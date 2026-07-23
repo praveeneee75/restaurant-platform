@@ -6,6 +6,38 @@ const state = { categories: [], items: [], cart: [], currency: "INR", selectedCa
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 const money = (value) => `${state.currency} ${Number(value || 0).toFixed(2)}`;
 
+function showQrOutage(message) {
+  qrMenuPane.hidden = true;
+  qrOrderPane.hidden = true;
+  qrOutage.hidden = false;
+  qrOutageMessage.textContent = message || "QR ordering is temporarily unavailable. Please place your order through a waiter.";
+}
+
+async function readJson(response) {
+  return response.json().catch(() => ({ success: false, message: "The ordering service is unavailable. Please place your order through a waiter." }));
+}
+
+async function checkQrAvailability() {
+  if (!restaurantId || !tableId) {
+    showQrOutage("This QR link is invalid. Please ask a waiter for assistance.");
+    return false;
+  }
+  try {
+    const response = await fetch(`/qr/status?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${encodeURIComponent(tableId)}`, { cache: "no-store" });
+    const data = await readJson(response);
+    if (!response.ok || !data.enabled) {
+      showQrOutage(data.message);
+      return false;
+    }
+    restaurantName.textContent = data.restaurant?.displayName || "Menu";
+    tableName.textContent = data.table?.table_name || "";
+    return true;
+  } catch {
+    showQrOutage("Internet ordering is currently unavailable. Please place your order through a waiter.");
+    return false;
+  }
+}
+
 function total() {
   return state.cart.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0);
 }
@@ -38,8 +70,10 @@ async function loadMenu() {
   }
   state.pin = qrTablePin.value.replace(/\D/g, "").slice(0, 6);
   if (!/^\d{6}$/.test(state.pin)) { qrStatus.textContent = "Enter the current 6-digit table PIN from the waiter"; return; }
-  const data = await fetch(`/qr/menu?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${encodeURIComponent(tableId)}&pin=${encodeURIComponent(state.pin)}`).then((res) => res.json());
-  if (!data.success) {
+  const response = await fetch(`/qr/menu?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${encodeURIComponent(tableId)}&pin=${encodeURIComponent(state.pin)}`, { cache: "no-store" });
+  const data = await readJson(response);
+  if (!response.ok || !data.success) {
+    if (data.code === "QR_DISABLED" || response.status === 503) return showQrOutage(data.message);
     qrStatus.textContent = data.message;
     return;
   }
@@ -117,4 +151,4 @@ placeQrOrder.addEventListener("click", async () => {
   render();
 });
 
-loadMenu();
+checkQrAvailability();

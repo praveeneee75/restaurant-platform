@@ -113,7 +113,9 @@ assert.match(electronMain, /printToPDF/);
 assert.match(electronMain, /\^https\?:\\\/\\\//);
 assert.match(electronPreload, /contextBridge\.exposeInMainWorld\('posDesktop'/);
 assert.match(electronPreload, /startPrintWorker/);
-assert.match(billing, /printBill = button\.dataset\.printBill === 'true'/);
+assert.match(billing, /settlementMode = button\.dataset\.settlementMode \|\| 'INVOICE'/);
+assert.match(billing, /isInvoice = settlementMode !== 'NO_INVOICE'/);
+assert.match(billing, /printBill = settlementMode === 'PRINT'/);
 assert.doesNotMatch(electronPreload, /nodeIntegration/);
 
 console.log(JSON.stringify({

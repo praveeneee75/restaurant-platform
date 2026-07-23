@@ -87,11 +87,11 @@ async function main() {
     result = await json('POST', '/admin/kitchens/delete', { restaurantId, actor, id: kitchenId });
     assert(result.response.status === 200 && result.data.success, 'Kitchen disable failed');
     result = await json('GET', `/admin/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}&includeInactive=true`);
-    const disabledPrinter = result.data.printers.find((row) => Number(row.id) === Number(printerId));
-    const disabledKitchen = result.data.kitchens.find((row) => Number(row.id) === Number(kitchenId));
+    const deletedPrinter = result.data.printers.find((row) => Number(row.id) === Number(printerId));
+    const deletedKitchen = result.data.kitchens.find((row) => Number(row.id) === Number(kitchenId));
     const retainedCategory = result.data.categories.find((row) => Number(row.id) === Number(categoryId));
-    assert(disabledPrinter && Number(disabledPrinter.active) === 0, 'Disabled printer missing from Admin list');
-    assert(disabledKitchen && Number(disabledKitchen.active) === 0, 'Disabled kitchen missing from Admin list');
+    assert(!deletedPrinter, 'Deleted printer remained in the Admin list');
+    assert(!deletedKitchen, 'Deleted kitchen remained in the Admin list');
     assert(retainedCategory && Number(retainedCategory.kitchen_active) === 0, 'Category did not retain inactive kitchen status');
     console.log('Admin regression passed: tracker rows 2-12 covered');
   } finally {

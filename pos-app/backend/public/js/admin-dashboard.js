@@ -518,6 +518,7 @@ function renderInvoices() {
   const query = String(invoiceSearch?.value || '').trim().toLowerCase();
   const visibleInvoices = (state.invoices || []).filter((invoice) => !query || [
     invoice.invoice_no,
+    invoice.order_reference,
     invoice.customer_name,
     invoice.customer_phone,
     invoice.table_no,
@@ -525,7 +526,7 @@ function renderInvoices() {
   ].some((value) => String(value || '').toLowerCase().includes(query)));
   invoicesTable.innerHTML = visibleInvoices.map((invoice) => `
     <tr>
-      <td>${esc(invoice.invoice_no || `#${invoice.id}`)}</td>
+      <td>${esc(invoice.invoice_no || invoice.order_reference || `Order #${invoice.id}`)}</td>
       <td>${esc(invoice.customer_name || "")}<br><small>${esc(invoice.customer_phone || "")}</small></td>
       <td>${esc(invoice.table_no || "")}</td>
       <td>${esc(invoice.order_type || "")}</td>
@@ -549,7 +550,8 @@ async function showInvoiceDetail(invoiceId) {
     : Number(row.value || 0)), 0);
   const refundedAmount = Number(invoice.refunded_amount || 0);
   const remainingPaid = Math.max(Number(invoice.paid_amount || 0), 0);
-  panel.innerHTML = `<header><div><h3>${esc(invoice.invoice_no || `Invoice #${invoice.id}`)}</h3><p class="invoice-detail-meta">${esc(invoice.customer_name || 'Walk-in customer')} · ${esc(invoice.table_no || invoice.order_type || '')} · ${esc(formatDateTime(invoice.settled_at))}</p></div><div class="invoice-detail-actions"><button type="button" class="secondary-btn" id="printInvoice">Print</button><button type="button" class="secondary-btn" id="downloadInvoicePdf">Save PDF</button></div></header><div class="invoice-detail-lines">${items.map(item => `<div class="invoice-detail-line"><span>${esc(item.name)} × ${item.quantity}${item.notes ? `<small>Note: ${esc(item.notes)}</small>` : ''}</span><strong>${money(Number(item.price || 0) * Number(item.quantity || 0))}</strong></div>`).join('') || '<p>No items recorded.</p>'}</div><div class="invoice-detail-total"><span>Total</span><strong>${money(invoice.total_amount)}</strong></div>`;
+  const hasInvoice = Boolean(invoice.is_invoice && invoice.invoice_no);
+  panel.innerHTML = `<header><div><h3>${esc(hasInvoice ? invoice.invoice_no : `Settled order ${invoice.order_reference || invoice.id}`)}</h3><p class="invoice-detail-meta">${esc(invoice.customer_name || 'Walk-in customer')} · ${esc(invoice.table_no || invoice.order_type || '')} · ${esc(formatDateTime(invoice.settled_at))}</p></div><div class="invoice-detail-actions">${hasInvoice ? '<button type="button" class="secondary-btn" id="printInvoice">Print</button><button type="button" class="secondary-btn" id="downloadInvoicePdf">Save PDF</button>' : '<button type="button" class="primary-btn" id="generateInvoice">Generate Invoice</button>'}</div></header><div class="invoice-detail-lines">${items.map(item => `<div class="invoice-detail-line"><span>${esc(item.name)} × ${item.quantity}${item.notes ? `<small>Note: ${esc(item.notes)}</small>` : ''}</span><strong>${money(Number(item.price || 0) * Number(item.quantity || 0))}</strong></div>`).join('') || '<p>No items recorded.</p>'}</div><div class="invoice-detail-total"><span>Total</span><strong>${money(invoice.total_amount)}</strong></div>`;
   panel.hidden = false;
   if (discountTotal > 0) {
     const discountSummary = document.createElement('div');
@@ -575,8 +577,16 @@ async function showInvoiceDetail(invoiceId) {
   refund.className = 'invoice-refund';
   refund.innerHTML = '<h4>Refund</h4><p class="invoice-detail-meta">Refund cannot exceed the remaining paid amount.</p><div class="invoice-refund-fields"><input id="refundAmount" type="number" min="0.01" max="' + remainingPaid + '" step="0.01" placeholder="Amount"><select id="refundMode"><option value="CASH">Cash</option><option value="UPI">UPI</option><option value="OWNER_FUND">Owner fund</option></select><input id="refundReason" maxlength="200" placeholder="Reason"></div><button type="button" class="danger-btn" id="refundInvoice">Refund</button><p id="refundStatus"></p>';
   panel.appendChild(refund);
-  document.getElementById('printInvoice').onclick = () => printInvoice(invoice, items, discounts, payments).catch((error) => alert(error.message));
-  document.getElementById('downloadInvoicePdf').onclick = () => saveInvoicePdf(invoice, items, discounts, payments).catch((error) => alert(error.message));
+  if (hasInvoice) {
+    document.getElementById('printInvoice').onclick = () => printInvoice(invoice, items, discounts, payments).catch((error) => alert(error.message));
+    document.getElementById('downloadInvoicePdf').onclick = () => saveInvoicePdf(invoice, items, discounts, payments).catch((error) => alert(error.message));
+  } else {
+    document.getElementById('generateInvoice').onclick = async () => {
+      await postJson(`/orders/invoices/${encodeURIComponent(invoice.id)}/generate`, { restaurantId });
+      await loadInvoiceList();
+      await showInvoiceDetail(invoice.id);
+    };
+  }
   const refundButton = document.getElementById('refundInvoice');
   if (refundButton) refundButton.onclick = async () => {
     const amount = Number(document.getElementById('refundAmount').value);
@@ -626,6 +636,8 @@ const PRINT_STYLE_GROUPS = {
   bill: [['header', 'Restaurant header'], ['title', 'Document title'], ['details', 'Invoice / reference details'], ['items', 'Item headings and rows'], ['totals', 'Tax and totals'], ['footer', 'Footer']],
   kot: [['header', 'Kitchen header'], ['title', 'KOT title'], ['details', 'Date, reference, type and table'], ['items', 'Item headings and rows'], ['footer', 'Footer']]
 };
+let activeReportType = "sales";
+let currentOperationalReport = { columns: [], rows: [] };
 const styleId = (prefix, section, name) => `setting${prefix[0].toUpperCase()}${prefix.slice(1)}${section[0].toUpperCase()}${section.slice(1)}${name}`;
 function renderPrintStyleRows(prefix) {
   const body = document.getElementById(`${prefix}PrintStyleRows`); if (!body) return;
@@ -1209,15 +1221,41 @@ function showSettingsSection(section = "profile") {
   if (actions) actions.hidden = section === "promos";
 }
 
+function showAdminNavCategory(category = "menu") {
+  document.querySelectorAll("[data-nav-group]").forEach((group) => {
+    group.hidden = group.dataset.navGroup !== category;
+  });
+  document.querySelectorAll("[data-nav-category]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.navCategory === category);
+  });
+}
+
+document.querySelectorAll("[data-nav-category]").forEach((button) => {
+  button.addEventListener("click", () => showAdminNavCategory(button.dataset.navCategory));
+});
+
 document.querySelectorAll(".nav-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
+    const group = btn.closest("[data-nav-group]");
+    if (group) showAdminNavCategory(group.dataset.navGroup);
     document.querySelectorAll(".nav-btn").forEach((item) => item.classList.remove("active"));
     document.querySelectorAll(".admin-view").forEach((view) => view.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById(`view-${btn.dataset.view}`).classList.add("active");
     if (btn.dataset.view === "settings") showSettingsSection(btn.dataset.settingsSection || "profile");
+    if (btn.dataset.reportType) selectReportType(btn.dataset.reportType);
   });
 });
+showAdminNavCategory(document.querySelector(".nav-btn.active")?.closest("[data-nav-group]")?.dataset.navGroup || "menu");
+
+const reportTitles = { sales:"Sales Summary", orders:"Order Summary", categories:"Category Summary", items:"Item Summary", employees:"Employee Summary", captains:"Captain Summary" };
+function selectReportType(type) {
+  activeReportType = reportTitles[type] ? type : "sales";
+  reportHeading.textContent = reportTitles[activeReportType];
+  document.querySelectorAll("[data-report-tab]").forEach((button) => button.classList.toggle("active", button.dataset.reportTab === activeReportType));
+}
+document.querySelectorAll("[data-report-tab]").forEach((button) => button.addEventListener("click", () => { selectReportType(button.dataset.reportTab); loadReports.click(); }));
+selectReportType("sales");
 
 document.querySelectorAll("[data-inventory-tab]").forEach((btn) => btn.addEventListener("click", () => showInventoryTab(btn.dataset.inventoryTab)));
 document.querySelectorAll("[data-modifier-tab]").forEach((btn) => btn.addEventListener("click", () => showModifierTab(btn.dataset.modifierTab)));
@@ -1572,9 +1610,13 @@ loadReports.addEventListener("click", async () => {
   try {
     reportStatus.textContent = "Loading reports...";
     const data = await fetchJson(`/reports/dashboard?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`);
-    const sales = await fetchJson(`/reports/sales-detail?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`);
-    salesReportRows.innerHTML = (sales.rows || []).map((row) => `<tr><td>${esc(row.order_reference)}</td><td>${esc(row.settled_at)}</td><td>${esc(row.order_type)}</td><td>${money(row.net_amount)}</td><td>${money(row.discount_amount)}</td><td>${money(row.additional_charge)}</td><td>${money(row.tax_amount)}</td><td><strong>${money(row.total_amount)}</strong></td><td>${esc(row.assigned_to || '-')}</td></tr>`).join('') || '<tr><td colspan="9">No settled sales for the selected period.</td></tr>';
-    salesReportSummary.textContent = `${sales.rows?.length || 0} settled order(s) · ${money(sales.summary?.total || 0)} total sales`;
+    const report = await fetchJson(`/reports/operational-summary?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&type=${encodeURIComponent(activeReportType)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`);
+    currentOperationalReport = report;
+    operationalReportHead.innerHTML = `<tr>${report.columns.map((column) => `<th>${esc(column[1])}</th>`).join("")}</tr>`;
+    const moneyKeys = new Set(["net_amount","discount_amount","additional_charge","tax_amount","total_amount","net_sales","discount","tax","total_sales","cash","card","upi","total"]);
+    salesReportRows.innerHTML = (report.rows || []).map((row) => `<tr>${report.columns.map(([key]) => `<td>${moneyKeys.has(key) ? money(row[key]) : esc(row[key] ?? "-")}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${report.columns.length}">No data for the selected period.</td></tr>`;
+    const total = (report.rows || []).reduce((sum, row) => sum + Number(row.total_sales ?? row.total_amount ?? row.total ?? 0), 0);
+    salesReportSummary.textContent = `${reportTitles[activeReportType]} · ${report.rows?.length || 0} row(s) · ${money(total)} total`;
     dailySales.innerHTML = (data.dailySales || []).map((row) => `<p><strong>${esc(row.day)}</strong>: ${money(row.total)} · ${row.orders} order(s)</p>`).join("") || "<p>No paid sales for the selected period.</p>";
     topItems.innerHTML = (data.topSellingItems || []).map((row) => `<p><strong>${esc(row.name)}</strong>: ${row.quantity} · ${money(row.total)}</p>`).join("") || "<p>No paid item sales for the selected period.</p>";
     orderSummary.innerHTML = (data.orderSummary || []).map((row) => `<p><strong>${esc(row.status)} / ${esc(row.payment_status)}</strong>: ${row.count} · ${money(row.total)}</p>`).join("") || "<p>No orders for the selected period.</p>";
@@ -1584,6 +1626,17 @@ loadReports.addEventListener("click", async () => {
     reportStatus.textContent = `Unable to load reports: ${err.message}`;
     dailySales.innerHTML = topItems.innerHTML = orderSummary.innerHTML = taxSummary.innerHTML = `<p>${esc(err.message)}</p>`;
   }
+});
+
+printOperationalReport.addEventListener("click", () => window.print());
+exportOperationalReport.addEventListener("click", () => {
+  const { columns = [], rows = [] } = currentOperationalReport;
+  const quote = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const csv = [columns.map((column) => quote(column[1])).join(","), ...rows.map((row) => columns.map(([key]) => quote(row[key])).join(","))].join("\r\n");
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([csv], { type:"text/csv;charset=utf-8" }));
+  link.download = `${activeReportType}-${reportFrom.value}-${reportTo.value}.csv`;
+  link.click(); URL.revokeObjectURL(link.href);
 });
 
 expenseForm.addEventListener("submit", async (event) => {
@@ -1657,7 +1710,7 @@ loadInventoryReports.addEventListener("click", async () => {
   purchasePaymentModeReport.innerHTML = (purchaseData.paymentModeReport || []).map((row) => `<p>${esc(row.payment_mode)}: ${money(row.total)}</p>`).join("") || "<p>No supplier payments.</p>";
 });
 
-reportFrom.value ||= monthStartIso();
+reportFrom.value ||= todayIso();
 reportTo.value ||= todayIso();
 reservationFrom.value ||= todayIso();
 reservationTo.value ||= todayIso();

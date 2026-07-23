@@ -179,7 +179,10 @@ function thermalPrintHtml(job) {
   const thermalPageCss = '@page{margin:0}html{width:100%;margin:0;padding:0}body{width:100%;max-width:100%;margin:0;padding:3mm;overflow:hidden}*{box-sizing:border-box;max-width:100%}';
   if (job.type === 'KOT') {
     const orderType = String(payload.orderType || 'DINE_IN').toUpperCase();
-    const orderLabel = orderType === 'DINE_IN' ? 'Dine In' : orderType === 'PARCEL' || orderType === 'TAKEAWAY' ? 'Parcel' : orderType.replaceAll('_', ' ');
+    const baseOrderLabel = orderType === 'DINE_IN' ? 'Dine In' : orderType === 'PARCEL' || orderType === 'TAKEAWAY' ? 'Parcel' : orderType.replaceAll('_', ' ');
+    const orderLabel = orderType !== 'DINE_IN' && payload.tableName
+      ? `${baseOrderLabel} order + Table ${String(payload.tableName).replace(/^Table\s*/i, '')}`
+      : baseOrderLabel;
     const rows = (payload.items || []).map((item) => `<tr><td>${printEsc(item.name || item.combo_name || 'Item')}</td><td>${printEsc(item.notes || '--')}</td><td>${printEsc(item.quantity || 0)}</td></tr>`).join('');
     const compact = payload.compactSpacing !== false;
     const borderless = String(payload.template || 'CLASSIC').toUpperCase() === 'BORDERLESS';
