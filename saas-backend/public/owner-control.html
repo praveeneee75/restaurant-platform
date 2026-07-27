@@ -30,6 +30,26 @@
     @media(max-width:760px){.od-shell{display:block}.od-mobile-menu{display:none}.od-topbar{grid-template-columns:max-content minmax(0,1fr);padding:9px;gap:8px}.od-top-brand span:last-child{display:none}.od-restaurant-filter{grid-template-columns:minmax(0,1fr)}.od-filter-label{display:none}.od-multi-menu{left:0}.od-top-actions{grid-template-columns:repeat(3,minmax(0,1fr))}.od-top-actions .hide-mobile{display:none}.od-content{padding:12px}.od-grid,.od-secondary,.channel-grid,.online-summary,.menu-publisher-grid{grid-template-columns:1fr}.od-grid>.od-card:last-child{grid-column:auto}.od-heading-actions{margin-left:0;width:100%}.od-heading-actions .od-date{flex:1}.chart-wrap{height:220px}.ops-kpis{grid-template-columns:1fr 1fr}.ops-row{grid-template-columns:minmax(0,1fr) auto}.ops-row small{grid-column:1/-1}}
     @media(max-width:460px){.od-top-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.od-icon-btn{font-size:12px}.od-multi-button{font-size:13px}}
   </style>
+  <style>
+    .menu-editor{border:1px solid #d7e2ef;border-radius:16px;padding:18px;background:#fff}
+    .menu-editor-toolbar{display:flex;align-items:end;gap:12px;flex-wrap:wrap}
+    .menu-editor-toolbar label{display:grid;gap:6px;min-width:min(360px,100%)}
+    .menu-editor-toolbar select{min-height:44px}
+    .menu-editor-connection{padding:10px 14px;border-radius:999px;background:#eef2f7;font-weight:800}
+    .menu-editor-connection.online{background:#dcfce7;color:#166534}
+    .menu-editor-connection.offline{background:#fee2e2;color:#991b1b}
+    .menu-editor-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}
+    .menu-editor-tabs button.active{background:#0f8277;color:#fff}
+    .menu-editor-section{margin-top:14px;border:1px solid #d7e2ef;border-radius:12px;overflow:hidden}
+    .menu-editor-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:#f7fafc}
+    .menu-editor-table-wrap{width:100%;overflow:auto}
+    .menu-editor-table{width:100%;border-collapse:collapse;table-layout:auto}
+    .menu-editor-table th,.menu-editor-table td{padding:9px;border-bottom:1px solid #e5edf5;text-align:left;vertical-align:middle;white-space:nowrap}
+    .menu-editor-table input[type="text"],.menu-editor-table input[type="number"],.menu-editor-table select{width:100%;min-width:110px;box-sizing:border-box}
+    .menu-editor-table .wide{min-width:190px}
+    .menu-editor-empty{padding:22px;color:#64748b}
+    @media(max-width:900px){.menu-editor-toolbar>*{flex:1 1 100%}.menu-editor-toolbar button{min-height:44px}}
+  </style>
 </head>
 <body class="owner-page">
   <div class="od-shell">
@@ -76,6 +96,23 @@
             </div>
             <div id="menuPublishStatus" class="menu-publish-status" role="status" aria-live="polite"></div>
           </section>
+          <h3>Branch menu editor</h3>
+          <section id="menuEditorPanel" class="menu-editor">
+            <div class="menu-editor-toolbar">
+              <label><span>Branch</span><select id="menuEditorRestaurant"></select></label>
+              <span id="menuEditorConnection" class="menu-editor-connection">Choose a branch</span>
+              <button id="reloadMenuEditorButton" type="button">Reload</button>
+              <button id="saveMenuEditorButton" type="button" disabled>Save &amp; send to POS</button>
+            </div>
+            <p class="od-subtitle">Categories, menu items, modifiers and combos can be changed only while the selected POS is online. Changes are versioned and acknowledged by that POS.</p>
+            <div id="menuEditorTabs" class="menu-editor-tabs">
+              <button type="button" data-menu-editor-tab="categories">Categories</button>
+              <button type="button" data-menu-editor-tab="items">Menu items</button>
+              <button type="button" data-menu-editor-tab="modifiers">Modifiers &amp; combos</button>
+            </div>
+            <div id="menuEditorBody" class="menu-editor-body"></div>
+            <div id="menuEditorStatus" class="menu-publish-status" role="status" aria-live="polite"></div>
+          </section>
           <h3 id="configTitle"></h3>
           <div id="configStatus" class="od-capability-note" role="status"></div>
           <textarea id="configEditor" class="config-editor" spellcheck="false" aria-describedby="configStatus"></textarea>
@@ -87,6 +124,6 @@
   </div>
   <div class="od-drawer" id="ownerDrawer" hidden><aside class="od-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawerTitle"><div class="od-drawer-head"><h2 id="drawerTitle">Owner activity</h2><button id="closeDrawerButton" class="od-icon-btn" aria-label="Close">×</button></div><div id="drawerBody"></div></aside></div>
   <script src="/js/saas-session.js" data-session-scope="owner"></script>
-  <script src="/js/owner-control.js?v=20260727f"></script>
+  <script src="/js/owner-control.js?v=20260727g"></script>
 </body>
 </html>

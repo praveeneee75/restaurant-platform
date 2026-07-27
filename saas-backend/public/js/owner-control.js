@@ -7,6 +7,11 @@ let restaurantsList = [];
 const selectedRestaurants = new Set();
 let menuPublisherBranches = [];
 const menuTargetIds = new Set();
+let menuEditorRestaurantId = '';
+let menuEditorMenu = null;
+let menuEditorTab = 'categories';
+let menuEditorOnline = false;
+let menuEditorEnabled = false;
 const domainCapabilities = { MENU:'REMOTE_MENU', BILLING:'REMOTE_BILLING', BACKUP:'REMOTE_BACKUP', ONLINE_ORDERING:'REMOTE_ONLINE_ORDERING' };
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -207,6 +212,7 @@ function renderConfigTabs(){
   $('configTitle').textContent=enabled?domain.replaceAll('_',' '):'Remote configuration is not enabled by SaaS administration';
   $('runBackupButton').hidden=!caps.has('REMOTE_BACKUP');
   if(!menuPublisherBranches.length) loadMenuPublisher();
+  else renderMenuEditorBranches();
   if(enabled&&!menuMode) loadEditor();
 }
 function renderMenuPublisher(preferredSource=''){
@@ -231,6 +237,8 @@ async function loadMenuPublisher(){
     const first=menuPublisherBranches.find((row)=>row.restaurantId===previous&&Number(row.counts?.items||0)>0)||menuPublisherBranches.find((row)=>Number(row.counts?.items||0)>0);
     if(!menuTargetIds.size&&first) menuPublisherBranches.filter((row)=>row.restaurantId!==first.restaurantId&&row.remoteMenuEnabled).forEach((row)=>menuTargetIds.add(row.restaurantId));
     renderMenuPublisher(first?.restaurantId||'');
+    renderMenuEditorBranches();
+    if(domain==='MENU' && menuEditorRestaurantId && !menuEditorMenu) await loadMenuEditor();
     $('menuPublishStatus').textContent=first?'Choose target branches, review the counts, then publish.':'No synced branch has a menu. Open a populated POS and run Sync first.';
   }catch(error){$('menuPublishStatus').textContent=`Menu publisher could not load: ${error.message}`;}
 }
@@ -252,6 +260,84 @@ async function publishSelectedMenu(){
   $('publishMenuButton').disabled=false;
   const succeeded=results.filter((result)=>result.ok).length;
   if(succeeded) setTimeout(()=>loadMenuPublisher(),5000);
+}
+function renderMenuEditorBranches(){
+  const select=$('menuEditorRestaurant');
+  if(!select)return;
+  const available=new Set(menuPublisherBranches.map(row=>row.restaurantId));
+  if(!available.has(menuEditorRestaurantId)) menuEditorRestaurantId=available.has(rid())?rid():(menuPublisherBranches[0]?.restaurantId||'');
+  select.innerHTML=menuPublisherBranches.map(row=>`<option value="${esc(row.restaurantId)}" ${row.restaurantId===menuEditorRestaurantId?'selected':''}>${esc(row.name)} · ${row.isOnline?'Online':'Offline'}</option>`).join('');
+  const branch=menuPublisherBranches.find(row=>row.restaurantId===menuEditorRestaurantId);
+  menuEditorOnline=Boolean(branch?.isOnline);
+  menuEditorEnabled=Boolean(branch?.remoteMenuEnabled);
+  $('menuEditorConnection').className=`menu-editor-connection ${menuEditorOnline?'online':'offline'}`;
+  $('menuEditorConnection').textContent=!menuEditorEnabled?'Remote Menu not enabled':menuEditorOnline?'POS online · editing enabled':'POS offline · read only';
+  $('saveMenuEditorButton').disabled=!menuEditorMenu||!menuEditorOnline||!menuEditorEnabled;
+}
+const menuCell=(array,index,key,value,type='text',extra='')=>`<input ${extra} type="${type}" data-menu-array="${array}" data-menu-index="${index}" data-menu-key="${key}" value="${esc(value??'')}" ${!menuEditorOnline||!menuEditorEnabled?'disabled':''}>`;
+const menuCheck=(array,index,key,value)=>`<input type="checkbox" data-menu-array="${array}" data-menu-index="${index}" data-menu-key="${key}" ${value?'checked':''} ${!menuEditorOnline||!menuEditorEnabled?'disabled':''}>`;
+const menuSelect=(array,index,key,value,options)=>`<select data-menu-array="${array}" data-menu-index="${index}" data-menu-key="${key}" ${!menuEditorOnline||!menuEditorEnabled?'disabled':''}>${options.map(([id,label])=>`<option value="${esc(id)}" ${String(id)===String(value)?'selected':''}>${esc(label)}</option>`).join('')}</select>`;
+function editorSection(title,array,head,body){
+  return `<section class="menu-editor-section"><div class="menu-editor-section-head"><strong>${esc(title)}</strong><button type="button" data-menu-add="${array}" ${!menuEditorOnline||!menuEditorEnabled?'disabled':''}>Add</button></div><div class="menu-editor-table-wrap">${body?`<table class="menu-editor-table"><thead><tr>${head.map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`:'<div class="menu-editor-empty">No records yet.</div>'}</div></section>`;
+}
+function renderMenuEditor(){
+  document.querySelectorAll('[data-menu-editor-tab]').forEach(button=>button.classList.toggle('active',button.dataset.menuEditorTab===menuEditorTab));
+  if(!menuEditorMenu){$('menuEditorBody').innerHTML='<div class="menu-editor-empty">Choose a branch and load its menu.</div>';return;}
+  const m=menuEditorMenu;
+  const kitchens=[['','No kitchen'],...(m.kitchens||[]).map(x=>[x.id,x.name])];
+  const categories=[['','No category'],...(m.categories||[]).map(x=>[x.id,x.name])];
+  const groups=[['','Choose group'],...(m.modifierGroups||[]).map(x=>[x.id,x.name])];
+  const items=[['','Choose item'],...(m.items||[]).map(x=>[x.id,x.name])];
+  const combos=[['','Choose combo'],...(m.combos||[]).map(x=>[x.id,x.name])];
+  let html='';
+  if(menuEditorTab==='categories'){
+    html=editorSection('Categories','categories',['Name','Kitchen','Active'],(m.categories||[]).map((x,i)=>`<tr><td>${menuCell('categories',i,'name',x.name,'text','class="wide"')}</td><td>${menuSelect('categories',i,'kitchen_id',x.kitchen_id,kitchens)}</td><td>${menuCheck('categories',i,'active',x.active)}</td></tr>`).join(''));
+  }else if(menuEditorTab==='items'){
+    html=editorSection('Menu items','items',['Name','Category','Price','Alpha code','Number code','Tax','Veg','Dine in','Parcel','Party','Online','Active'],(m.items||[]).map((x,i)=>`<tr><td>${menuCell('items',i,'name',x.name,'text','class="wide"')}</td><td>${menuSelect('items',i,'category_id',x.category_id,categories)}</td><td>${menuCell('items',i,'price',x.price,'number','step="0.01"')}</td><td>${menuCell('items',i,'alpha_short_code',x.alpha_short_code)}</td><td>${menuCell('items',i,'numeric_short_code',x.numeric_short_code)}</td><td>${menuSelect('items',i,'tax_mode',x.tax_mode||'INCLUSIVE',[['INCLUSIVE','Inclusive'],['EXCLUSIVE','Exclusive']])}</td><td>${menuCheck('items',i,'is_veg',x.is_veg)}</td><td>${menuCheck('items',i,'allow_dine_in',x.allow_dine_in)}</td><td>${menuCheck('items',i,'allow_parcel',x.allow_parcel)}</td><td>${menuCheck('items',i,'allow_party_order',x.allow_party_order)}</td><td>${menuCheck('items',i,'online_enabled',x.online_enabled)}</td><td>${menuCheck('items',i,'active',x.active)}</td></tr>`).join(''));
+  }else{
+    html=[
+      editorSection('Modifier groups','modifierGroups',['Name','Min','Max','Required','Active'],(m.modifierGroups||[]).map((x,i)=>`<tr><td>${menuCell('modifierGroups',i,'name',x.name,'text','class="wide"')}</td><td>${menuCell('modifierGroups',i,'min_select',x.min_select,'number')}</td><td>${menuCell('modifierGroups',i,'max_select',x.max_select,'number')}</td><td>${menuCheck('modifierGroups',i,'required',x.required)}</td><td>${menuCheck('modifierGroups',i,'active',x.active)}</td></tr>`).join('')),
+      editorSection('Modifiers','modifiers',['Name','Group','Price change','Active'],(m.modifiers||[]).map((x,i)=>`<tr><td>${menuCell('modifiers',i,'name',x.name,'text','class="wide"')}</td><td>${menuSelect('modifiers',i,'group_id',x.group_id,groups)}</td><td>${menuCell('modifiers',i,'price_delta',x.price_delta,'number','step="0.01"')}</td><td>${menuCheck('modifiers',i,'active',x.active)}</td></tr>`).join('')),
+      editorSection('Combos','combos',['Name','Price','Active'],(m.combos||[]).map((x,i)=>`<tr><td>${menuCell('combos',i,'name',x.name,'text','class="wide"')}</td><td>${menuCell('combos',i,'price',x.price,'number','step="0.01"')}</td><td>${menuCheck('combos',i,'active',x.active)}</td></tr>`).join('')),
+      editorSection('Item modifier assignments','itemModifierGroups',['Item','Modifier group','Active'],(m.itemModifierGroups||[]).map((x,i)=>`<tr><td>${menuSelect('itemModifierGroups',i,'item_id',x.item_id,items)}</td><td>${menuSelect('itemModifierGroups',i,'group_id',x.group_id,groups)}</td><td>${menuCheck('itemModifierGroups',i,'active',x.active)}</td></tr>`).join('')),
+      editorSection('Combo items','comboItems',['Combo','Item','Quantity','Active'],(m.comboItems||[]).map((x,i)=>`<tr><td>${menuSelect('comboItems',i,'combo_id',x.combo_id,combos)}</td><td>${menuSelect('comboItems',i,'item_id',x.item_id,items)}</td><td>${menuCell('comboItems',i,'quantity',x.quantity,'number','min="0" step="1"')}</td><td>${menuCheck('comboItems',i,'active',x.active)}</td></tr>`).join(''))
+    ].join('');
+  }
+  $('menuEditorBody').innerHTML=html;
+}
+function newMenuRecord(array){
+  const id=`owner-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
+  const defaults={
+    categories:{id,name:'New category',kitchen_id:'',active:true},
+    items:{id,name:'New item',category_id:'',price:0,alpha_short_code:'',numeric_short_code:'',tax_mode:'INCLUSIVE',is_veg:true,allow_dine_in:true,allow_parcel:true,allow_party_order:true,online_enabled:true,active:true},
+    modifierGroups:{id,name:'New modifier group',min_select:0,max_select:1,required:false,active:true},
+    modifiers:{id,group_id:'',name:'New modifier',price_delta:0,active:true},
+    combos:{id,name:'New combo',price:0,active:true},
+    itemModifierGroups:{item_id:'',group_id:'',active:true},
+    comboItems:{combo_id:'',item_id:'',quantity:1,active:true}
+  };
+  return defaults[array];
+}
+async function loadMenuEditor(){
+  if(!menuEditorRestaurantId)return;
+  $('menuEditorStatus').textContent='Loading selected branch menu…';
+  try{
+    const data=await api(`/owner-control/owner/menu-editor?restaurantId=${encodeURIComponent(menuEditorRestaurantId)}`);
+    menuEditorMenu=data.menu;
+    menuEditorOnline=Boolean(data.isOnline);
+    menuEditorEnabled=Boolean(data.remoteMenuEnabled);
+    renderMenuEditorBranches();renderMenuEditor();
+    $('menuEditorStatus').textContent=menuEditorOnline?'Menu loaded. Changes will be sent only to this branch.':'POS is offline. The menu is visible but cannot be edited.';
+  }catch(error){menuEditorMenu=null;renderMenuEditor();$('menuEditorStatus').textContent=`Menu editor could not load: ${error.message}`;}
+}
+async function saveMenuEditor(){
+  if(!menuEditorOnline||!menuEditorEnabled||!menuEditorMenu)return;
+  $('saveMenuEditorButton').disabled=true;$('menuEditorStatus').textContent='Validating and publishing menu…';
+  try{
+    const data=await api(`/owner-control/owner/menu-editor?restaurantId=${encodeURIComponent(menuEditorRestaurantId)}`,{method:'PUT',body:JSON.stringify({restaurantId:menuEditorRestaurantId,menu:menuEditorMenu})});
+    $('menuEditorStatus').textContent=`Menu version ${data.version} queued for this POS.`;
+    setTimeout(loadMenuEditor,3000);
+  }catch(error){$('menuEditorStatus').textContent=`Menu was not published: ${error.message}`;$('saveMenuEditorButton').disabled=false;}
 }
 function configurationValue(){
   const map={MENU:'menu',BILLING:'billing',BACKUP:'backup',ONLINE_ORDERING:'onlineOrdering'};
@@ -386,6 +472,37 @@ $('configEditor').oninput=validateConfigurationEditor;
 $('menuSourceSelect').onchange=()=>{menuTargetIds.clear();menuPublisherBranches.filter((row)=>row.restaurantId!==$('menuSourceSelect').value&&row.remoteMenuEnabled).forEach((row)=>menuTargetIds.add(row.restaurantId));renderMenuPublisher();};
 $('refreshMenuPublisherButton').onclick=loadMenuPublisher;
 $('publishMenuButton').onclick=publishSelectedMenu;
+$('menuEditorRestaurant').onchange=()=>{
+  menuEditorRestaurantId=$('menuEditorRestaurant').value;
+  menuEditorMenu=null;
+  renderMenuEditorBranches();
+  loadMenuEditor();
+};
+$('reloadMenuEditorButton').onclick=loadMenuEditor;
+$('saveMenuEditorButton').onclick=saveMenuEditor;
+$('menuEditorTabs').onclick=(event)=>{
+  const button=event.target.closest('[data-menu-editor-tab]');
+  if(!button)return;
+  menuEditorTab=button.dataset.menuEditorTab;
+  renderMenuEditor();
+};
+$('menuEditorBody').onchange=(event)=>{
+  const input=event.target.closest('[data-menu-array][data-menu-index][data-menu-key]');
+  if(!input||!menuEditorMenu)return;
+  const row=menuEditorMenu[input.dataset.menuArray]?.[Number(input.dataset.menuIndex)];
+  if(!row)return;
+  let value=input.type==='checkbox'?input.checked:input.value;
+  if(input.type==='number')value=Number(value||0);
+  row[input.dataset.menuKey]=value;
+};
+$('menuEditorBody').onclick=(event)=>{
+  const button=event.target.closest('[data-menu-add]');
+  if(!button||!menuEditorOnline||!menuEditorEnabled||!menuEditorMenu)return;
+  const array=button.dataset.menuAdd;
+  menuEditorMenu[array] ||= [];
+  menuEditorMenu[array].push(newMenuRecord(array));
+  renderMenuEditor();
+};
 $('saveConfigButton').onclick=async()=>{
   if(selectedRestaurants.size!==1){validateConfigurationEditor();return;}
   let payload;

@@ -157,6 +157,39 @@ function menuCounts(menu = {}) {
   };
 }
 
+const MENU_ARRAYS = ['kitchens', 'categories', 'items', 'modifierGroups', 'modifiers', 'itemModifierGroups', 'combos', 'comboItems'];
+
+function validateMenuPayload(input) {
+  const menu = validateDomain('MENU', { ...(input || {}) });
+  MENU_ARRAYS.forEach((key) => {
+    if (!Array.isArray(menu[key])) menu[key] = [];
+  });
+  const unique = (rows, field, label) => {
+    const seen = new Set();
+    rows.forEach((row) => {
+      const value = String(row?.[field] ?? '').trim().toLowerCase();
+      if (!value) return;
+      if (seen.has(value)) throw new Error(`${label} must be unique`);
+      seen.add(value);
+    });
+  };
+  unique(menu.categories, 'name', 'Category name');
+  unique(menu.items, 'alpha_short_code', 'Alphabet short code');
+  unique(menu.items, 'numeric_short_code', 'Numeric short code');
+  menu.items.forEach((item) => {
+    const price = Number(item.price);
+    if (!Number.isFinite(price) || price < 0) throw new Error(`Invalid price for ${item.name || 'menu item'}`);
+    if (!['INCLUSIVE', 'EXCLUSIVE'].includes(String(item.tax_mode || 'INCLUSIVE').toUpperCase())) {
+      throw new Error(`Invalid tax mode for ${item.name || 'menu item'}`);
+    }
+  });
+  return menu;
+}
+
+function heartbeatOnline(value) {
+  return Boolean(value) && (Date.now() - new Date(value).getTime()) <= 120000;
+}
+
 router.get('/owner/menu-publisher', async (req, res) => {
   try {
     const result = await pool.query(`
@@ -192,6 +225,7 @@ router.get('/owner/menu-publisher', async (req, res) => {
         hasMenu: menuCounts(menu).items > 0,
         snapshotAt: row.received_at || null,
         lastOnlineAt: row.last_heartbeat_at || null,
+        isOnline: heartbeatOnline(row.last_heartbeat_at),
         remoteMenuEnabled: Boolean(row.remote_menu_enabled),
         latestPublish: row.menu_version ? {
           version: Number(row.menu_version),
@@ -205,6 +239,81 @@ router.get('/owner/menu-publisher', async (req, res) => {
     res.json({ success: true, branches });
   } catch (err) {
     res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.get('/owner/menu-editor', async (req, res) => {
+  try {
+    const latest = await pool.query(`
+      SELECT rc.payload, rc.version, rc.status
+      FROM tenant_remote_configs rc
+      WHERE rc.tenant_id = $1 AND rc.domain = 'MENU'
+      ORDER BY rc.version DESC LIMIT 1
+    `, [req.tenant.id]);
+    const snapshot = await pool.query(`
+      SELECT os.configuration_snapshot, hb.last_heartbeat_at
+      FROM tenants t
+      LEFT JOIN tenant_operational_snapshots os ON os.tenant_id = t.id
+      LEFT JOIN pos_heartbeats hb ON hb.tenant_id = t.id
+      WHERE t.id = $1
+    `, [req.tenant.id]);
+    const configuration = json(snapshot.rows[0]?.configuration_snapshot, {});
+    const snapshotMenu = configuration.menu && typeof configuration.menu === 'object' ? configuration.menu : {};
+    const menu = latest.rowCount ? json(latest.rows[0].payload, snapshotMenu) : snapshotMenu;
+    const enabled = await capabilityEnabled(req.tenant.id, 'REMOTE_MENU');
+    const lastOnlineAt = snapshot.rows[0]?.last_heartbeat_at || null;
+    res.json({
+      success: true,
+      restaurant: { restaurantId: req.tenant.restaurant_code, name: req.tenant.name },
+      menu,
+      counts: menuCounts(menu),
+      remoteMenuEnabled: enabled,
+      isOnline: heartbeatOnline(lastOnlineAt),
+      lastOnlineAt,
+      version: latest.rowCount ? Number(latest.rows[0].version) : null,
+      status: latest.rowCount ? latest.rows[0].status : null
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.put('/owner/menu-editor', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    if (!await capabilityEnabled(req.tenant.id, 'REMOTE_MENU')) {
+      return res.status(403).json({ success: false, message: 'Remote Menu is not enabled for this branch' });
+    }
+    const heartbeat = await client.query('SELECT last_heartbeat_at FROM pos_heartbeats WHERE tenant_id = $1', [req.tenant.id]);
+    if (!heartbeatOnline(heartbeat.rows[0]?.last_heartbeat_at)) {
+      return res.status(409).json({ success: false, message: 'This POS is offline. Menu changes can be saved only while the selected branch POS is online.' });
+    }
+    const payload = validateMenuPayload(req.body?.menu);
+    await client.query('BEGIN');
+    const versionRow = await client.query(
+      "SELECT COALESCE(MAX(version), 0) + 1 version FROM tenant_remote_configs WHERE tenant_id = $1 AND domain = 'MENU'",
+      [req.tenant.id]
+    );
+    const version = Number(versionRow.rows[0].version);
+    const result = await client.query(`
+      INSERT INTO tenant_remote_configs (tenant_id, domain, version, payload, status, created_by)
+      VALUES ($1, 'MENU', $2, $3::jsonb, 'PENDING', $4)
+      RETURNING *
+    `, [req.tenant.id, version, JSON.stringify(payload), req.user.id]);
+    const command = await queueCommand(client, req.tenant, 'APPLY_CONFIG', { domain: 'MENU', version }, req.user.id);
+    await client.query('COMMIT');
+    res.json({
+      success: true,
+      configuration: result.rows[0],
+      command,
+      counts: menuCounts(payload),
+      message: `Menu version ${version} queued for ${req.tenant.name}`
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(400).json({ success: false, message: publicError(err) });
+  } finally {
+    client.release();
   }
 });
 

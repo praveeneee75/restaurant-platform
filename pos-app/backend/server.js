@@ -7657,8 +7657,9 @@ app.get('/kds/orders', (req, res) => {
       JOIN orders o ON o.id = oi.order_id
       JOIN items i ON i.id = oi.item_id
       JOIN kitchens ON kitchens.id = oi.kitchen_id
-      LEFT JOIN kots ksub ON ksub.id = oi.kot_id
+      JOIN kots ksub ON ksub.id = oi.kot_id
       WHERE oi.kitchen_id IN (${selectedKitchenIds.map(() => '?').join(',')})
+        AND oi.kot_id IS NOT NULL
         AND o.status != 'CANCELLED'
         AND COALESCE(oi.status, 'PLACED') NOT IN ('SERVED', 'CANCELLED')
       ORDER BY o.created_at, oi.id
@@ -7679,7 +7680,7 @@ app.get('/kds/orders', (req, res) => {
     // data can contain duplicate join rows; collapse only exact KOT/item/status
     // duplicates while keeping separate KOTs and separate item lines intact.
     const uniqueRows = [...new Map(rows.map((row) => [
-      `${row.order_id}:${row.kot_id || 'draft'}:${row.order_item_id}:${row.status}`,
+      `${row.order_id}:${row.kot_id}:${row.order_item_id}:${row.status}`,
       row
     ])).values()];
     const orders = uniqueRows.reduce((map, row) => {
