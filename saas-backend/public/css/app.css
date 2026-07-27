@@ -1474,6 +1474,69 @@ body.saas-shell {
   border-left: 0;
 }
 
+/* The restaurant editor is intentionally wider than one viewport. Keep that
+   width inside its own scroll container instead of squeezing labels and values
+   down to one character per line. */
+#tenantTable {
+  min-width: 2110px;
+  table-layout: fixed;
+}
+
+#tenantTable th,
+#tenantTable td {
+  max-width: none;
+  overflow-wrap: normal;
+  word-break: normal;
+  white-space: normal;
+}
+
+#tenantTable th {
+  white-space: nowrap;
+}
+
+#tenantTable th:nth-child(1),
+#tenantTable td:nth-child(1) { width: 190px; }
+#tenantTable th:nth-child(2),
+#tenantTable td:nth-child(2) { width: 160px; }
+#tenantTable th:nth-child(3),
+#tenantTable td:nth-child(3) { width: 190px; }
+#tenantTable th:nth-child(4),
+#tenantTable td:nth-child(4) { width: 230px; }
+#tenantTable th:nth-child(5),
+#tenantTable td:nth-child(5) { width: 180px; }
+#tenantTable th:nth-child(6),
+#tenantTable td:nth-child(6) { width: 190px; }
+#tenantTable th:nth-child(7),
+#tenantTable td:nth-child(7) { width: 155px; }
+#tenantTable th:nth-child(8),
+#tenantTable td:nth-child(8) { width: 135px; }
+#tenantTable th:nth-child(9),
+#tenantTable td:nth-child(9) { width: 230px; }
+#tenantTable th:nth-child(10),
+#tenantTable td:nth-child(10) { width: 190px; }
+#tenantTable th:nth-child(11),
+#tenantTable td:nth-child(11) { width: 150px; }
+#tenantTable th:nth-child(12),
+#tenantTable td:nth-child(12) { width: 110px; }
+
+#tenantTable input,
+#tenantTable select,
+#tenantTable button {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+  margin: 0 !important;
+}
+
+#tenantTable td:first-child,
+#tenantTable td:nth-child(2),
+#tenantTable td:nth-child(6),
+#tenantTable td:nth-child(11) {
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
 .split-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
