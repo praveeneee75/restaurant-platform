@@ -87,26 +87,48 @@ async function loadTenants() {
     if (supportRestaurantSelect) supportRestaurantSelect.innerHTML = "";
     data.tenants.forEach((tenant) => {
       const row = document.createElement("tr");
+      row.className = "tenant-summary-row";
       row.innerHTML = `
-        <td>${tenant.name}</td>
-        <td>${tenant.restaurant_code}</td>
-        <td><input id="contact-name-${tenant.restaurant_code}" value="${escapeAttr(tenant.contact_name || "")}" placeholder="Contact name"></td>
-        <td><input id="contact-email-${tenant.restaurant_code}" type="email" value="${escapeAttr(tenant.contact_email || "")}" placeholder="notification@example.com"></td>
-        <td><input id="contact-phone-${tenant.restaurant_code}" value="${escapeAttr(tenant.contact_phone || "")}" placeholder="+919999999999"></td>
-        <td>${tenant.license_key}</td>
-        <td><input type="date" value="${tenant.expires_at ? tenant.expires_at.split("T")[0] : ""}" id="exp-${tenant.restaurant_code}"></td>
-        <td>
-          <select id="status-${tenant.restaurant_code}">
-            <option value="ACTIVE" ${tenant.status === "ACTIVE" ? "selected" : ""}>ACTIVE</option>
-            <option value="INACTIVE" ${tenant.status === "INACTIVE" ? "selected" : ""}>INACTIVE</option>
-          </select>
+        <td data-label="Restaurant"><strong>${tenant.name}</strong></td>
+        <td data-label="Code"><code>${tenant.restaurant_code}</code></td>
+        <td data-label="Contact">${tenant.contact_name || "—"}</td>
+        <td data-label="License Key"><code>${tenant.license_key}</code></td>
+        <td data-label="Expiry">${tenant.expires_at ? new Date(tenant.expires_at).toLocaleDateString() : "—"}</td>
+        <td data-label="Status"><span class="tenant-status tenant-status-${String(tenant.status || "").toLowerCase()}">${tenant.status || "—"}</span></td>
+        <td data-label="Last Sync">${tenant.last_sync_at ? new Date(tenant.last_sync_at).toLocaleString() : "Never"}<small class="tenant-sync-status">${tenant.sync_status || ""}</small></td>
+        <td data-label="Revenue"><strong>${money(tenant.today_revenue || 0)}</strong></td>
+        <td data-label="Action"><button class="tenant-edit" type="button" aria-expanded="false" onclick="toggleTenantEditor('${tenant.restaurant_code}', this)">View details</button></td>
+      `;
+      const editor = document.createElement("tr");
+      editor.className = "tenant-editor-row";
+      editor.id = `tenant-editor-${tenant.restaurant_code}`;
+      editor.hidden = true;
+      editor.innerHTML = `
+        <td colspan="9">
+          <div class="tenant-extra-details">
+            <div><span>Email</span><strong>${tenant.contact_email || "—"}</strong></div>
+            <div><span>Phone</span><strong>${tenant.contact_phone || "—"}</strong></div>
+            <div><span>Mobile POS URL</span>${tenant.mobile_pos_url ? `<a href="${escapeAttr(tenant.mobile_pos_url)}" target="_blank" rel="noopener">${tenant.mobile_pos_url}</a>` : "—"}</div>
+          </div>
+          <div class="tenant-editor">
+            <label><span>Contact name</span><input id="contact-name-${tenant.restaurant_code}" value="${escapeAttr(tenant.contact_name || "")}" placeholder="Contact name"></label>
+            <label><span>Notification email</span><input id="contact-email-${tenant.restaurant_code}" type="email" value="${escapeAttr(tenant.contact_email || "")}" placeholder="notification@example.com"></label>
+            <label><span>Phone</span><input id="contact-phone-${tenant.restaurant_code}" value="${escapeAttr(tenant.contact_phone || "")}" placeholder="+919999999999"></label>
+            <label><span>Expiry date</span><input type="date" value="${tenant.expires_at ? tenant.expires_at.split("T")[0] : ""}" id="exp-${tenant.restaurant_code}"></label>
+            <label><span>Status</span><select id="status-${tenant.restaurant_code}">
+              <option value="ACTIVE" ${tenant.status === "ACTIVE" ? "selected" : ""}>ACTIVE</option>
+              <option value="INACTIVE" ${tenant.status === "INACTIVE" ? "selected" : ""}>INACTIVE</option>
+            </select></label>
+            <label><span>Mobile POS URL</span><input id="mobile-pos-${tenant.restaurant_code}" placeholder="http://POS-PC-IP:3000" value="${escapeAttr(tenant.mobile_pos_url || "")}"></label>
+            <div class="tenant-editor-actions">
+              <button type="button" onclick="updateLicense('${tenant.restaurant_code}')">Save changes</button>
+              <button type="button" class="secondary" onclick="toggleTenantEditor('${tenant.restaurant_code}')">Cancel</button>
+            </div>
+          </div>
         </td>
-        <td><input id="mobile-pos-${tenant.restaurant_code}" placeholder="http://POS-PC-IP:3000" value="${tenant.mobile_pos_url || ""}"></td>
-        <td>${tenant.last_sync_at ? new Date(tenant.last_sync_at).toLocaleString() : "Not synced"}<br>${tenant.sync_status || ""}</td>
-        <td>${money(tenant.today_revenue || 0)}</td>
-        <td><button onclick="updateLicense('${tenant.restaurant_code}')">Save</button></td>
       `;
       tbody.appendChild(row);
+      tbody.appendChild(editor);
       if (reportSelect) {
         const option = document.createElement("option");
         option.value = tenant.restaurant_code;
@@ -126,6 +148,26 @@ async function loadTenants() {
     if (messagingRestaurantSelect && messagingRestaurantSelect.value) loadMessagingAccount();
   } catch (err) {
     document.getElementById("createMsg").innerText = err.message;
+  }
+}
+
+function toggleTenantEditor(code, button) {
+  const editor = document.getElementById(`tenant-editor-${code}`);
+  if (!editor) return;
+  const willOpen = editor.hidden;
+  document.querySelectorAll("#tenantTable .tenant-editor-row").forEach((row) => {
+    row.hidden = true;
+  });
+  document.querySelectorAll("#tenantTable .tenant-edit").forEach((control) => {
+    control.setAttribute("aria-expanded", "false");
+    control.textContent = "View details";
+  });
+  editor.hidden = !willOpen;
+  if (willOpen) {
+    const trigger = button || editor.previousElementSibling?.querySelector(".tenant-edit");
+    trigger?.setAttribute("aria-expanded", "true");
+    if (trigger) trigger.textContent = "Hide details";
+    editor.querySelector("input")?.focus();
   }
 }
 

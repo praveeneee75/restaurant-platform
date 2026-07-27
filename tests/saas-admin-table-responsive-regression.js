@@ -4,14 +4,17 @@ const path = require("path");
 const root = path.resolve(__dirname, "..");
 const css = fs.readFileSync(path.join(root, "saas-backend/public/css/app.css"), "utf8");
 const html = fs.readFileSync(path.join(root, "saas-backend/public/admin.html"), "utf8");
+const js = fs.readFileSync(path.join(root, "saas-backend/public/js/admin.js"), "utf8");
 
 const checks = [
   [html.includes('id="tenantTable"'), "restaurant administration table exists"],
-  [css.includes("#tenantTable {") && css.includes("min-width: 2110px") && css.includes("table-layout: fixed"), "restaurant table minimum matches its usable content widths"],
-  [css.includes("#tenantTable th {") && css.includes("white-space: nowrap"), "restaurant table headings never collapse letter by letter"],
-  [css.includes("#tenantTable td:nth-child(11) {\n  overflow-wrap: normal;\n  white-space: nowrap;"), "restaurant identifiers and revenue never break character by character"],
-  [css.includes("#tenantTable input,") && css.includes("max-width: 100%") && css.includes("min-width: 0"), "restaurant table controls remain within assigned columns"],
-  [css.includes("#tenantTable th:nth-child(12)") && css.includes("width: 110px"), "restaurant table action column has a deliberate width"],
+  [(html.match(/<th>/g) || []).length >= 9 && html.includes("<th>Revenue</th><th>Action</th>"), "important restaurant columns remain visible"],
+  [css.includes("#tenantTable {") && css.includes("min-width: 0") && css.includes("table-layout: auto"), "restaurant table fits its container without a forced wide canvas"],
+  [!css.includes("min-width: 2110px"), "restaurant table does not force horizontal scrolling"],
+  [js.includes('className = "tenant-editor-row"') && js.includes("View details") && js.includes("Hide details"), "remaining restaurant fields use one expandable details row"],
+  [js.includes('colspan="9"') && js.includes("Notification email") && js.includes("Mobile POS URL"), "expanded view retains all editable restaurant fields"],
+  [css.includes(".tenant-extra-details") && css.includes(".tenant-editor-row[hidden]"), "expanded details are styled and hidden until requested"],
+  [css.includes("@media (max-width: 1180px)") && css.includes(".tenant-summary-row td::before"), "restaurant rows become labelled cards at narrow widths"],
 ];
 
 let failed = 0;

@@ -1474,18 +1474,17 @@ body.saas-shell {
   border-left: 0;
 }
 
-/* The restaurant editor is intentionally wider than one viewport. Keep that
-   width inside its own scroll container instead of squeezing labels and values
-   down to one character per line. */
 #tenantTable {
-  min-width: 2110px;
-  table-layout: fixed;
+  width: 100%;
+  min-width: 0;
+  table-layout: auto;
+  font-size: 12px;
 }
 
 #tenantTable th,
 #tenantTable td {
-  max-width: none;
-  overflow-wrap: normal;
+  vertical-align: top;
+  overflow-wrap: break-word;
   word-break: normal;
   white-space: normal;
 }
@@ -1495,46 +1494,196 @@ body.saas-shell {
 }
 
 #tenantTable th:nth-child(1),
-#tenantTable td:nth-child(1) { width: 190px; }
+#tenantTable td:nth-child(1) { width: 16%; }
 #tenantTable th:nth-child(2),
-#tenantTable td:nth-child(2) { width: 160px; }
+#tenantTable td:nth-child(2) { width: 11%; }
 #tenantTable th:nth-child(3),
-#tenantTable td:nth-child(3) { width: 190px; }
+#tenantTable td:nth-child(3) { width: 12%; }
 #tenantTable th:nth-child(4),
-#tenantTable td:nth-child(4) { width: 230px; }
+#tenantTable td:nth-child(4) { width: 18%; }
 #tenantTable th:nth-child(5),
-#tenantTable td:nth-child(5) { width: 180px; }
+#tenantTable td:nth-child(5) { width: 9%; }
 #tenantTable th:nth-child(6),
-#tenantTable td:nth-child(6) { width: 190px; }
+#tenantTable td:nth-child(6) { width: 8%; }
 #tenantTable th:nth-child(7),
-#tenantTable td:nth-child(7) { width: 155px; }
+#tenantTable td:nth-child(7) { width: 12%; }
 #tenantTable th:nth-child(8),
-#tenantTable td:nth-child(8) { width: 135px; }
+#tenantTable td:nth-child(8) { width: 7%; }
 #tenantTable th:nth-child(9),
-#tenantTable td:nth-child(9) { width: 230px; }
-#tenantTable th:nth-child(10),
-#tenantTable td:nth-child(10) { width: 190px; }
-#tenantTable th:nth-child(11),
-#tenantTable td:nth-child(11) { width: 150px; }
-#tenantTable th:nth-child(12),
-#tenantTable td:nth-child(12) { width: 110px; }
+#tenantTable td:nth-child(9) { width: 7%; }
 
-#tenantTable input,
-#tenantTable select,
-#tenantTable button {
-  box-sizing: border-box;
-  max-width: 100%;
+#tenantTable th,
+#tenantTable td {
+  padding: 10px 8px;
+}
+
+#tenantTable code {
+  padding: 4px 5px;
+  font-size: 10px;
+}
+
+#tenantTable .tenant-sync-status {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+#tenantTable .tenant-status {
+  display: inline-flex;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #eef2f7;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+#tenantTable .tenant-status-active {
+  color: #166534;
+  background: #dcfce7;
+}
+
+#tenantTable .tenant-editor-row[hidden] {
+  display: none !important;
+}
+
+#tenantTable .tenant-editor-row > td {
+  width: auto;
+  padding: 14px;
+  background: var(--surface-soft);
+}
+
+#tenantTable .tenant-extra-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+#tenantTable .tenant-extra-details > div {
   min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+
+#tenantTable .tenant-extra-details span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+#tenantTable .tenant-editor {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+#tenantTable .tenant-editor label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+#tenantTable .tenant-editor input,
+#tenantTable .tenant-editor select {
   width: 100%;
   margin: 0 !important;
 }
 
-#tenantTable td:first-child,
-#tenantTable td:nth-child(2),
-#tenantTable td:nth-child(6),
-#tenantTable td:nth-child(11) {
-  overflow-wrap: normal;
-  white-space: nowrap;
+#tenantTable .tenant-editor-actions {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+
+@media (max-width: 1180px) {
+  #tenantTable,
+  #tenantTable thead,
+  #tenantTable tbody,
+  #tenantTable tr,
+  #tenantTable td {
+    display: block;
+    width: 100%;
+  }
+
+  #tenantTable thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+  }
+
+  #tenantTable tbody {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 14px;
+    padding: 14px;
+  }
+
+  #tenantTable .tenant-summary-row {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  #tenantTable .tenant-summary-row td {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 12px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  #tenantTable .tenant-summary-row td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 0.76rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  #tenantTable .tenant-summary-row td:last-child {
+    border-bottom: 0;
+  }
+
+  #tenantTable .tenant-editor-row {
+    grid-column: 1 / -1;
+  }
+
+  #tenantTable .tenant-editor-row > td {
+    display: block;
+  }
+
+  #tenantTable .tenant-editor-row > td::before {
+    content: none;
+  }
+
+  #tenantTable .tenant-editor {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  #tenantTable tbody {
+    grid-template-columns: 1fr;
+  }
+
+  #tenantTable .tenant-editor {
+    grid-template-columns: 1fr;
+  }
+
+  #tenantTable .tenant-extra-details {
+    grid-template-columns: 1fr;
+  }
 }
 
 .split-grid {
