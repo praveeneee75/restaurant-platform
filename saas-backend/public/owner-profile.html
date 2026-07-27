@@ -3,7 +3,7 @@
 <head>
   <title>Owner Profile | K'Master POS</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/css/app.css?v=20260710-owner-ui">
+  <link rel="stylesheet" href="/css/app.css?v=20260727-owner-nav">
 </head>
 <body class="owner-page">
   <header class="owner-header">
@@ -12,8 +12,11 @@
       <h1>Profile</h1>
       <p>Manage your contact details and password.</p>
     </div>
-    <nav class="owner-actions">
-      <a href="/owner-control.html">Home</a>
+    <nav class="owner-actions" aria-label="Owner actions">
+      <a href="/owner-dashboard.html">Dashboard</a>
+      <a href="/owner-control.html">Owner control</a>
+      <a href="/downloads.html">Downloads</a>
+      <a class="active" href="/owner-profile.html">Profile</a>
       <button class="owner-signout" type="button" data-session-logout>Sign out</button>
     </nav>
   </header>

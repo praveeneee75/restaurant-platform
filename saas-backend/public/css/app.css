@@ -797,6 +797,12 @@ th {
   text-decoration: none;
 }
 
+.owner-actions a.active {
+  color: #ffffff;
+  background: #0f766e;
+  border-color: #0f766e;
+}
+
 .owner-actions .owner-signout {
   margin: 0;
   border-color: #fecaca;

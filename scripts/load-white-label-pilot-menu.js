@@ -1,15 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const Database = require('../pos-app/node_modules/better-sqlite3');
-
-const databasePath = process.argv[2] || path.join(process.env.APPDATA || '', 'pos-app', 'data', 'restaurant_RESTOWHITELABEL.db');
-if (!fs.existsSync(databasePath)) throw new Error(`White Label database not found: ${databasePath}`);
-
-const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
-const backupDir = path.join(path.dirname(path.dirname(databasePath)), 'backups');
-fs.mkdirSync(backupDir, { recursive: true });
-const backupPath = path.join(backupDir, `restaurant_RESTOWHITELABEL_before_pilot_menu_${stamp}.db`);
-fs.copyFileSync(databasePath, backupPath);
 
 const menu = {
   Biryani: [
@@ -78,32 +68,47 @@ const menu = {
 };
 
 const kitchenForCategory = (name) => name === 'Juice' ? 'Beverage Counter' : ['Indian Breads', 'Parotta & Dosa', 'Tandoori & Grills'].includes(name) ? 'Tandoor' : 'Main Kitchen';
-const db = new Database(databasePath);
-db.pragma('foreign_keys = ON');
-const load = db.transaction(() => {
-  db.prepare('UPDATE items SET active = 0').run();
-  db.prepare('UPDATE categories SET active = 0').run();
-  if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='combos'").get()) db.prepare('UPDATE combos SET active = 0').run();
-  const kitchen = db.prepare('SELECT id FROM kitchens WHERE name = ? AND active = 1');
-  const insertCategory = db.prepare('INSERT INTO categories (name, kitchen_id, active) VALUES (?, ?, 1)');
-  const insertItem = db.prepare('INSERT INTO items (name, category_id, price, is_veg, allow_parcel, active, online_enabled) VALUES (?, ?, ?, ?, 1, 1, 1)');
-  let itemCount = 0;
-  for (const [categoryName, items] of Object.entries(menu)) {
-    const kitchenRow = kitchen.get(kitchenForCategory(categoryName));
-    if (!kitchenRow) throw new Error(`Active kitchen missing for ${categoryName}`);
-    const categoryId = Number(insertCategory.run(categoryName, kitchenRow.id).lastInsertRowid);
-    for (const [name, price, isVeg] of items) {
-      insertItem.run(name, categoryId, price, isVeg);
-      itemCount += 1;
+function loadMenu(databasePath = process.argv[2] || path.join(process.env.APPDATA || '', 'pos-app', 'data', 'restaurant_RESTOWHITELABEL.db')) {
+  const Database = require('../pos-app/node_modules/better-sqlite3');
+  if (!fs.existsSync(databasePath)) throw new Error(`White Label database not found: ${databasePath}`);
+  const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  const backupDir = path.join(path.dirname(path.dirname(databasePath)), 'backups');
+  fs.mkdirSync(backupDir, { recursive: true });
+  const backupPath = path.join(backupDir, `restaurant_RESTOWHITELABEL_before_pilot_menu_${stamp}.db`);
+  fs.copyFileSync(databasePath, backupPath);
+  const db = new Database(databasePath);
+  db.pragma('foreign_keys = ON');
+  const load = db.transaction(() => {
+    db.prepare('UPDATE items SET active = 0').run();
+    db.prepare('UPDATE categories SET active = 0').run();
+    if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='combos'").get()) db.prepare('UPDATE combos SET active = 0').run();
+    const kitchen = db.prepare('SELECT id FROM kitchens WHERE name = ? AND active = 1');
+    const insertCategory = db.prepare('INSERT INTO categories (name, kitchen_id, active) VALUES (?, ?, 1)');
+    const insertItem = db.prepare('INSERT INTO items (name, category_id, price, is_veg, allow_parcel, active, online_enabled) VALUES (?, ?, ?, ?, 1, 1, 1)');
+    let itemCount = 0;
+    for (const [categoryName, items] of Object.entries(menu)) {
+      const kitchenRow = kitchen.get(kitchenForCategory(categoryName));
+      if (!kitchenRow) throw new Error(`Active kitchen missing for ${categoryName}`);
+      const categoryId = Number(insertCategory.run(categoryName, kitchenRow.id).lastInsertRowid);
+      for (const [name, price, isVeg] of items) {
+        insertItem.run(name, categoryId, price, isVeg);
+        itemCount += 1;
+      }
     }
-  }
-  return { categories: Object.keys(menu).length, items: itemCount };
-});
+    return { categories: Object.keys(menu).length, items: itemCount };
+  });
 
-try {
-  const loaded = load();
-  const codes = db.prepare("SELECT printf('%04d', id) AS item_code, name FROM items WHERE active = 1 ORDER BY id LIMIT 3").all();
-  console.log(JSON.stringify({ success: true, databasePath, backupPath, ...loaded, sampleItemCodes: codes }, null, 2));
-} finally {
-  db.close();
+  try {
+    const loaded = load();
+    const codes = db.prepare("SELECT printf('%04d', id) AS item_code, name FROM items WHERE active = 1 ORDER BY id LIMIT 3").all();
+    return { success: true, databasePath, backupPath, ...loaded, sampleItemCodes: codes };
+  } finally {
+    db.close();
+  }
 }
+
+if (require.main === module) {
+  console.log(JSON.stringify(loadMenu(), null, 2));
+}
+
+module.exports = { menu, kitchenForCategory, loadMenu };

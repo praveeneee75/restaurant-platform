@@ -37,5 +37,6 @@
     ,"test:latest-feedback": "node tests/latest-production-feedback-regression.js"
     ,"test:central-loyalty": "node tests/central-loyalty-regression.js"
     ,"test:printing": "node tests/thermal-escpos-regression.js"
+    ,"test:whitelabel-branches": "node tests/whitelabel-branch-provisioning-regression.js"
   }
 }

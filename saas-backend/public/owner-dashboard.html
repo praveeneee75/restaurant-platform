@@ -3,7 +3,7 @@
 <head>
   <title>K'Master POS Owner Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/css/app.css?v=20260710-owner-mobile-table">
+  <link rel="stylesheet" href="/css/app.css?v=20260727-owner-nav">
 </head>
 <body class="owner-page">
   <header class="owner-header owner-hero">
@@ -13,6 +13,9 @@
       <p id="ownerStatus">Loading your restaurants...</p>
     </div>
     <nav class="owner-actions" aria-label="Owner actions">
+      <a class="active" href="/owner-dashboard.html">Dashboard</a>
+      <a href="/owner-control.html">Owner control</a>
+      <a href="/downloads.html">Downloads</a>
       <a href="/owner-profile.html">Profile</a>
       <button class="owner-signout" type="button" data-session-logout>Sign out</button>
     </nav>
@@ -35,10 +38,6 @@
         <a class="quick-card" href="/owner-control.html">
           <strong>Remote owner control</strong>
           <span>Sales, live operations, alerts and approved remote settings.</span>
-        </a>
-        <a class="quick-card" href="/order.html" target="_blank" rel="noopener">
-          <strong>Online ordering</strong>
-          <span>Open the customer ordering page.</span>
         </a>
       </div>
     </section>

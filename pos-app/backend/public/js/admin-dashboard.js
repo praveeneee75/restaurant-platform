@@ -1207,7 +1207,7 @@ function showSettingsSection(section = "profile") {
   const titles = {
     profile: "Restaurant Profile",
     billing: "Billing",
-    promos: "Promo Codes",
+    promos: "Promo Codes & Reward Points",
     pos: "POS Behaviour",
     kot: "Kitchen / KOT",
     "bill-print": "Bill Configuration",
