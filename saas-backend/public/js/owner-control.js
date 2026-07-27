@@ -198,11 +198,47 @@ function renderConfigTabs(){
   document.querySelectorAll('[data-domain]').forEach(button=>button.onclick=()=>{domain=button.dataset.domain;renderConfigTabs();loadEditor();});
   const enabled=caps.has(domainCapabilities[domain]);
   $('configEditor').hidden=$('saveConfigButton').hidden=!enabled;
+  $('configStatus').hidden=!enabled;
   $('configTitle').textContent=enabled?domain.replaceAll('_',' '):'Remote configuration is not enabled by SaaS administration';
   $('runBackupButton').hidden=!caps.has('REMOTE_BACKUP');
   if(enabled) loadEditor();
 }
-function loadEditor(){const map={MENU:'menu',BILLING:'billing',BACKUP:'backup',ONLINE_ORDERING:'onlineOrdering'};$('configEditor').value=JSON.stringify(current?.configurationSnapshot?.[map[domain]]||{},null,2);$('configTitle').textContent=domain.replaceAll('_',' ');}
+function configurationValue(){
+  const map={MENU:'menu',BILLING:'billing',BACKUP:'backup',ONLINE_ORDERING:'onlineOrdering'};
+  const value=current?.configurationSnapshot?.[map[domain]];
+  if(value && typeof value==='object' && !Array.isArray(value)) return value;
+  if(typeof value==='string'){
+    try {
+      const parsed=JSON.parse(value);
+      if(parsed && typeof parsed==='object' && !Array.isArray(parsed)) return parsed;
+    } catch (_) {}
+  }
+  return {};
+}
+function parseConfigurationEditor(){
+  const raw=String($('configEditor').value||'').trim();
+  if(!raw) return {};
+  const parsed=JSON.parse(raw);
+  if(!parsed || typeof parsed!=='object' || Array.isArray(parsed)) throw new Error('Configuration must be a JSON object.');
+  return parsed;
+}
+function validateConfigurationEditor(){
+  try {
+    parseConfigurationEditor();
+    $('configStatus').textContent=selectedRestaurants.size===1?'Configuration is ready to publish.':'Select one restaurant to publish branch configuration.';
+    $('saveConfigButton').disabled=selectedRestaurants.size!==1;
+    return true;
+  } catch(error) {
+    $('configStatus').textContent=`Configuration needs attention: ${error.message}`;
+    $('saveConfigButton').disabled=true;
+    return false;
+  }
+}
+function loadEditor(){
+  $('configEditor').value=JSON.stringify(configurationValue(),null,2);
+  $('configTitle').textContent=domain.replaceAll('_',' ');
+  validateConfigurationEditor();
+}
 function updateRestaurantButton() {
   const count=selectedRestaurants.size;
   $('restaurantMultiButton').textContent=count===restaurantsList.length?'All restaurants':count===1?(restaurantsList.find((row)=>selectedRestaurants.has(row.restaurant_code))?.name||'1 restaurant'):`${count} restaurants`;
@@ -297,6 +333,22 @@ document.querySelectorAll('[data-owner-nav]').forEach(button=>button.onclick=()=
 document.querySelectorAll('[data-owner-section]').forEach((button)=>button.onclick=()=>focusSection(button.dataset.ownerSection));
 document.addEventListener('click',(event)=>{if(!event.target.closest('.od-restaurant-filter')){$('restaurantMultiMenu').hidden=true;$('restaurantMultiButton').setAttribute('aria-expanded','false');}});
 $('reportDate').value=localDate();
-$('saveConfigButton').onclick=async()=>{if(selectedRestaurants.size!==1){$('status').innerHTML='<div class="od-error">Select one restaurant before publishing branch configuration.</div>';return;}let payload;try{payload=JSON.parse($('configEditor').value)}catch(_){$('status').innerHTML='<div class="od-error">Configuration JSON is invalid.</div>';return}await api(`/owner-control/owner/config/${domain}?restaurantId=${encodeURIComponent(rid())}`,{method:'PUT',body:JSON.stringify({restaurantId:rid(),payload})});await load();};
+$('configEditor').oninput=validateConfigurationEditor;
+$('saveConfigButton').onclick=async()=>{
+  if(selectedRestaurants.size!==1){validateConfigurationEditor();return;}
+  let payload;
+  try {payload=parseConfigurationEditor();}
+  catch(error){validateConfigurationEditor();return;}
+  $('saveConfigButton').disabled=true;
+  $('configStatus').textContent='Publishing configuration…';
+  try {
+    await api(`/owner-control/owner/config/${domain}?restaurantId=${encodeURIComponent(rid())}`,{method:'PUT',body:JSON.stringify({restaurantId:rid(),payload})});
+    $('configStatus').textContent='Configuration published to POS.';
+    await load();
+  } catch(error) {
+    $('configStatus').textContent=`Configuration was not published: ${error.message}`;
+    $('saveConfigButton').disabled=false;
+  }
+};
 restaurants().then(load).catch(error=>$('status').innerHTML=`<div class="od-error">${esc(error.message)}</div>`);
 setInterval(load,60000);
