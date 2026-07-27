@@ -4,25 +4,25 @@
   <meta charset="utf-8">
   <title>K'Master POS Downloads</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/css/app.css?v=20260727-owner-nav">
+  <link rel="stylesheet" href="/css/app.css?v=20260727-owner-nav-3">
 </head>
-<body class="download-page">
-  <header class="download-header">
-    <div class="download-header-inner">
-      <div>
-        <p class="eyebrow">Owner portal</p>
-        <h1>K'Master POS Downloads</h1>
-      </div>
-      <nav class="download-nav owner-actions" aria-label="Owner actions">
-        <button id="downloadBackButton" type="button">&larr; Back</button>
-        <a href="/owner-dashboard.html">Dashboard</a>
-        <a href="/owner-control.html">Owner control</a>
-        <a class="active" href="/downloads.html">Downloads</a>
-        <a href="/owner-profile.html">Profile</a>
-      </nav>
-    </div>
+<body class="owner-page download-page">
+  <header class="owner-appbar">
+    <a class="owner-appbrand" href="/owner-dashboard.html"><span class="owner-appmark">K'</span><span>K'Master Owner</span></a>
+    <nav class="owner-actions download-nav" aria-label="Owner actions">
+      <a href="/owner-dashboard.html">Dashboard</a>
+      <a href="/owner-control.html">Owner control</a>
+      <a class="active" href="/downloads.html">Downloads</a>
+      <a href="/owner-profile.html">Profile</a>
+      <button class="owner-signout" type="button" data-session-logout>Sign out</button>
+    </nav>
   </header>
   <main class="download-content">
+    <section class="owner-page-intro">
+      <p class="eyebrow">Owner portal</p>
+      <h1>K'Master POS Downloads</h1>
+      <p>Install or update K'Master POS for your restaurant devices.</p>
+    </section>
     <section id="desktop-app" class="download-desktop-panel">
     <h3>Install Offline POS</h3>
     <p id="downloadStatus">Checking available installers...</p>
@@ -48,6 +48,7 @@
     </details>
     </section>
   </main>
+  <script src="/js/saas-session.js" data-session-scope="owner"></script>
   <script src="/js/downloads.js?v=20260710-owner-downloads"></script>
 </body>
 </html>

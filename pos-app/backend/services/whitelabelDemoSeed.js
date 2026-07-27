@@ -1,7 +1,9 @@
 const bcrypt = require('bcrypt');
+const { menu: FOOD_PARADISE_MENU, kitchenForCategory } = require('./foodParadiseMenu');
 
 const WHITELABEL_RESTAURANT_ID = 'RESTOWHITELABEL';
 const WHITELABEL_LICENSE_KEY = 'WLTEST-2026-KMASTER';
+const WHITELABEL_TEMPLATE_VERSION = 'food-paradise-v1';
 
 const DEMO_MODULES = [
   'INVENTORY',
@@ -16,7 +18,7 @@ const DEMO_MODULES = [
 ];
 
 function isWhitelabelDemo(restaurantId, licenseKey = '') {
-  return String(restaurantId || '').trim().toUpperCase() === WHITELABEL_RESTAURANT_ID
+  return String(restaurantId || '').trim().toUpperCase().startsWith(WHITELABEL_RESTAURANT_ID)
     || String(licenseKey || '').trim().toUpperCase() === WHITELABEL_LICENSE_KEY;
 }
 
@@ -209,11 +211,13 @@ function seedWhitelabelDemoData(db, options = {}) {
   }
 
   const result = db.transaction(() => {
-    const alreadySeeded = tableExists(db, 'db_meta')
-      && Boolean(db.prepare("SELECT value FROM db_meta WHERE key = 'whitelabel_demo_seeded_at'").get());
+    const templateVersion = tableExists(db, 'db_meta')
+      ? db.prepare("SELECT value FROM db_meta WHERE key = 'whitelabel_template_version'").get()?.value
+      : null;
+    const alreadySeeded = templateVersion === WHITELABEL_TEMPLATE_VERSION;
     upsertSystemConfig(db, {
-      restaurant_display_name: 'KMaster White Label Demo Restaurant',
-      legal_name: 'KMaster Demo Foods',
+      restaurant_display_name: options.restaurantName || 'KMaster White Label Demo Restaurant',
+      legal_name: options.restaurantName || 'KMaster Demo Foods',
       gstin: '33ABCDE1234F1Z5',
       fssai_license_no: '12345678901234',
       state_code: '33',
@@ -276,7 +280,7 @@ function seedWhitelabelDemoData(db, options = {}) {
           last_checked = CURRENT_TIMESTAMP,
           expires_at = excluded.expires_at,
           status = 'ACTIVE'
-      `).run(WHITELABEL_RESTAURANT_ID, WHITELABEL_LICENSE_KEY);
+      `).run(restaurantId, licenseKey);
     }
 
     [
@@ -300,45 +304,53 @@ function seedWhitelabelDemoData(db, options = {}) {
       dessert: ensureKitchen(db, 'Dessert Counter', 'Bill Counter Printer')
     };
 
-    const categoryIds = {
-      breakfast: ensureCategory(db, 'Breakfast', kitchenIds.main),
-      starters: ensureCategory(db, 'Starters', kitchenIds.tandoor),
-      biryanis: ensureCategory(db, 'Biryanis', kitchenIds.main),
-      meals: ensureCategory(db, 'Meals', kitchenIds.main),
-      breads: ensureCategory(db, 'Breads', kitchenIds.tandoor),
-      beverages: ensureCategory(db, 'Beverages', kitchenIds.beverage),
-      desserts: ensureCategory(db, 'Desserts', kitchenIds.dessert)
-    };
+    // A new pilot template replaces earlier test catalogues. This is limited to
+    // the dedicated white-label QA restaurants and never runs for customer data.
+    if (!alreadySeeded) {
+      if (tableExists(db, 'items')) db.prepare('UPDATE items SET active = 0').run();
+      if (tableExists(db, 'categories')) db.prepare('UPDATE categories SET active = 0').run();
+    }
 
     const itemIds = {};
-    [
-      ['Idli Sambar', 'breakfast', 55, 1, 'Soft idlis with hot sambar and chutney.'],
-      ['Masala Dosa', 'breakfast', 95, 1, 'Crisp dosa with potato masala.'],
-      ['Ghee Pongal', 'breakfast', 85, 1, 'Comforting rice and dal pongal with ghee.'],
-      ['Paneer Tikka', 'starters', 190, 1, 'Tandoor grilled paneer with peppers.'],
-      ['Chicken 65', 'starters', 180, 0, 'Crispy spicy chicken starter.'],
-      ['Veg Biryani', 'biryanis', 160, 1, 'Aromatic vegetable biryani with raita.'],
-      ['Chicken Biryani', 'biryanis', 220, 0, 'Classic chicken biryani with boiled egg.'],
-      ['South Indian Veg Meals', 'meals', 145, 1, 'Rice, sambar, rasam, poriyal and curd.'],
-      ['Butter Naan', 'breads', 55, 1, 'Soft tandoor naan brushed with butter.'],
-      ['Chapati', 'breads', 35, 1, 'Whole wheat chapati.'],
-      ['Filter Coffee', 'beverages', 35, 1, 'Fresh South Indian filter coffee.'],
-      ['Fresh Lime Soda', 'beverages', 60, 1, 'Sweet, salt or mixed lime soda.'],
-      ['Gulab Jamun', 'desserts', 70, 1, 'Warm gulab jamun dessert.']
-    ].forEach(([name, category, price, isVeg, description]) => {
-      itemIds[name] = ensureItem(db, {
-        name,
-        category_id: categoryIds[category],
-        price,
-        is_veg: isVeg,
-        allow_parcel: 1,
-        active: 1,
-        online_enabled: 1,
-        online_description: description
+    const kitchenKeyByName = {
+      'Main Kitchen': 'main',
+      Tandoor: 'tandoor',
+      'Beverage Counter': 'beverage',
+      'Dessert Counter': 'dessert'
+    };
+    Object.entries(FOOD_PARADISE_MENU).forEach(([categoryName, menuItems]) => {
+      const kitchenKey = kitchenKeyByName[kitchenForCategory(categoryName)] || 'main';
+      const categoryId = ensureCategory(db, categoryName, kitchenIds[kitchenKey]);
+      menuItems.forEach(([name, price, isVeg]) => {
+        itemIds[name] = ensureItem(db, {
+          name,
+          category_id: categoryId,
+          price,
+          is_veg: isVeg,
+          allow_dine_in: 1,
+          allow_parcel: 1,
+          allow_party_order: 1,
+          tax_mode: 'INCLUSIVE',
+          active: 1,
+          online_enabled: 1,
+          online_description: ''
+        });
       });
     });
 
-    ['Table 1', 'Table 2', 'Table 3', 'Table 4', 'Table 5', 'Table 6', 'Family 1', 'Family 2', 'Parcel Counter'].forEach((table) => {
+    [
+      'Table 1',
+      'Table 2',
+      'Table 3',
+      'Table 4',
+      'Table 5',
+      'Table 6',
+      'Family 1',
+      'Family 2',
+      'Parcel',
+      'Delivery',
+      'Parcel Counter'
+    ].forEach((table) => {
       if (!getTableByName(db, table)) insertRow(db, 'tables', { table_name: table, status: 'AVAILABLE', active: 1 });
     });
 
@@ -424,6 +436,11 @@ function seedWhitelabelDemoData(db, options = {}) {
         VALUES ('whitelabel_demo_seeded_at', CURRENT_TIMESTAMP)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value
       `).run();
+      db.prepare(`
+        INSERT INTO db_meta (key, value)
+        VALUES ('whitelabel_template_version', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+      `).run(WHITELABEL_TEMPLATE_VERSION);
     }
 
     return {
@@ -441,6 +458,7 @@ function seedWhitelabelDemoData(db, options = {}) {
 module.exports = {
   DEMO_MODULES,
   WHITELABEL_LICENSE_KEY,
+  WHITELABEL_TEMPLATE_VERSION,
   WHITELABEL_RESTAURANT_ID,
   isWhitelabelDemo,
   seedWhitelabelDemoData
