@@ -5,6 +5,8 @@ let domain = 'MENU';
 let performanceMode = 'top';
 let restaurantsList = [];
 const selectedRestaurants = new Set();
+let menuPublisherBranches = [];
+const menuTargetIds = new Set();
 const domainCapabilities = { MENU:'REMOTE_MENU', BILLING:'REMOTE_BILLING', BACKUP:'REMOTE_BACKUP', ONLINE_ORDERING:'REMOTE_ONLINE_ORDERING' };
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -195,13 +197,61 @@ function render(data) {
 function renderConfigTabs(){
   const caps=new Set(current?.capabilities||[]);
   $('configTabs').innerHTML=Object.entries(domainCapabilities).filter(([,cap])=>caps.has(cap)).map(([key])=>`<button data-domain="${key}" ${key===domain?'disabled':''}>${key.replaceAll('_',' ')}</button>`).join('');
-  document.querySelectorAll('[data-domain]').forEach(button=>button.onclick=()=>{domain=button.dataset.domain;renderConfigTabs();loadEditor();});
+  document.querySelectorAll('[data-domain]').forEach(button=>button.onclick=()=>{domain=button.dataset.domain;renderConfigTabs();});
   const enabled=caps.has(domainCapabilities[domain]);
-  $('configEditor').hidden=$('saveConfigButton').hidden=!enabled;
-  $('configStatus').hidden=!enabled;
+  const menuMode=domain==='MENU';
+  $('menuPublisherPanel').hidden=false;
+  $('configTitle').hidden=menuMode;
+  $('configEditor').hidden=$('saveConfigButton').hidden=!enabled||menuMode;
+  $('configStatus').hidden=!enabled||menuMode;
   $('configTitle').textContent=enabled?domain.replaceAll('_',' '):'Remote configuration is not enabled by SaaS administration';
   $('runBackupButton').hidden=!caps.has('REMOTE_BACKUP');
-  if(enabled) loadEditor();
+  if(!menuPublisherBranches.length) loadMenuPublisher();
+  if(enabled&&!menuMode) loadEditor();
+}
+function renderMenuPublisher(preferredSource=''){
+  const source=preferredSource||$('menuSourceSelect').value;
+  $('menuSourceSelect').innerHTML=`<option value="">Choose a populated source branch</option>${menuPublisherBranches.filter((row)=>Number(row.counts?.items||0)>0).map((row)=>`<option value="${esc(row.restaurantId)}" ${row.restaurantId===source?'selected':''}>${esc(row.name)} · ${number(row.counts.items)} items</option>`).join('')}`;
+  const selectedSource=$('menuSourceSelect').value;
+  const selected=menuPublisherBranches.find((row)=>row.restaurantId===selectedSource);
+  $('menuSourceSummary').innerHTML=selected?`<strong>${number(selected.counts.categories)} categories · ${number(selected.counts.items)} items</strong><span>Last menu sync: ${esc(selected.snapshotAt?new Date(selected.snapshotAt).toLocaleString():'not synced')}</span>`:'<span>Select the branch whose menu should be copied.</span>';
+  const targets=menuPublisherBranches.filter((row)=>row.restaurantId!==selectedSource);
+  const validTargets=new Set(targets.filter((row)=>row.remoteMenuEnabled).map((row)=>row.restaurantId));
+  [...menuTargetIds].forEach((id)=>{if(!validTargets.has(id))menuTargetIds.delete(id);});
+  $('menuTargetList').innerHTML=targets.length?targets.map((row)=>`<label class="menu-target-option ${row.remoteMenuEnabled?'':'disabled'}"><input type="checkbox" data-menu-target="${esc(row.restaurantId)}" ${menuTargetIds.has(row.restaurantId)&&row.remoteMenuEnabled?'checked':''} ${row.remoteMenuEnabled?'':'disabled'}><span><strong>${esc(row.name)}</strong><small>${number(row.counts?.items||0)} current items · ${row.remoteMenuEnabled?'Ready for remote menu':'Publishing disabled by SaaS administration'}</small>${row.remoteMenuEnabled?'':'<small class="menu-target-warning">Ask the SaaS administrator to enable Remote Menu for this branch.</small>'}${row.latestPublish?`<small>Last publish: version ${number(row.latestPublish.version)} · ${esc(row.latestPublish.status)}</small>`:''}</span></label>`).join(''):'<p>No other branches are available.</p>';
+  document.querySelectorAll('[data-menu-target]').forEach((input)=>input.onchange=()=>input.checked?menuTargetIds.add(input.dataset.menuTarget):menuTargetIds.delete(input.dataset.menuTarget));
+  $('publishMenuButton').disabled=!selectedSource||!menuTargetIds.size;
+}
+async function loadMenuPublisher(){
+  $('menuPublishStatus').textContent='Loading branch menus…';
+  try{
+    const data=await api(`/owner-control/owner/menu-publisher?restaurantId=${encodeURIComponent(rid())}`);
+    menuPublisherBranches=data.branches||[];
+    const previous=$('menuSourceSelect').value;
+    const first=menuPublisherBranches.find((row)=>row.restaurantId===previous&&Number(row.counts?.items||0)>0)||menuPublisherBranches.find((row)=>Number(row.counts?.items||0)>0);
+    if(!menuTargetIds.size&&first) menuPublisherBranches.filter((row)=>row.restaurantId!==first.restaurantId&&row.remoteMenuEnabled).forEach((row)=>menuTargetIds.add(row.restaurantId));
+    renderMenuPublisher(first?.restaurantId||'');
+    $('menuPublishStatus').textContent=first?'Choose target branches, review the counts, then publish.':'No synced branch has a menu. Open a populated POS and run Sync first.';
+  }catch(error){$('menuPublishStatus').textContent=`Menu publisher could not load: ${error.message}`;}
+}
+async function publishSelectedMenu(){
+  const sourceRestaurantId=$('menuSourceSelect').value;
+  const targets=[...menuTargetIds].filter((id)=>id!==sourceRestaurantId);
+  if(!sourceRestaurantId){$('menuPublishStatus').textContent='Choose a source branch first.';return;}
+  if(!targets.length){$('menuPublishStatus').textContent='Select at least one target branch.';return;}
+  $('publishMenuButton').disabled=true;
+  $('menuPublishStatus').textContent=`Publishing to ${targets.length} branch${targets.length===1?'':'es'}…`;
+  const results=[];
+  for(const target of targets){
+    try{
+      const result=await api(`/owner-control/owner/menu-publish?restaurantId=${encodeURIComponent(target)}`,{method:'POST',body:JSON.stringify({sourceRestaurantId})});
+      results.push({target,ok:true,message:result.message});
+    }catch(error){results.push({target,ok:false,message:error.message});}
+  }
+  $('menuPublishStatus').innerHTML=results.map((result)=>`<div class="menu-publish-result ${result.ok?'success':'error'}"><strong>${esc(menuPublisherBranches.find((row)=>row.restaurantId===result.target)?.name||result.target)}</strong><span>${esc(result.message)}</span></div>`).join('');
+  $('publishMenuButton').disabled=false;
+  const succeeded=results.filter((result)=>result.ok).length;
+  if(succeeded) setTimeout(()=>loadMenuPublisher(),5000);
 }
 function configurationValue(){
   const map={MENU:'menu',BILLING:'billing',BACKUP:'backup',ONLINE_ORDERING:'onlineOrdering'};
@@ -289,7 +339,6 @@ function selectConfig(nextDomain) {
     return;
   }
   renderConfigTabs();
-  loadEditor();
 }
 
 function openDrawer() {
@@ -334,6 +383,9 @@ document.querySelectorAll('[data-owner-section]').forEach((button)=>button.oncli
 document.addEventListener('click',(event)=>{if(!event.target.closest('.od-restaurant-filter')){$('restaurantMultiMenu').hidden=true;$('restaurantMultiButton').setAttribute('aria-expanded','false');}});
 $('reportDate').value=localDate();
 $('configEditor').oninput=validateConfigurationEditor;
+$('menuSourceSelect').onchange=()=>{menuTargetIds.clear();menuPublisherBranches.filter((row)=>row.restaurantId!==$('menuSourceSelect').value&&row.remoteMenuEnabled).forEach((row)=>menuTargetIds.add(row.restaurantId));renderMenuPublisher();};
+$('refreshMenuPublisherButton').onclick=loadMenuPublisher;
+$('publishMenuButton').onclick=publishSelectedMenu;
 $('saveConfigButton').onclick=async()=>{
   if(selectedRestaurants.size!==1){validateConfigurationEditor();return;}
   let payload;

@@ -147,6 +147,134 @@ router.get('/owner/config', async (req, res) => {
   }
 });
 
+function menuCounts(menu = {}) {
+  return {
+    kitchens: Array.isArray(menu.kitchens) ? menu.kitchens.length : 0,
+    categories: Array.isArray(menu.categories) ? menu.categories.length : 0,
+    items: Array.isArray(menu.items) ? menu.items.length : 0,
+    modifiers: Array.isArray(menu.modifiers) ? menu.modifiers.length : 0,
+    combos: Array.isArray(menu.combos) ? menu.combos.length : 0
+  };
+}
+
+router.get('/owner/menu-publisher', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT t.id, t.restaurant_code, t.name,
+        os.configuration_snapshot, os.received_at,
+        hb.last_heartbeat_at,
+        rc.version AS menu_version, rc.status AS menu_status,
+        rc.apply_message, rc.created_at AS menu_published_at, rc.applied_at AS menu_applied_at,
+        EXISTS (
+          SELECT 1 FROM tenant_owner_capabilities c
+          WHERE c.tenant_id = t.id AND c.capability_code = 'REMOTE_MENU' AND c.enabled = true
+        ) AS remote_menu_enabled
+      FROM restaurant_owners ro
+      JOIN tenants t ON t.id = ro.tenant_id
+      LEFT JOIN tenant_operational_snapshots os ON os.tenant_id = t.id
+      LEFT JOIN pos_heartbeats hb ON hb.tenant_id = t.id
+      LEFT JOIN LATERAL (
+        SELECT version, status, apply_message, created_at, applied_at
+        FROM tenant_remote_configs
+        WHERE tenant_id = t.id AND domain = 'MENU'
+        ORDER BY version DESC LIMIT 1
+      ) rc ON true
+      WHERE ro.owner_user_id = $1 AND ro.active = true
+      ORDER BY t.name, t.restaurant_code
+    `, [req.user.id]);
+    const branches = result.rows.map((row) => {
+      const configuration = json(row.configuration_snapshot, {});
+      const menu = configuration.menu && typeof configuration.menu === 'object' ? configuration.menu : {};
+      return {
+        restaurantId: row.restaurant_code,
+        name: row.name,
+        counts: menuCounts(menu),
+        hasMenu: menuCounts(menu).items > 0,
+        snapshotAt: row.received_at || null,
+        lastOnlineAt: row.last_heartbeat_at || null,
+        remoteMenuEnabled: Boolean(row.remote_menu_enabled),
+        latestPublish: row.menu_version ? {
+          version: Number(row.menu_version),
+          status: row.menu_status,
+          message: row.apply_message || '',
+          publishedAt: row.menu_published_at,
+          appliedAt: row.menu_applied_at
+        } : null
+      };
+    });
+    res.json({ success: true, branches });
+  } catch (err) {
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.post('/owner/menu-publish', async (req, res) => {
+  const sourceRestaurantId = String(req.body?.sourceRestaurantId || '').trim();
+  if (!sourceRestaurantId) return res.status(400).json({ success: false, message: 'Choose a source branch before publishing the menu' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const sourceResult = await client.query(`
+      SELECT t.id, t.restaurant_code, t.name, os.configuration_snapshot, os.received_at
+      FROM restaurant_owners ro
+      JOIN tenants t ON t.id = ro.tenant_id
+      LEFT JOIN tenant_operational_snapshots os ON os.tenant_id = t.id
+      WHERE ro.owner_user_id = $1 AND ro.active = true AND t.restaurant_code = $2
+      LIMIT 1
+    `, [req.user.id, sourceRestaurantId]);
+    if (!sourceResult.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'The selected source branch is not assigned to this owner' });
+    }
+    const source = sourceResult.rows[0];
+    const sourceSnapshot = json(source.configuration_snapshot, {});
+    const menu = sourceSnapshot.menu && typeof sourceSnapshot.menu === 'object' ? sourceSnapshot.menu : null;
+    const counts = menuCounts(menu || {});
+    if (!menu || !counts.items) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ success: false, message: `${source.name} has no synced menu. Open that POS while online and run Sync before publishing.` });
+    }
+    if (!await capabilityEnabled(req.tenant.id, 'REMOTE_MENU')) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ success: false, message: `Remote menu publishing is not enabled for ${req.tenant.name}` });
+    }
+    const versionRow = await client.query('SELECT COALESCE(MAX(version), 0) + 1 version FROM tenant_remote_configs WHERE tenant_id = $1 AND domain = $2', [req.tenant.id, 'MENU']);
+    const version = Number(versionRow.rows[0].version);
+    const payload = validateDomain('MENU', {
+      ...menu,
+      publishing: {
+        sourceRestaurantId: source.restaurant_code,
+        sourceRestaurantName: source.name,
+        sourceSnapshotAt: source.received_at,
+        publishedAt: new Date().toISOString()
+      }
+    });
+    const configuration = await client.query(`
+      INSERT INTO tenant_remote_configs (tenant_id, domain, version, payload, status, created_by)
+      VALUES ($1, 'MENU', $2, $3::jsonb, 'PENDING', $4)
+      RETURNING *
+    `, [req.tenant.id, version, JSON.stringify(payload), req.user.id]);
+    const command = await queueCommand(client, req.tenant, 'APPLY_CONFIG', {
+      domain: 'MENU',
+      version,
+      sourceRestaurantId: source.restaurant_code
+    }, req.user.id);
+    await client.query('COMMIT');
+    res.json({
+      success: true,
+      configuration: configuration.rows[0],
+      command,
+      counts,
+      message: `Menu version ${version} queued for ${req.tenant.name}. It will apply when the POS is online.`
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(400).json({ success: false, message: publicError(err) });
+  } finally {
+    client.release();
+  }
+});
+
 router.put('/owner/config/:domain', async (req, res) => {
   const domain = String(req.params.domain || '').toUpperCase();
   try {

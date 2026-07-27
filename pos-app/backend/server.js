@@ -10559,6 +10559,7 @@ function buildOwnerControlSnapshot(db) {
         items: safeAll(db, 'SELECT id, name, category_id, price, alpha_short_code, numeric_short_code, tax_mode, is_veg, allow_dine_in, allow_parcel, allow_party_order, online_enabled, active FROM items ORDER BY name'),
         modifierGroups: safeAll(db, 'SELECT id, name, min_select, max_select, required, active FROM modifier_groups ORDER BY name'),
         modifiers: safeAll(db, 'SELECT id, group_id, name, price_delta, active FROM modifiers ORDER BY name'),
+        itemModifierGroups: safeAll(db, 'SELECT item_id, group_id, active FROM item_modifier_groups'),
         combos: safeAll(db, 'SELECT id, name, price, active FROM combos ORDER BY name'),
         comboItems: safeAll(db, 'SELECT combo_id, item_id, quantity, active FROM combo_items')
       },
@@ -10573,14 +10574,24 @@ function buildOwnerControlSnapshot(db) {
 }
 
 function applyRemoteMenu(db, payload) {
-  const updateKitchen = db.prepare('UPDATE kitchens SET name = COALESCE(?, name), active = COALESCE(?, active) WHERE id = ?');
-  const updateCategory = db.prepare('UPDATE categories SET name = COALESCE(?, name), kitchen_id = COALESCE(?, kitchen_id), active = COALESCE(?, active) WHERE id = ?');
-  const updateItem = db.prepare('UPDATE items SET name = COALESCE(?, name), category_id = COALESCE(?, category_id), price = COALESCE(?, price), alpha_short_code = COALESCE(?, alpha_short_code), numeric_short_code = COALESCE(?, numeric_short_code), tax_mode = COALESCE(?, tax_mode), is_veg = COALESCE(?, is_veg), allow_dine_in = COALESCE(?, allow_dine_in), allow_parcel = COALESCE(?, allow_parcel), allow_party_order = COALESCE(?, allow_party_order), online_enabled = COALESCE(?, online_enabled), active = COALESCE(?, active) WHERE id = ?');
-  const updateModifier = db.prepare('UPDATE modifiers SET name = COALESCE(?, name), price_delta = COALESCE(?, price_delta), active = COALESCE(?, active) WHERE id = ?');
-  const updateCombo = db.prepare('UPDATE combos SET name = COALESCE(?, name), price = COALESCE(?, price), active = COALESCE(?, active) WHERE id = ?');
-  db.transaction(() => {
-    (payload.kitchens || []).forEach((row) => updateKitchen.run(row.name ?? null, row.active ?? null, row.id));
-    (payload.categories || []).forEach((row) => updateCategory.run(row.name ?? null, row.kitchen_id ?? null, row.active ?? null, row.id));
+  const counts = { kitchens: 0, categories: 0, items: 0, modifierGroups: 0, modifiers: 0, combos: 0 };
+  const kitchenIds = new Map(), categoryIds = new Map(), itemIds = new Map(), groupIds = new Map(), comboIds = new Map();
+  const findNamed = (table) => db.prepare(`SELECT id FROM ${table} WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1`);
+  const tx = db.transaction(() => {
+    (payload.kitchens || []).forEach((row) => {
+      let found = findNamed('kitchens').get(row.name);
+      if (found) db.prepare('UPDATE kitchens SET name=?, active=?, deleted_at=NULL WHERE id=?').run(row.name, row.active ?? 1, found.id);
+      else found = { id: Number(db.prepare('INSERT INTO kitchens (name,active) VALUES (?,?)').run(row.name, row.active ?? 1).lastInsertRowid) };
+      kitchenIds.set(row.id, found.id); counts.kitchens++;
+    });
+    (payload.categories || []).forEach((row) => {
+      let found = findNamed('categories').get(row.name);
+      const kitchenId = kitchenIds.get(row.kitchen_id);
+      if (!kitchenId) throw new Error(`Category "${row.name}" has no mapped kitchen`);
+      if (found) db.prepare('UPDATE categories SET name=?, kitchen_id=?, active=?, deleted_at=NULL WHERE id=?').run(row.name, kitchenId, row.active ?? 1, found.id);
+      else found = { id: Number(db.prepare('INSERT INTO categories (name,kitchen_id,active) VALUES (?,?,?)').run(row.name, kitchenId, row.active ?? 1).lastInsertRowid) };
+      categoryIds.set(row.id, found.id); counts.categories++;
+    });
     (payload.items || []).forEach((row) => {
       const price = row.price == null ? null : Number(row.price);
       if (price != null && (!Number.isFinite(price) || price < 0)) throw new Error(`Invalid price for item ${row.id}`);
@@ -10590,12 +10601,42 @@ function applyRemoteMenu(db, payload) {
       if (alphaShortCode != null && alphaShortCode !== '' && !/^[A-Z]+(?: [A-Z]+)*$/.test(alphaShortCode)) throw new Error(`Invalid alphabetic short code for item ${row.id}`);
       if (numericShortCode != null && numericShortCode !== '' && !/^\d+$/.test(numericShortCode)) throw new Error(`Invalid numeric short code for item ${row.id}`);
       if (taxMode != null && !['INCLUSIVE', 'EXCLUSIVE'].includes(taxMode)) throw new Error(`Invalid tax mode for item ${row.id}`);
-      updateItem.run(row.name ?? null, row.category_id ?? null, price, alphaShortCode || null, numericShortCode || null, taxMode, row.is_veg ?? null, row.allow_dine_in ?? null, row.allow_parcel ?? null, row.allow_party_order ?? null, row.online_enabled ?? null, row.active ?? null, row.id);
+      const categoryId = categoryIds.get(row.category_id);
+      if (!categoryId) throw new Error(`Item "${row.name}" has no mapped category`);
+      let found = alphaShortCode && db.prepare('SELECT id FROM items WHERE alpha_short_code=? LIMIT 1').get(alphaShortCode);
+      if (!found && numericShortCode) found = db.prepare('SELECT id FROM items WHERE numeric_short_code=? LIMIT 1').get(numericShortCode);
+      if (!found) found = db.prepare('SELECT id FROM items WHERE category_id=? AND LOWER(TRIM(name))=LOWER(TRIM(?)) LIMIT 1').get(categoryId, row.name);
+      const values = [row.name, categoryId, price, alphaShortCode || null, numericShortCode || null, taxMode || 'INCLUSIVE', row.is_veg ?? 1, row.allow_dine_in ?? 1, row.allow_parcel ?? 1, row.allow_party_order ?? 1, row.online_enabled ?? 1, row.active ?? 1];
+      if (found) db.prepare('UPDATE items SET name=?,category_id=?,price=?,alpha_short_code=?,numeric_short_code=?,tax_mode=?,is_veg=?,allow_dine_in=?,allow_parcel=?,allow_party_order=?,online_enabled=?,active=?,deleted_at=NULL WHERE id=?').run(...values, found.id);
+      else found = { id: Number(db.prepare('INSERT INTO items (name,category_id,price,alpha_short_code,numeric_short_code,tax_mode,is_veg,allow_dine_in,allow_parcel,allow_party_order,online_enabled,active) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(...values).lastInsertRowid) };
+      itemIds.set(row.id, found.id); counts.items++;
     });
-    (payload.modifiers || []).forEach((row) => updateModifier.run(row.name ?? null, row.price_delta ?? null, row.active ?? null, row.id));
-    (payload.combos || []).forEach((row) => updateCombo.run(row.name ?? null, row.price ?? null, row.active ?? null, row.id));
-  })();
+    (payload.modifierGroups || []).forEach((row) => {
+      let found = findNamed('modifier_groups').get(row.name);
+      if (found) db.prepare('UPDATE modifier_groups SET name=?,min_select=?,max_select=?,required=?,active=? WHERE id=?').run(row.name,row.min_select??0,row.max_select??1,row.required??0,row.active??1,found.id);
+      else found={id:Number(db.prepare('INSERT INTO modifier_groups (name,min_select,max_select,required,active) VALUES (?,?,?,?,?)').run(row.name,row.min_select??0,row.max_select??1,row.required??0,row.active??1).lastInsertRowid)};
+      groupIds.set(row.id,found.id); counts.modifierGroups++;
+    });
+    (payload.modifiers || []).forEach((row) => {
+      const groupId=groupIds.get(row.group_id); if(!groupId) throw new Error(`Modifier "${row.name}" has no mapped group`);
+      let found=db.prepare('SELECT id FROM modifiers WHERE group_id=? AND LOWER(TRIM(name))=LOWER(TRIM(?)) LIMIT 1').get(groupId,row.name);
+      if(found) db.prepare('UPDATE modifiers SET name=?,price_delta=?,active=? WHERE id=?').run(row.name,row.price_delta??0,row.active??1,found.id);
+      else found={id:Number(db.prepare('INSERT INTO modifiers (group_id,name,price_delta,active) VALUES (?,?,?,?)').run(groupId,row.name,row.price_delta??0,row.active??1).lastInsertRowid)};
+      counts.modifiers++;
+    });
+    (payload.itemModifierGroups || []).forEach((row)=>{const itemId=itemIds.get(row.item_id),groupId=groupIds.get(row.group_id);if(itemId&&groupId)db.prepare('INSERT INTO item_modifier_groups (item_id,group_id,active) VALUES (?,?,?) ON CONFLICT(item_id,group_id) DO UPDATE SET active=excluded.active').run(itemId,groupId,row.active??1);});
+    (payload.combos || []).forEach((row) => {
+      let found=findNamed('combos').get(row.name);
+      if(found) db.prepare('UPDATE combos SET name=?,price=?,active=? WHERE id=?').run(row.name,row.price??0,row.active??1,found.id);
+      else found={id:Number(db.prepare('INSERT INTO combos (name,price,active) VALUES (?,?,?)').run(row.name,row.price??0,row.active??1).lastInsertRowid)};
+      comboIds.set(row.id,found.id); counts.combos++;
+    });
+    (payload.comboItems || []).forEach((row)=>{const comboId=comboIds.get(row.combo_id),itemId=itemIds.get(row.item_id);if(comboId&&itemId)db.prepare('INSERT INTO combo_items (combo_id,item_id,quantity,active) VALUES (?,?,?,?) ON CONFLICT(combo_id,item_id) DO UPDATE SET quantity=excluded.quantity,active=excluded.active').run(comboId,itemId,row.quantity??1,row.active??1);});
+  });
+  tx();
+  if (!counts.items) throw new Error('Remote menu contained no items; nothing was imported');
   setConfigValues(db, { online_menu_sync_pending: '1' });
+  return counts;
 }
 
 function applyRemoteConfiguration(db, domain, payload) {
@@ -10631,9 +10672,12 @@ async function runOwnerControlTick() {
     const pulled = await axios.post(`${saasUrl}/owner-control/pos/pull`, { restaurantId, ...credentials }, { timeout: 10000 });
     for (const config of pulled.data?.configurations || []) {
       try {
-        applyRemoteConfiguration(db, String(config.domain).toUpperCase(), config.payload || {});
+        const applied = applyRemoteConfiguration(db, String(config.domain).toUpperCase(), config.payload || {});
         setConfigValues(db, { [`remote_config_${String(config.domain).toLowerCase()}_version`]: config.version });
-        await ackOwnerControl(saasUrl, credentials, restaurantId, { domain: config.domain, version: config.version, success: true, message: 'Applied by POS' });
+        const message = String(config.domain).toUpperCase() === 'MENU' && applied
+          ? `Menu applied: ${applied.categories} categories, ${applied.items} items, ${applied.modifierGroups} modifier groups, ${applied.modifiers} modifiers and ${applied.combos} combos`
+          : 'Applied by POS';
+        await ackOwnerControl(saasUrl, credentials, restaurantId, { domain: config.domain, version: config.version, success: true, message });
       } catch (err) {
         await ackOwnerControl(saasUrl, credentials, restaurantId, { domain: config.domain, version: config.version, success: false, message: err.message });
       }
