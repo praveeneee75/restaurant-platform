@@ -1,7 +1,7 @@
 (function () {
   const configs = {
     admin: { tokenKey: "adminToken", userKey: "adminUser", loginUrl: "/login.html", homeUrl: "/admin.html", logoutUrl: "/auth/logout", label: "Admin" },
-    owner: { tokenKey: "ownerToken", userKey: "ownerUser", loginUrl: "/owner-login.html", homeUrl: "/owner-dashboard.html", logoutUrl: "/owners/logout", label: "Owner" },
+    owner: { tokenKey: "ownerToken", userKey: "ownerUser", loginUrl: "/owner-login.html", homeUrl: "/owner-control.html", logoutUrl: "/owners/logout", label: "Owner" },
     partner: { tokenKey: "partnerToken", userKey: "partnerUser", loginUrl: "/partner-login.html", homeUrl: "/partner-dashboard.html", logoutUrl: "/partners/logout", label: "Partner" }
   };
   const idleMs = 30 * 60 * 1000;

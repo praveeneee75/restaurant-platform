@@ -109,7 +109,7 @@ function renderCard(order, item, showReprint) {
   }[item.status] || "";
   return `
     <article class="kds-card">
-      <header><strong>#${esc(item.kotReference || `${order.orderId}-${item.kotSequence || 1}`)}</strong><span>${esc(order.tableName || "Parcel")}</span></header>
+      <header><strong>#${esc(item.kotReference || `${order.orderId}-${item.kotSequence || 1}`)}</strong><span>${esc(item.serviceLocation || order.tableName || "Parcel")}</span></header>
       <h3>${esc(item.name)}</h3>
       <p>Qty ${item.quantity} · Started ${esc(formatStartTime(item.startTime || order.createdAt))}</p>
       ${item.status === 'PENDING' || item.status === 'PREPARING' ? `<p class="kds-timer" data-start-time="${esc(item.startTime || order.createdAt)}">Pending <strong>${esc(elapsedLabel(item.startTime || order.createdAt))}</strong></p>` : ''}

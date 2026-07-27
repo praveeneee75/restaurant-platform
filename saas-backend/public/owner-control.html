@@ -3,30 +3,72 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>K'Master POS Remote Owner Control</title>
-  <link rel="stylesheet" href="/css/app.css?v=owner-control-20260719">
+  <title>K'Master POS Owner Dashboard</title>
+  <link rel="stylesheet" href="/css/app.css?v=owner-control-20260727b">
   <style>
-    .control-shell{max-width:1500px;margin:auto;padding:20px}.control-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) auto auto;gap:10px;align-items:end}.control-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}.control-card,.control-panel{background:#fff;border:1px solid #dbe4f0;border-radius:14px;padding:16px}.control-card strong{display:block;font-size:1.65rem;margin-top:8px}.control-columns{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;margin-top:16px}.control-list{display:grid;gap:8px}.control-row{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #e8edf5;padding:8px 0}.freshness{padding:10px;border-radius:8px;background:#eef6ff}.freshness.stale{background:#fff1e7;color:#8a3b12}.config-tabs{display:flex;gap:8px;flex-wrap:wrap}.config-editor{width:100%;min-height:310px;font-family:ui-monospace,monospace;font-size:12px}.approval{border-left:5px solid #f59e0b}.alert-high{border-left:5px solid #dc2626}@media(max-width:700px){.control-toolbar{grid-template-columns:1fr}.control-columns{grid-template-columns:1fr}}
+    :root{--od-ink:#12233f;--od-muted:#64748b;--od-line:#dce5ef;--od-blue:#2563eb;--od-green:#10a66a;--od-orange:#f97316;--od-soft:#f5f8fc}
+    body.owner-page{max-width:none!important;margin:0!important;padding:0!important;background:var(--od-soft);color:var(--od-ink)}
+    .od-shell{display:grid;grid-template-columns:230px minmax(0,1fr);min-height:100vh}
+    .od-sidebar{position:sticky;top:0;height:100vh;overflow:auto;background:#fff;border-right:1px solid var(--od-line);padding:18px 14px}
+    .od-brand{display:flex;align-items:center;gap:10px;padding:2px 8px 18px;font-weight:900;font-size:19px}.od-mark{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:#0f8178;color:#fff}
+    .od-nav{display:grid;gap:4px}.od-nav a,.od-nav button{display:flex;align-items:center;gap:10px;width:100%;min-height:40px;margin:0;padding:9px 11px!important;border:0;border-radius:8px;background:transparent;color:#334155;text-align:left;text-decoration:none;font-weight:750}.od-nav a:hover,.od-nav button:hover{background:#f0f7f6;color:#0f766e;text-decoration:none}.od-nav .active{background:#e6f5f3;color:#0f766e}.od-nav .group{margin-top:10px;color:#0f172a}.od-nav .sub{padding-left:30px;font-size:13px}
+    .od-main{min-width:0}.od-topbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:12px;min-height:70px;padding:12px 22px;background:rgba(255,255,255,.96);border-bottom:1px solid var(--od-line);backdrop-filter:blur(10px)}.od-topbar label{min-width:260px}.od-topbar select{width:100%}.od-top-actions{display:flex;gap:8px;margin-left:auto}.od-icon-btn{min-width:42px;background:#fff!important;color:#334155!important;border:1px solid var(--od-line)!important}
+    .od-content{max-width:1540px;margin:auto;padding:20px}.od-heading{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}.od-heading h1{margin:0;font-size:25px}.od-heading-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.od-date{min-height:40px;padding:8px 12px;border:1px solid var(--od-line);border-radius:9px;background:#fff}
+    .od-freshness{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}.sync-pill{display:inline-flex;gap:7px;align-items:center;padding:8px 11px;border:1px solid var(--od-line);border-radius:999px;background:#fff;font-size:12px}.sync-pill::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--od-green)}.sync-pill.stale::before{background:#f59e0b}.sync-pill.error::before{background:#dc2626}
+    .od-grid{display:grid;grid-template-columns:minmax(250px,.85fr) minmax(440px,1.75fr) minmax(280px,1fr);gap:14px;align-items:start}.od-card{min-width:0;background:#fff;border:1px solid var(--od-line);border-radius:15px;padding:16px;box-shadow:0 2px 7px rgba(15,23,42,.035)}.od-card h2{margin:0 0 14px;font-size:17px}.od-total{font-size:34px;font-weight:900;letter-spacing:-1px}.od-subtitle{font-size:12px;color:var(--od-muted)}.payment-row,.leak-row,.item-row,.online-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid #edf1f6}.payment-row:last-child,.leak-row:last-child,.item-row:last-child{border-bottom:0}.payment-row span::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;background:var(--row-color,#64748b)}
+    .od-span-2{grid-column:span 2}.chart-wrap{height:275px}.sales-chart{width:100%;height:100%;overflow:visible}.chart-empty{display:grid;place-items:center;height:100%;color:var(--od-muted)}.chart-legend{display:flex;justify-content:center;gap:16px;font-size:12px;color:var(--od-muted)}.legend-dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
+    .outcome-pills{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}.outcome-pills span{padding:5px 8px;border-radius:999px;background:#edf7f1;color:#13734c;font-size:11px;font-weight:800}.outcome-pills .neutral{background:#f1f5f9;color:#64748b}
+    .channel-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}.channel-card{background:#fff;border:1px solid var(--od-line);border-radius:15px;padding:15px}.channel-card strong{display:block;margin:8px 0 5px;font-size:23px}.bar{height:5px;border-radius:99px;background:#e9eef5;overflow:hidden}.bar i{display:block;height:100%;background:var(--channel-color);border-radius:99px}
+    .leak-section-title{margin:10px 0 2px;font-size:11px;color:var(--od-muted);font-weight:900;letter-spacing:.08em}.performance-tabs{display:grid;grid-template-columns:1fr 1fr;margin-bottom:8px}.performance-tabs button{border:1px solid var(--od-line);background:#fff;color:#64748b}.performance-tabs button.active{background:#eaf2ff;color:#1859c9}.item-row small{display:block;color:var(--od-muted)}.online-card{margin-top:14px}.online-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.online-stat{padding:10px;border-left:3px solid var(--od-blue)}.online-stat strong{display:block;font-size:20px;margin-top:4px}
+    .od-secondary{display:grid;grid-template-columns:repeat(3,minmax(260px,1fr));gap:14px;margin-top:14px}.control-list{display:grid;gap:7px}.control-row{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #edf1f6;padding:8px 0}.control-card{border:1px solid var(--od-line);border-radius:10px;padding:11px}.approval{border-left:4px solid #f59e0b}.alert-high{border-left:4px solid #dc2626}.remote-config{margin-top:14px}.config-tabs{display:flex;gap:8px;flex-wrap:wrap}.config-editor{width:100%;min-height:250px;font-family:ui-monospace,monospace;font-size:12px}
+    .od-report{margin-top:14px}.od-report-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.od-report-table{display:grid;gap:0;margin-top:10px;border:1px solid var(--od-line);border-radius:10px;overflow:hidden}.od-report-row{display:grid;grid-template-columns:minmax(110px,1.2fr) repeat(5,minmax(90px,1fr));gap:10px;padding:10px 12px;border-bottom:1px solid #edf1f6}.od-report-row:last-child{border-bottom:0}.od-report-row.head{background:#f7fafc;color:#475569;font-size:11px;font-weight:900;text-transform:uppercase}.od-report-row span:not(:first-child){text-align:right}.od-drawer{position:fixed;z-index:40;inset:0;display:grid;place-items:start end;padding:82px 18px 18px;background:rgba(15,23,42,.28)}.od-drawer[hidden]{display:none}.od-drawer-panel{width:min(420px,100%);max-height:calc(100vh - 100px);overflow:auto;padding:18px;border:1px solid var(--od-line);border-radius:15px;background:#fff;box-shadow:0 24px 70px rgba(15,23,42,.25)}.od-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.od-drawer-head h2{margin:0}.od-capability-note{padding:12px;border-left:4px solid #0f8178;border-radius:8px;background:#effaf8;color:#315f5b}.od-command-list{display:grid;gap:8px}.od-command{padding:10px;border:1px solid var(--od-line);border-radius:9px}.od-command small{display:block;color:var(--od-muted)}.od-section-flash{animation:odFlash 1.25s ease}@keyframes odFlash{0%,100%{box-shadow:0 2px 7px rgba(15,23,42,.035)}40%{box-shadow:0 0 0 4px rgba(15,129,120,.22)}}
+    .od-mobile-menu{display:none}.od-error{padding:14px;border-radius:10px;background:#fff1e7;color:#8a3b12}
+    @media(max-width:1100px){.od-grid{grid-template-columns:1fr 1fr}.od-span-2{grid-column:span 1}.od-grid>.od-card:last-child{grid-column:span 2}.od-secondary{grid-template-columns:1fr 1fr}}
+    @media(max-width:760px){.od-shell{grid-template-columns:1fr}.od-sidebar{display:none;position:fixed;z-index:20;width:250px}.od-sidebar.open{display:block}.od-mobile-menu{display:inline-flex}.od-topbar{padding:10px}.od-topbar label{min-width:0;flex:1}.od-top-actions .hide-mobile{display:none}.od-content{padding:12px}.od-grid,.od-secondary,.channel-grid,.online-summary{grid-template-columns:1fr}.od-grid>.od-card:last-child{grid-column:auto}.od-heading-actions{margin-left:0;width:100%}.od-heading-actions .od-date{flex:1}.chart-wrap{height:220px}}
   </style>
 </head>
 <body class="owner-page">
-  <header class="owner-header owner-hero"><div><p class="eyebrow">Owner Portal</p><h1>Remote owner control</h1><p>Internet view of cloud-synced POS operations. No invoice-level data is exposed.</p></div><nav class="owner-actions"><a href="/owner-dashboard.html">Home</a><button data-session-logout>Sign out</button></nav></header>
-  <main class="control-shell">
-    <section class="control-toolbar"><label>Restaurant<select id="restaurantSelect"></select></label><button id="refreshButton">Refresh</button><button id="requestSyncButton">Request POS sync</button></section>
-    <p id="status" class="freshness">Loading...</p>
-    <section id="metrics" class="control-grid"></section>
-    <div class="control-columns">
-      <section class="control-panel"><h2>Live operations</h2><div id="liveOperations" class="control-list"></div></section>
-      <section class="control-panel"><h2>Payment & executive sales</h2><div id="executiveSales" class="control-list"></div></section>
-      <section class="control-panel"><h2>Refund summary</h2><div id="refunds" class="control-list"></div></section>
-      <section class="control-panel"><h2>Promocode usage</h2><div id="promocodes" class="control-list"></div></section>
-      <section class="control-panel"><h2>Invoice reprints</h2><div id="reprints" class="control-list"></div></section>
-      <section class="control-panel"><h2>Alerts</h2><div id="alerts" class="control-list"></div></section>
-      <section class="control-panel"><h2>Confirm license-sensitive changes</h2><div id="approvals" class="control-list"></div></section>
+  <div class="od-shell">
+    <aside class="od-sidebar" id="ownerSidebar">
+      <div class="od-brand"><span class="od-mark">K'</span><span>K'Master Owner</span></div>
+      <nav class="od-nav">
+        <a class="active" href="#dashboard">▦ Dashboard</a>
+        <button class="group" type="button">Daily operations</button>
+        <a class="sub" href="#liveOperations">Live orders</a><a class="sub" href="#onlineOrders">Online orders</a><a class="sub" href="#leakage">KOT & leakage</a>
+        <button class="group" type="button" data-owner-nav="MENU">Menu control</button><button class="group" type="button" data-owner-nav="INVENTORY">Inventory status</button><button class="group" type="button" data-owner-nav="financeSummary">Finance</button>
+        <button class="group" type="button" data-owner-nav="ownerReports">Reports</button><button class="group" type="button" data-owner-nav="managementSummary">Management</button>
+        <a href="#remoteConfig">⚙ Remote configuration</a><a href="/owner-dashboard.html">▦ Apps &amp; licenses</a>
+      </nav>
+    </aside>
+    <div class="od-main">
+      <header class="od-topbar">
+        <button class="od-icon-btn od-mobile-menu" id="mobileMenuButton" aria-label="Open menu">☰</button>
+        <label><span class="sr-only">Restaurant</span><select id="restaurantSelect" aria-label="Restaurant"></select></label>
+        <div class="od-top-actions"><button id="requestSyncButton" class="od-icon-btn hide-mobile" title="Request POS sync">↻ Sync</button><button id="notificationsButton" class="od-icon-btn" title="Notifications" aria-controls="ownerDrawer">♢</button><button id="settingsButton" class="od-icon-btn" title="Settings">⚙</button><button class="od-icon-btn" data-session-logout title="Sign out">⇥</button></div>
+      </header>
+      <main class="od-content" id="dashboard">
+        <div class="od-heading"><div><h1>Sales statistics</h1><p class="od-subtitle">No invoice-level data is exposed in the owner dashboard. Restore is intentionally confirmed locally at the restaurant.</p></div><div class="od-heading-actions"><input class="od-date" id="reportDate" type="date" aria-label="Dashboard date"><button id="refreshButton" class="od-icon-btn" title="Refresh">↻</button></div></div>
+        <div id="status" class="od-freshness"><span class="sync-pill">Loading cloud snapshot…</span></div>
+        <section class="od-grid">
+          <article class="od-card"><h2>Total sales</h2><div id="salesCaption" class="od-subtitle">Today</div><div id="totalSales" class="od-total">₹0</div><div id="paymentBreakdown"></div></article>
+          <article class="od-card"><div style="display:flex;justify-content:space-between;gap:12px"><h2>Sales by channel</h2><strong id="totalOrders">0 orders</strong></div><div id="outcomePills" class="outcome-pills"></div><div id="salesChart" class="chart-wrap"></div><div class="chart-legend"><span><i class="legend-dot" style="background:#2563eb"></i>Dine in</span><span><i class="legend-dot" style="background:#10a66a"></i>Parcel</span><span><i class="legend-dot" style="background:#f97316"></i>Delivery</span></div></article>
+          <article class="od-card" id="leakage"><h2>Leakage</h2><div id="leakageList"></div></article>
+          <div id="channelCards" class="channel-grid od-span-2"></div>
+          <article class="od-card" id="itemPerformance"><h2>Item performance</h2><div class="performance-tabs"><button id="topItemsButton" class="active">Top performing</button><button id="lowItemsButton">Low performing</button></div><div id="itemRows"></div></article>
+        </section>
+        <article class="od-card online-card" id="onlineOrders"><h2>Online orders</h2><div id="onlineSummary" class="online-summary"></div></article>
+        <section class="od-secondary">
+          <article class="od-card" id="liveOperations"><h2>Live operations</h2><div id="liveOperationsList" class="control-list"></div></article>
+          <article class="od-card" id="financeSummary"><h2>Refund & promotion summary</h2><div id="refunds" class="control-list"></div><div id="promocodes" class="control-list"></div></article>
+          <article class="od-card" id="managementSummary"><h2>Alerts & approvals</h2><div id="alerts" class="control-list"></div><div id="approvals" class="control-list"></div></article>
+        </section>
+        <section class="od-card od-report" id="ownerReports"><div class="od-report-head"><div><h2>Cloud sales history</h2><p class="od-subtitle">Daily totals received from POS. Select a date above to inspect a specific trading day.</p></div><button id="downloadReportButton" class="od-icon-btn">Download CSV</button></div><div id="dailyReportRows" class="od-report-table"></div></section>
+        <section class="od-card remote-config" id="remoteConfig"><h2>Remote configuration</h2><p class="od-subtitle">Only SaaS-enabled capabilities appear. Changes are versioned, validated by POS and acknowledged.</p><div id="configTabs" class="config-tabs"></div><h3 id="configTitle"></h3><textarea id="configEditor" class="config-editor" spellcheck="false"></textarea><button id="saveConfigButton">Publish version to POS</button><button id="runBackupButton">Run backup now</button></section>
+      </main>
     </div>
-    <section class="control-panel" style="margin-top:16px"><h2>Remote configuration</h2><p>Only capabilities enabled by SaaS administration appear. Changes are versioned, applied by POS, and acknowledged.</p><div id="configTabs" class="config-tabs"></div><h3 id="configTitle"></h3><textarea id="configEditor" class="config-editor" spellcheck="false"></textarea><button id="saveConfigButton">Publish version to POS</button><button id="runBackupButton">Run backup now</button><p>Restore is intentionally confirmed locally at the POS because it overwrites active data.</p></section>
-  </main>
+  </div>
+  <div class="od-drawer" id="ownerDrawer" hidden><aside class="od-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawerTitle"><div class="od-drawer-head"><h2 id="drawerTitle">Owner activity</h2><button id="closeDrawerButton" class="od-icon-btn" aria-label="Close">×</button></div><div id="drawerBody"></div></aside></div>
   <script src="/js/saas-session.js" data-session-scope="owner"></script>
-  <script src="/js/owner-control.js?v=20260719"></script>
+  <script src="/js/owner-control.js?v=20260727b"></script>
 </body>
 </html>

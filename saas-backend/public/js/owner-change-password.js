@@ -34,7 +34,7 @@ async function saveOwnerPassword() {
     localStorage.setItem("ownerUser", JSON.stringify(data.owner));
     localStorage.setItem("ownerToken:session", JSON.stringify({ loginAt: Date.now(), lastActiveAt: Date.now() }));
     msg.textContent = "Password saved";
-    window.location.replace("/owner-dashboard.html");
+    window.location.replace("/owner-control.html");
   } catch (error) {
     msg.textContent = error.message;
     button.disabled = false;

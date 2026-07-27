@@ -1,16 +1,25 @@
 const http = require('http');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 process.env.PORT = process.env.ADMIN_REGRESSION_PORT || '3401';
 process.env.POS_HEARTBEAT_DISABLED = '1';
 
 const posRoot = path.join(__dirname, '..', 'pos-app');
+const isolatedDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kmaster-admin-regression-'));
+process.env.POS_DATA_DIR = isolatedDataRoot;
 const { openDatabase } = require(path.join(posRoot, 'backend/db/database'));
-const { getSingleRestaurantId } = require(path.join(posRoot, 'backend/utils/restaurantScanner'));
+const { ensureRestaurantSchema, seedDefaultSettings } = require(path.join(posRoot, 'backend/services/schema'));
+const restaurantId = 'ADMINREGRESSION';
+const seedDb = openDatabase(restaurantId);
+seedDb.exec(fs.readFileSync(path.join(posRoot, 'backend/db/init.sql'), 'utf8'));
+ensureRestaurantSchema(seedDb);
+seedDefaultSettings(seedDb);
+seedDb.close();
 require(path.join(posRoot, 'backend/server'));
 
 const port = Number(process.env.PORT);
-const restaurantId = process.env.POS_SMOKE_RESTAURANT_ID || getSingleRestaurantId();
 const actor = { id: 1, role: 'OWNER', name: 'Admin Regression' };
 const stamp = Date.now();
 const names = {
@@ -106,8 +115,12 @@ async function main() {
 }
 
 main()
-  .then(() => process.exit(0))
+  .then(() => {
+    try { fs.rmSync(isolatedDataRoot, { recursive: true, force: true, maxRetries: 2 }); } catch {}
+    process.exit(0);
+  })
   .catch((error) => {
     console.error(error.stack || error.message);
+    try { fs.rmSync(isolatedDataRoot, { recursive: true, force: true, maxRetries: 2 }); } catch {}
     process.exit(1);
   });

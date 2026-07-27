@@ -249,7 +249,13 @@ function deliveryFeeValue() {
 }
 
 function cartTotal() {
-  return state.cart.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0) + deliveryFeeValue();
+  const taxRate = Number(state.settings?.taxRate || 0);
+  return state.cart.reduce((sum, item) => {
+    const listedAmount = Number(item.price || 0) * Number(item.quantity || 0);
+    return sum + (String(item.tax_mode || 'INCLUSIVE').toUpperCase() === 'EXCLUSIVE'
+      ? listedAmount * (1 + taxRate / 100)
+      : listedAmount);
+  }, 0) + deliveryFeeValue();
 }
 
 function redeemPointsValue() {
@@ -341,8 +347,15 @@ async function boot() {
   if (posMode !== "DINE_IN") {
     state.selectedTable = null;
     state.activeTableId = null;
+    state.orderId = null;
+    state.orderReference = null;
+    state.billingReady = false;
+    state.kotSubmitted = false;
+    state.customer = null;
+    state.cart = [];
+    state.selectedCartKey = null;
     renderTables();
-    await restoreCurrentContextOrder();
+    await loadOpenOrdersForCurrentContext(null, { autoSelect: false });
     renderCart();
     return;
   }
@@ -358,7 +371,11 @@ async function refreshLiveState({ updateCart = false } = {}) {
   const data = await fetch(`/pos/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`).then((res) => res.json());
   applyBootstrap(data);
   await refreshShiftCashStatus();
-  if (updateCart && (state.selectedTable?.id || posMode !== "DINE_IN")) await restoreCurrentContextOrder();
+  if (updateCart && (state.selectedTable?.id || (posMode !== "DINE_IN" && state.orderId))) {
+    await restoreCurrentContextOrder();
+  } else if (updateCart && posMode !== "DINE_IN") {
+    await loadOpenOrdersForCurrentContext(null, { autoSelect: false });
+  }
   renderTables();
   renderCategories();
   if (state.selectedCategoryId) renderItems(state.selectedCategoryId);
@@ -377,14 +394,15 @@ async function loadOpenOrdersForTable(tableId, selectedOrderId = null) {
   primeOpenOrderCache();
 }
 
-async function loadOpenOrdersForCurrentContext(selectedOrderId = null) {
+async function loadOpenOrdersForCurrentContext(selectedOrderId = null, { autoSelect = true } = {}) {
   if (isDineIn()) return loadOpenOrdersForTable(state.selectedTable?.id, selectedOrderId);
   const data = await fetch(`/orders/open-list?restaurantId=${encodeURIComponent(restaurantId)}&orderType=${encodeURIComponent(orderType.value)}`).then((res) => res.json());
   state.openOrders = data.orders || [];
   const requestedOrder = state.openOrders.find((order) => Number(order.id) === Number(selectedOrderId));
   const currentOrder = state.openOrders.find((order) => Number(order.id) === Number(state.orderId));
-  state.orderId = requestedOrder?.id || currentOrder?.id || state.openOrders[0]?.id || null;
-  state.billingReady = Number((requestedOrder || currentOrder || state.openOrders[0])?.billing_ready) === 1;
+  const selectedOrder = requestedOrder || currentOrder || (autoSelect ? state.openOrders[0] : null);
+  state.orderId = selectedOrder?.id || null;
+  state.billingReady = Number(selectedOrder?.billing_ready) === 1;
   renderOrderSelector();
   primeOpenOrderCache();
 }
@@ -598,13 +616,13 @@ function setSelectedTableStatus(status) {
 }
 
 function renderOrderSelector() {
-  const current = state.openOrders.find((order) => Number(order.id) === Number(state.orderId)) || state.openOrders[0] || null;
+  const current = state.openOrders.find((order) => Number(order.id) === Number(state.orderId)) || null;
   if (!current && state.orderId) {
     orderSelector.innerHTML = `<option value="${state.orderId}" selected>Current check #${state.orderId}</option>`;
     return;
   }
   orderSelector.innerHTML = [
-    `<option value="${current?.id || ""}">${current ? `Order ${current.order_reference || current.id}${current.customer_name ? ` - ${current.customer_name}` : ""}` : "Current check"}</option>`,
+    `<option value="${current?.id || ""}">${current ? `Order ${current.order_reference || current.id}${current.customer_name ? ` - ${esc(current.customer_name)}` : ""}` : "New order"}</option>`,
     ...state.openOrders.filter((order) => Number(order.id) !== Number(current?.id)).map((order) => `<option value="${order.id}">Order ${order.order_reference || order.id}${order.customer_name ? ` - ${esc(order.customer_name)}` : ""} - ${money(order.total_amount)}</option>`)
   ].join("");
   if (current) orderSelector.value = String(current.id);
@@ -624,7 +642,7 @@ function renderItems(categoryId) {
     items.innerHTML = "";
     return;
   }
-  const itemTiles = state.items.filter((item) => (categoryId === "ALL" || item.category_id === categoryId) && (!query || `${item.item_code || ""} ${item.name}`.toLowerCase().includes(query))).map((item) => {
+  const itemTiles = state.items.filter((item) => (categoryId === "ALL" || item.category_id === categoryId) && (!query || `${item.item_code || ""} ${item.alpha_short_code || ""} ${item.numeric_short_code || ""} ${item.name}`.toLowerCase().includes(query))).map((item) => {
     if (usesStructuredItemEntry) return `
       <button class="item-tile item-suggestion" data-item="${item.id}" ${state.billingReady ? 'disabled title="Final bill requested for this order"' : ''}>
         <strong>${esc(displayItemCode(item))} · ${esc(item.name)}</strong>
@@ -665,7 +683,7 @@ function filteredMenuItems() {
   if (!query) return [];
   return state.items.filter((item) =>
     (state.selectedCategoryId === "ALL" || item.category_id === state.selectedCategoryId)
-    && `${item.item_code || ""} ${item.name}`.toLowerCase().includes(query)
+    && `${item.item_code || ""} ${item.alpha_short_code || ""} ${item.numeric_short_code || ""} ${item.name}`.toLowerCase().includes(query)
   );
 }
 
@@ -1134,7 +1152,10 @@ async function submitCurrentKot() {
       orderType.value = "DINE_IN";
       await reloadCurrentOrderCart();
       updateOrderTypeView();
-    } else if (["PARCEL", "PARTY"].includes(posMode)) await startNewCheck();
+    } else if (["PARCEL", "PARTY"].includes(posMode)) {
+      location.href = `/billing.html?restaurantId=${encodeURIComponent(restaurantId)}`;
+      return;
+    }
   }
   alert(data.message || "KOT submitted");
 }
@@ -1626,7 +1647,7 @@ cancelOrder.addEventListener("click", async () => {
 availabilityBtn?.addEventListener("click", async () => {
   const code = await askPosInput(`Enter the item code to change availability:\n\n${state.items.map((item) => `${displayItemCode(item)} - ${item.name}`).join("\n")}`, "Item availability");
   if (!code) return;
-  const item = state.items.find((row) => String(row.item_code || row.id).toLowerCase() === code.trim().toLowerCase() || String(row.id) === code.trim());
+  const item = state.items.find((row) => [row.item_code, row.alpha_short_code, row.numeric_short_code, row.id].some((value) => String(value || '').toLowerCase() === code.trim().toLowerCase()));
   if (!item) return alert("Item code not found");
   const available = await askPosConfirmation(`${item.name}\n\nConfirm to mark available. Cancel to mark unavailable.`, "Item availability");
   await postJson("/pos/item-availability", { id: item.id, active: available });

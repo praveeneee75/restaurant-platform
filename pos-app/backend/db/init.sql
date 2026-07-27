@@ -58,6 +58,9 @@ CREATE TABLE items (
   name TEXT NOT NULL,
   category_id INTEGER NOT NULL,
   price REAL NOT NULL,
+  alpha_short_code TEXT,
+  numeric_short_code TEXT,
+  tax_mode TEXT NOT NULL DEFAULT 'INCLUSIVE',
   is_veg INTEGER DEFAULT 1,
   allow_dine_in INTEGER DEFAULT 1,
   allow_parcel INTEGER DEFAULT 1,
@@ -174,8 +177,18 @@ CREATE TABLE promo_codes (
   code TEXT UNIQUE NOT NULL,
   value REAL NOT NULL,
   value_type TEXT NOT NULL,
+  stackable_with_promos INTEGER DEFAULT 0,
+  stackable_with_discounts INTEGER DEFAULT 0,
   active INTEGER DEFAULT 1,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE document_sequences (
+  sequence_key TEXT NOT NULL,
+  period_key TEXT NOT NULL,
+  last_number INTEGER NOT NULL DEFAULT 0,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (sequence_key, period_key)
 );
 
 -- =========================

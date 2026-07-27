@@ -351,14 +351,30 @@ function calculateCartTotal(lines) {
   return lines.reduce((sum, line) => sum + Number(line.price || 0) * Number(line.quantity || line.qty || 0), 0);
 }
 
-function calculateOrderTotal(db, orderId) {
+function calculateOrderPricing(db, orderId, submittedOnly = true) {
   const rows = db.prepare(`
-    SELECT oi.quantity, oi.price
+    SELECT oi.quantity, oi.price, COALESCE(i.tax_mode, 'INCLUSIVE') AS tax_mode
     FROM order_items oi
-    WHERE oi.order_id = ? AND oi.kot_id IS NOT NULL
+    LEFT JOIN items i ON i.id = oi.item_id
+    WHERE oi.order_id = ? ${submittedOnly ? 'AND oi.kot_id IS NOT NULL' : ''}
   `).all(orderId);
 
-  return rows.reduce((sum, r) => sum + r.quantity * r.price, 0);
+  const taxRate = getNumberConfig(db, 'tax_rate', 0) || (getConfigValue(db, 'gstin', '') ? 5 : 0);
+  return rows.reduce((totals, row) => {
+    const listedAmount = Number(row.quantity || 0) * Number(row.price || 0);
+    const exclusive = String(row.tax_mode || 'INCLUSIVE').toUpperCase() === 'EXCLUSIVE';
+    const lineTax = taxRate > 0
+      ? (exclusive ? listedAmount * taxRate / 100 : listedAmount * taxRate / (100 + taxRate))
+      : 0;
+    totals.listedSubtotal += listedAmount;
+    totals.taxAmount += lineTax;
+    totals.payableSubtotal += exclusive ? listedAmount + lineTax : listedAmount;
+    return totals;
+  }, { listedSubtotal: 0, taxAmount: 0, payableSubtotal: 0, taxRate });
+}
+
+function calculateOrderTotal(db, orderId) {
+  return calculateOrderPricing(db, orderId).payableSubtotal;
 }
 
 function getSettingNumber(db, key, fallback) {
@@ -973,7 +989,46 @@ function applyRoundOff(db, amount) {
 
 function invoiceNumberForOrder(db, orderId) {
   const prefix = getConfigValue(db, 'invoice_prefix', 'INV') || 'INV';
-  return `${prefix}-${localIsoDateOnly().replace(/-/g, '')}-${String(orderId).padStart(5, '0')}`;
+  const frequency = String(getConfigValue(db, 'invoice_reset_frequency', 'DAILY') || 'DAILY').toUpperCase();
+  const today = localIsoDateOnly();
+  const periodKey = frequency === 'NEVER'
+    ? 'ALL'
+    : frequency === 'YEARLY'
+      ? today.slice(0, 4)
+      : frequency === 'MONTHLY'
+        ? today.slice(0, 7)
+        : today;
+  const datePredicate = frequency === 'NEVER'
+    ? ''
+    : frequency === 'YEARLY'
+      ? "AND strftime('%Y', COALESCE(settled_at, created_at)) = ?"
+      : frequency === 'MONTHLY'
+        ? "AND strftime('%Y-%m', COALESCE(settled_at, created_at)) = ?"
+        : "AND date(COALESCE(settled_at, created_at), 'localtime') = ?";
+  const existing = db.prepare(`
+    SELECT invoice_no
+    FROM orders
+    WHERE invoice_no IS NOT NULL AND TRIM(invoice_no) <> '' ${datePredicate}
+  `).all(...(datePredicate ? [periodKey] : []));
+  const existingMaximum = existing.reduce((maximum, row) => {
+    const match = String(row.invoice_no || '').match(/(\d+)\s*$/);
+    return Math.max(maximum, match ? Number(match[1]) : 0);
+  }, 0);
+  db.prepare(`
+    INSERT INTO document_sequences (sequence_key, period_key, last_number, updated_at)
+    VALUES ('INVOICE', ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(sequence_key, period_key) DO UPDATE SET
+      last_number = MAX(document_sequences.last_number, excluded.last_number),
+      updated_at = CURRENT_TIMESTAMP
+  `).run(periodKey, existingMaximum);
+  const sequence = db.prepare(`
+    UPDATE document_sequences
+    SET last_number = last_number + 1, updated_at = CURRENT_TIMESTAMP
+    WHERE sequence_key = 'INVOICE' AND period_key = ?
+    RETURNING last_number
+  `).get(periodKey);
+  if (!sequence?.last_number) throw new Error(`Unable to allocate invoice number for order ${orderId}`);
+  return `${prefix}-${today.replace(/-/g, '')}-${String(sequence.last_number).padStart(5, '0')}`;
 }
 
 function localIsoDateOnly(value = new Date()) {
@@ -1150,6 +1205,41 @@ function nextOrderIdentity(db, tableId) {
   const next = Number(db.prepare('SELECT COALESCE(MAX(order_sequence), 0) + 1 AS next FROM orders WHERE table_id = ?').get(tableId)?.next || 1);
   const customerRef = `A${next}`;
   return { orderSequence: next, customerRef, orderReference: `${next}-${customerRef}` };
+}
+
+function nextPersistentSequence(db, key, initialValue = 0) {
+  const stored = Number(getConfigValue(db, key, ''));
+  const next = (Number.isSafeInteger(stored) && stored >= 0 ? stored : Number(initialValue || 0)) + 1;
+  setConfigValues(db, { [key]: next });
+  return next;
+}
+
+function nextDraftOrderIdentity(db, orderType) {
+  const sequence = nextPersistentSequence(db, 'draft_order_sequence');
+  const channel = orderType === 'TAKEAWAY' ? 'PARCEL' : orderType === 'PHONE_ORDER' ? 'PARTY' : 'ORDER';
+  return {
+    orderSequence: null,
+    customerRef: null,
+    orderReference: `DRAFT-${channel}-${String(sequence).padStart(6, '0')}`
+  };
+}
+
+function nextStandaloneOrderIdentity(db) {
+  const configuredValue = getConfigValue(db, 'standalone_confirmed_order_sequence', '');
+  const configured = Number(configuredValue);
+  const legacyMaximum = Number(db.prepare(`
+    SELECT COALESCE(MAX(id), 0) AS maximum
+    FROM orders
+    WHERE table_id IS NULL
+      AND (order_reference IS NULL OR order_reference NOT LIKE 'DRAFT-%')
+  `).get()?.maximum || 0);
+  const sequence = nextPersistentSequence(
+    db,
+    'standalone_confirmed_order_sequence',
+    configuredValue !== '' && Number.isSafeInteger(configured) && configured >= 0 ? configured : legacyMaximum
+  );
+  const customerRef = `A${sequence}`;
+  return { orderSequence: sequence, customerRef, orderReference: `${sequence}-${customerRef}` };
 }
 
 function touchDeviceSession(db, actor, req, deviceName) {
@@ -2174,7 +2264,10 @@ app.post('/orders/apply-discount', (req, res) => {
     promoCode
   } = req.body;
 
-  if (!restaurantId || !orderId || !type || !value || !valueType || !appliedByRole) {
+  type = String(type || '').toUpperCase();
+  valueType = String(valueType || '').toUpperCase();
+  promoCode = String(promoCode || '').trim().toUpperCase();
+  if (!restaurantId || !orderId || !type || (type !== 'PROMO' && !Number(value)) || !valueType || !appliedByRole) {
     return res.status(400).json({
       success: false,
       message: 'Missing required fields',
@@ -2200,28 +2293,64 @@ app.post('/orders/apply-discount', (req, res) => {
       throw new Error('Order already paid or not found');
     }
 
+    const gross = calculateOrderTotal(db, orderId);
+    if (gross <= 0) throw new Error('Add an item before applying a discount');
+    const existingDiscounts = db.prepare(`
+      SELECT id, type, promo_code
+      FROM discounts
+      WHERE order_id = ?
+      ORDER BY id
+    `).all(orderId);
+
     // Promo validation
     if (type === 'PROMO') {
       const promo = db.prepare(`
-        SELECT * FROM promo_codes WHERE code = ? AND active = 1
+        SELECT * FROM promo_codes WHERE UPPER(TRIM(code)) = ? AND active = 1
       `).get(promoCode);
 
       if (!promo) {
         throw new Error('Invalid promo code');
       }
+      const today = localIsoDateOnly();
+      if (promo.valid_from && String(promo.valid_from) > today) throw new Error('Promocode is not valid yet');
+      if (promo.valid_to && String(promo.valid_to) < today) throw new Error('Promocode has expired');
+      if (gross + 0.005 < Number(promo.min_order_amount || 0)) {
+        throw new Error(`Promocode requires a minimum order of ${Number(promo.min_order_amount || 0).toFixed(2)}`);
+      }
+      const otherPromos = existingDiscounts.filter((row) => row.type === 'PROMO' && String(row.promo_code || '').toUpperCase() !== promoCode);
+      if (otherPromos.length && !Number(promo.stackable_with_promos)) throw new Error('This promocode cannot be combined with another promocode');
+      for (const row of otherPromos) {
+        const existingPromo = db.prepare('SELECT stackable_with_promos FROM promo_codes WHERE UPPER(TRIM(code)) = ?').get(String(row.promo_code || '').toUpperCase());
+        if (!Number(existingPromo?.stackable_with_promos)) throw new Error('An already applied promocode cannot be combined with another promocode');
+      }
+      if (existingDiscounts.some((row) => row.type !== 'PROMO') && !Number(promo.stackable_with_discounts)) {
+        throw new Error('This promocode cannot be combined with a manual discount');
+      }
       value = Number(promo.discount_value ?? promo.value ?? 0);
       valueType = String(promo.discount_type || promo.value_type || 'RUPEES').toUpperCase() === 'PERCENT' ? 'PERCENT' : 'FLAT';
       if (!Number.isFinite(value) || value <= 0) throw new Error('Promocode has no valid discount');
       if (valueType === 'PERCENT') value = Math.min(value, 100);
+      const calculated = valueType === 'PERCENT' ? gross * value / 100 : value;
+      if (Number(promo.max_discount_amount || 0) > 0 && calculated > Number(promo.max_discount_amount)) {
+        value = Number(promo.max_discount_amount);
+        valueType = 'FLAT';
+      }
+      // Applying the same promo again replaces its earlier row instead of
+      // silently accumulating the discount.
+      db.prepare("DELETE FROM discounts WHERE order_id = ? AND type = 'PROMO' AND UPPER(TRIM(COALESCE(promo_code, ''))) = ?").run(orderId, promoCode);
+    } else {
+      const blockingPromo = existingDiscounts
+        .filter((row) => row.type === 'PROMO')
+        .some((row) => !Number(db.prepare('SELECT stackable_with_discounts FROM promo_codes WHERE UPPER(TRIM(code)) = ?').get(String(row.promo_code || '').toUpperCase())?.stackable_with_discounts));
+      if (blockingPromo) throw new Error('The applied promocode cannot be combined with a manual discount');
+      // Manual discount is an editable adjustment, not an accumulating action.
+      db.prepare("DELETE FROM discounts WHERE order_id = ? AND type = ?").run(orderId, type);
     }
 
     db.prepare(`
       INSERT INTO discounts (order_id, type, value, value_type, applied_by, promo_code)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(orderId, type, value, valueType, appliedByRole, type === 'PROMO' ? promoCode : null);
-
-    // Recalculate total
-    const gross = calculateOrderTotal(db, orderId);
 
     const discounts = db.prepare(`
       SELECT value, value_type FROM discounts WHERE order_id = ?
@@ -3703,7 +3832,8 @@ app.get('/admin/bootstrap', (req, res) => {
         ORDER BY c.name
       `).all(),
       items: db.prepare(`
-        SELECT i.id, i.name, i.category_id, i.price, i.is_veg, i.allow_dine_in, i.allow_parcel, i.allow_party_order, i.active,
+        SELECT i.id, i.name, i.category_id, i.price, i.alpha_short_code, i.numeric_short_code, i.tax_mode,
+               i.is_veg, i.allow_dine_in, i.allow_parcel, i.allow_party_order, i.active,
                i.image_url, i.online_description, i.online_enabled,
                c.name AS category_name, k.name AS kitchen_name
         FROM items i
@@ -3773,13 +3903,13 @@ app.get('/admin/promo-codes', (req, res) => {
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
-    const rows = db.prepare(`SELECT id, code, discount_value, discount_type, min_order_amount, max_discount_amount, valid_from, valid_to, active, created_at FROM promo_codes ${includeInactive === 'true' ? '' : 'WHERE active = 1'} ORDER BY code`).all();
+    const rows = db.prepare(`SELECT id, code, discount_value, discount_type, min_order_amount, max_discount_amount, valid_from, valid_to, stackable_with_promos, stackable_with_discounts, active, created_at FROM promo_codes ${includeInactive === 'true' ? '' : 'WHERE active = 1'} ORDER BY code`).all();
     res.json({ success: true, promoCodes: rows });
   } catch (err) { sendError(res, err); } finally { db.close(); }
 });
 
 app.post('/admin/promo-codes/save', (req, res) => {
-  const { restaurantId, actor, id, code, discountType, discountValue, maxDiscountAmount, minOrderAmount, validFrom, validTo, active } = req.body;
+  const { restaurantId, actor, id, code, discountType, discountValue, maxDiscountAmount, minOrderAmount, validFrom, validTo, stackableWithPromos, stackableWithDiscounts, active } = req.body;
   if (!restaurantId || !hasText(code)) return res.status(400).json({ success: false, message: 'Promocode is required' });
   const type = String(discountType || 'RUPEES').toUpperCase();
   const value = Number(discountValue);
@@ -3796,8 +3926,8 @@ app.post('/admin/promo-codes/save', (req, res) => {
     const existing = db.prepare('SELECT id FROM promo_codes WHERE code = ? AND id != ?').get(cleanCode, id || 0);
     if (existing) return res.status(409).json({ success: false, message: 'That promocode already exists' });
     const result = id
-      ? db.prepare(`UPDATE promo_codes SET code = ?, discount_value = ?, discount_type = ?, value = ?, value_type = ?, min_order_amount = ?, max_discount_amount = ?, valid_from = ?, valid_to = ?, active = ? WHERE id = ?`).run(cleanCode, value, type, value, type, minimum, cap, validFrom || null, validTo || null, active === false ? 0 : 1, id)
-      : db.prepare(`INSERT INTO promo_codes (code, discount_value, discount_type, value, value_type, min_order_amount, max_discount_amount, valid_from, valid_to, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(cleanCode, value, type, value, type, minimum, cap, validFrom || null, validTo || null, active === false ? 0 : 1);
+      ? db.prepare(`UPDATE promo_codes SET code = ?, discount_value = ?, discount_type = ?, value = ?, value_type = ?, min_order_amount = ?, max_discount_amount = ?, valid_from = ?, valid_to = ?, stackable_with_promos = ?, stackable_with_discounts = ?, active = ? WHERE id = ?`).run(cleanCode, value, type, value, type, minimum, cap, validFrom || null, validTo || null, stackableWithPromos ? 1 : 0, stackableWithDiscounts ? 1 : 0, active === false ? 0 : 1, id)
+      : db.prepare(`INSERT INTO promo_codes (code, discount_value, discount_type, value, value_type, min_order_amount, max_discount_amount, valid_from, valid_to, stackable_with_promos, stackable_with_discounts, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(cleanCode, value, type, value, type, minimum, cap, validFrom || null, validTo || null, stackableWithPromos ? 1 : 0, stackableWithDiscounts ? 1 : 0, active === false ? 0 : 1);
     const promo = db.prepare('SELECT * FROM promo_codes WHERE id = ?').get(id || result.lastInsertRowid);
     res.json({ success: true, promoCode: promo });
   } catch (err) { sendError(res, err); } finally { db.close(); }
@@ -4686,18 +4816,30 @@ app.post('/admin/categories/delete', (req, res) => {
 });
 
 app.post('/admin/items/save', (req, res) => {
-  const { restaurantId, actor, id, name, categoryId, price, isVeg, allowDineIn, allowParcel, allowPartyOrder, active, imageUrl, onlineDescription, onlineEnabled } = req.body;
+  const { restaurantId, actor, id, name, categoryId, price, alphaShortCode, numericShortCode, taxMode, isVeg, allowDineIn, allowParcel, allowPartyOrder, active, imageUrl, onlineDescription, onlineEnabled } = req.body;
   if (!restaurantId || !hasText(name) || !isPositiveId(categoryId) || !isValidAmount(price) || !canManage(actor?.role)) return res.status(400).json({ success: false, message: 'Item name, category, valid price and manager permission are required' });
 
   const db = openRestaurantDatabase(restaurantId);
   try {
+    const alphaCode = normaliseText(alphaShortCode).toUpperCase().replace(/\s+/g, ' ');
+    const numberCode = normaliseText(numericShortCode);
+    const itemTaxMode = String(taxMode || 'INCLUSIVE').toUpperCase() === 'EXCLUSIVE' ? 'EXCLUSIVE' : 'INCLUSIVE';
+    if (alphaCode && !/^[A-Z]+(?: [A-Z]+)*$/.test(alphaCode)) throw new Error('Alphabetic short code can contain letters and spaces only');
+    if (numberCode && !/^\d+$/.test(numberCode)) throw new Error('Numeric short code can contain digits only');
+    const duplicateCode = db.prepare(`
+      SELECT id FROM items
+      WHERE deleted_at IS NULL AND id <> COALESCE(?, -1)
+        AND ((? <> '' AND UPPER(TRIM(alpha_short_code)) = ?) OR (? <> '' AND TRIM(numeric_short_code) = ?))
+      LIMIT 1
+    `).get(id || null, alphaCode, alphaCode, numberCode, numberCode);
+    if (duplicateCode) throw new Error('Alphabetic and numeric short codes must be unique');
     if (activeNameExists(db, 'items', 'name', name, id)) throw new Error('Item name already exists');
     const oldValue = id ? db.prepare('SELECT * FROM items WHERE id = ?').get(id) : null;
     const result = id
-      ? db.prepare('UPDATE items SET name = ?, category_id = ?, price = ?, is_veg = ?, allow_dine_in = ?, allow_parcel = ?, allow_party_order = ?, active = ?, image_url = ?, online_description = ?, online_enabled = ? WHERE id = ?')
-          .run(name, categoryId, price, isVeg ? 1 : 0, allowDineIn === false ? 0 : 1, allowParcel === false ? 0 : 1, allowPartyOrder === false ? 0 : 1, active === false ? 0 : 1, normaliseText(imageUrl), normaliseText(onlineDescription), onlineEnabled === false ? 0 : 1, id)
-      : db.prepare('INSERT INTO items (name, category_id, price, is_veg, allow_dine_in, allow_parcel, allow_party_order, active, image_url, online_description, online_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)')
-          .run(name, categoryId, price, isVeg ? 1 : 0, allowDineIn === false ? 0 : 1, allowParcel === false ? 0 : 1, allowPartyOrder === false ? 0 : 1, normaliseText(imageUrl), normaliseText(onlineDescription), onlineEnabled === false ? 0 : 1);
+      ? db.prepare('UPDATE items SET name = ?, category_id = ?, price = ?, alpha_short_code = NULLIF(?, \'\'), numeric_short_code = NULLIF(?, \'\'), tax_mode = ?, is_veg = ?, allow_dine_in = ?, allow_parcel = ?, allow_party_order = ?, active = ?, image_url = ?, online_description = ?, online_enabled = ? WHERE id = ?')
+          .run(name, categoryId, price, alphaCode, numberCode, itemTaxMode, isVeg ? 1 : 0, allowDineIn === false ? 0 : 1, allowParcel === false ? 0 : 1, allowPartyOrder === false ? 0 : 1, active === false ? 0 : 1, normaliseText(imageUrl), normaliseText(onlineDescription), onlineEnabled === false ? 0 : 1, id)
+      : db.prepare('INSERT INTO items (name, category_id, price, alpha_short_code, numeric_short_code, tax_mode, is_veg, allow_dine_in, allow_parcel, allow_party_order, active, image_url, online_description, online_enabled) VALUES (?, ?, ?, NULLIF(?, \'\'), NULLIF(?, \'\'), ?, ?, ?, ?, ?, 1, ?, ?, ?)')
+          .run(name, categoryId, price, alphaCode, numberCode, itemTaxMode, isVeg ? 1 : 0, allowDineIn === false ? 0 : 1, allowParcel === false ? 0 : 1, allowPartyOrder === false ? 0 : 1, normaliseText(imageUrl), normaliseText(onlineDescription), onlineEnabled === false ? 0 : 1);
     const newValue = db.prepare('SELECT * FROM items WHERE id = ?').get(id || result.lastInsertRowid);
     writeAudit(db, actor, id ? 'UPDATE' : 'CREATE', 'ITEM', id || result.lastInsertRowid, oldValue, newValue);
     if (id && oldValue && Number(oldValue.price) !== Number(newValue.price)) {
@@ -5098,7 +5240,13 @@ app.get('/pos/bootstrap', (req, res) => {
         ORDER BY t.id
       `).all(),
       categories: db.prepare('SELECT id, name FROM categories WHERE active = 1 ORDER BY name').all(),
-      items: db.prepare("SELECT id, printf('ITM-%04d', id) AS item_code, name, category_id, price, COALESCE(allow_dine_in, 1) AS allow_dine_in, COALESCE(allow_parcel, 1) AS allow_parcel, COALESCE(allow_party_order, 1) AS allow_party_order FROM items WHERE active = 1 ORDER BY name").all(),
+      items: db.prepare(`SELECT i.id, printf('ITM-%04d', i.id) AS item_code, i.alpha_short_code, i.numeric_short_code,
+                               COALESCE(i.tax_mode, 'INCLUSIVE') AS tax_mode, i.name, i.category_id, i.price,
+                               COALESCE(i.allow_dine_in, 1) AS allow_dine_in, COALESCE(i.allow_parcel, 1) AS allow_parcel,
+                               COALESCE(i.allow_party_order, 1) AS allow_party_order
+                        FROM items i JOIN categories c ON c.id = i.category_id
+                        WHERE i.active = 1 AND i.deleted_at IS NULL AND c.active = 1 AND c.deleted_at IS NULL
+                        ORDER BY i.name`).all(),
       modifierGroups: db.prepare(`
         SELECT img.item_id, mg.id, mg.name, mg.min_select, mg.max_select, mg.required
         FROM item_modifier_groups img
@@ -5133,6 +5281,7 @@ app.get('/pos/bootstrap', (req, res) => {
         allowOrderCancel: getBooleanConfig(db, 'allow_order_cancel', true),
         serviceChargeEnabled: getBooleanConfig(db, 'service_charge_enabled', false),
         serviceChargePercent: getNumberConfig(db, 'service_charge_percent', 0),
+        taxRate: getNumberConfig(db, 'tax_rate', getConfigValue(db, 'gstin', '') ? 5 : 0),
         roundOffEnabled: getBooleanConfig(db, 'round_off_enabled', true)
       }
     });
@@ -5227,6 +5376,10 @@ function createKotJobs(db, orderId, fulfillmentType = null) {
   // One KOT submission may create tickets for several kitchens; they share one suborder number.
   const suborderNo = Number(db.prepare('SELECT COUNT(*) AS total FROM kots WHERE order_id = ?').get(orderId)?.total || 0) + 1;
   Object.values(grouped).forEach((group) => {
+    const linkedParcelCheck = group.fulfillmentType === 'TAKEAWAY' && Boolean(orderMeta?.table_no);
+    const serviceLocation = linkedParcelCheck
+      ? `${orderMeta.table_no} - Parcel`
+      : (orderMeta?.table_no || null);
     const kot = db.prepare('INSERT INTO kots (order_id, kitchen_id, suborder_no) VALUES (?, ?, ?)').run(orderId, group.kitchenId, suborderNo);
     group.items.forEach((item) => db.prepare('UPDATE order_items SET kot_id = ? WHERE id = ?').run(kot.lastInsertRowid, item.order_item_id));
     db.prepare(`
@@ -5247,7 +5400,8 @@ function createKotJobs(db, orderId, fulfillmentType = null) {
       printKitchen: kotSettings.printKitchen,
       compactSpacing: kotSettings.compactSpacing,
       orderType: group.fulfillmentType || orderMeta?.order_type || 'DINE_IN',
-      tableName: orderMeta?.table_no || null,
+      tableName: serviceLocation,
+      linkedParcelCheck,
       customerName: orderMeta?.customer_name || null,
       deliveryNote: orderMeta?.delivery_address || null,
       deliveryPhone: orderMeta?.delivery_phone || null,
@@ -5260,7 +5414,8 @@ function createKotJobs(db, orderId, fulfillmentType = null) {
       orderId,
       kitchen: group.kitchenName,
       orderType: group.fulfillmentType || orderMeta?.order_type || 'DINE_IN',
-      tableName: orderMeta?.table_no || null,
+      tableName: serviceLocation,
+      linkedParcelCheck,
       customerName: orderMeta?.customer_name || null,
       items: group.items
     });
@@ -5884,7 +6039,7 @@ app.post('/orders/save', (req, res) => {
       // their orderId from the order selector.
       const oldValue = id ? db.prepare('SELECT * FROM orders WHERE id = ?').get(id) : null;
       if (!id) {
-        const identity = safeTableId ? nextOrderIdentity(db, safeTableId) : { orderSequence: null, customerRef: null, orderReference: null };
+        const identity = safeTableId ? nextOrderIdentity(db, safeTableId) : nextDraftOrderIdentity(db, selectedOrderType);
         const result = db.prepare(`
           INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, created_by, customer_id, delivery_fee, order_source, order_sequence, customer_ref, order_reference)
           VALUES (?, ?, ?, 'OPEN', ?, 'UNPAID', ?, ?, ?, ?, ?, ?, ?)
@@ -6041,7 +6196,7 @@ app.get('/orders/open', (req, res) => {
         ORDER BY created_at DESC LIMIT 1
       `).get(tableId || null, tableId || null);
     if (order && !order.order_reference) {
-      const identity = order.table_id ? nextOrderIdentity(db, order.table_id) : { orderSequence: order.id, customerRef: `A${order.id}`, orderReference: `${order.id}-A${order.id}` };
+      const identity = order.table_id ? nextOrderIdentity(db, order.table_id) : nextDraftOrderIdentity(db, order.order_type);
       order.order_sequence = order.order_sequence || identity.orderSequence;
       order.customer_ref = order.customer_ref || identity.customerRef;
       order.order_reference = order.order_reference || identity.orderReference;
@@ -6672,6 +6827,18 @@ app.post('/orders/submit-kot', (req, res) => {
     db.transaction(() => {
       const safeFulfillmentType = fulfillmentType ? normaliseOrderType(fulfillmentType) : null;
       if (fulfillmentType && !safeFulfillmentType) throw new Error('Invalid KOT fulfilment type');
+      const orderIdentity = db.prepare('SELECT table_id, order_type, order_sequence, customer_ref, order_reference FROM orders WHERE id = ?').get(orderId);
+      if (!orderIdentity) throw new Error('Order not found');
+      if (!orderIdentity.order_reference || String(orderIdentity.order_reference).startsWith('DRAFT-')) {
+        const identity = orderIdentity.table_id ? nextOrderIdentity(db, orderIdentity.table_id) : nextStandaloneOrderIdentity(db);
+        db.prepare('UPDATE orders SET order_sequence = ?, customer_ref = ?, order_reference = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+          .run(identity.orderSequence, identity.customerRef, identity.orderReference, orderId);
+        writeAudit(db, actor, 'PROMOTE_DRAFT', 'ORDER', orderId, {
+          orderReference: orderIdentity.order_reference || null
+        }, {
+          orderReference: identity.orderReference
+        });
+      }
       kotResult = createKotJobs(db, orderId, safeFulfillmentType);
       deductInventoryForOrder(db, actor, orderId, 'KOT_SUBMIT');
       const order = db.prepare('SELECT order_type FROM orders WHERE id = ?').get(orderId);
@@ -6878,14 +7045,13 @@ app.post('/orders/settle', async (req, res) => {
       const preflightItems = db.prepare(`
         SELECT COUNT(*) item_count,
                COALESCE(SUM(CASE WHEN kot_id IS NOT NULL THEN 1 ELSE 0 END), 0) submitted_count,
-               COALESCE(SUM(CASE WHEN kot_id IS NULL THEN 1 ELSE 0 END), 0) draft_count,
-               COALESCE(SUM(CASE WHEN kot_id IS NOT NULL THEN quantity * price ELSE 0 END), 0) gross
+               COALESCE(SUM(CASE WHEN kot_id IS NULL THEN 1 ELSE 0 END), 0) draft_count
         FROM order_items WHERE order_id = ?
       `).get(orderId);
       if (!Number(preflightItems.item_count)) throw new Error('Cannot settle an order without items');
       if (!Number(preflightItems.submitted_count)) throw new Error('Submit the order to KOT before settlement');
       if (Number(preflightItems.draft_count) && !discardSavedItems) throw new Error('Submit all saved items to KOT before settlement');
-      const preflightGross = Number(preflightItems.gross || 0);
+      const preflightGross = calculateOrderPricing(db, orderId).payableSubtotal;
       if (preflightGross <= 0) throw new Error('Cannot settle an order with a zero item total');
       const preflightService = serviceChargeForAmount(db, preflightGross);
       const preflightDiscounts = tableExists(db, 'discounts') ? db.prepare('SELECT value, value_type FROM discounts WHERE order_id = ?').all(orderId) : [];
@@ -6960,9 +7126,10 @@ app.post('/orders/settle', async (req, res) => {
       if (draftCount > 0 || submittedCount !== itemCount) {
         throw new Error('Submit all saved items to KOT before settlement');
       }
-      const grossAmount = Number(settlementItems?.submitted_total || 0);
-      const allItemsTotal = Number(settlementItems?.all_items_total || 0);
-      if (Math.abs(grossAmount - allItemsTotal) > 0.005) {
+      const submittedPricing = calculateOrderPricing(db, orderId);
+      const allItemPricing = calculateOrderPricing(db, orderId, false);
+      const grossAmount = submittedPricing.payableSubtotal;
+      if (Math.abs(grossAmount - allItemPricing.payableSubtotal) > 0.005) {
         throw new Error('Order item totals are inconsistent. Reopen the order and submit KOT again');
       }
       if (grossAmount <= 0) throw new Error('Cannot settle an order with a zero item total');
@@ -6977,8 +7144,8 @@ app.post('/orders/settle', async (req, res) => {
       ), 0);
       const payableBeforeRoundOff = Math.max(grossAmount + serviceCharge - Math.min(discountAmount, grossAmount + serviceCharge) - Math.min(redeem * pointValue, grossAmount + serviceCharge), 0);
       const payable = applyRoundOff(db, payableBeforeRoundOff);
-      const configuredTaxRate = getNumberConfig(db, 'tax_rate', 0) || (getConfigValue(db, 'gstin', '') ? 5 : 0);
-      const taxAmount = configuredTaxRate > 0 ? payable * configuredTaxRate / (100 + configuredTaxRate) : 0;
+      const taxScale = grossAmount > 0 ? Math.min(payableBeforeRoundOff / grossAmount, 1) : 0;
+      const taxAmount = submittedPricing.taxAmount * taxScale;
       const roundOff = payable - payableBeforeRoundOff;
       const loyaltyDiscount = Math.min(redeem * pointValue, grossAmount + serviceCharge);
       const paid = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
@@ -7242,6 +7409,7 @@ app.get('/orders/live', (req, res) => {
 
   const db = openRestaurantDatabase(restaurantId);
   try {
+    const taxRate = getNumberConfig(db, 'tax_rate', getConfigValue(db, 'gstin', '') ? 5 : 0);
     const orders = db.prepare(`
       SELECT
         o.id,
@@ -7257,7 +7425,19 @@ app.get('/orders/live', (req, res) => {
         o.total_amount,
         o.delivery_fee,
         EXISTS (SELECT 1 FROM order_items submitted_items WHERE submitted_items.order_id = o.id AND submitted_items.kot_id IS NOT NULL) AS has_submitted_kot,
-        COALESCE((SELECT SUM(submitted_items.quantity * submitted_items.price) FROM order_items submitted_items WHERE submitted_items.order_id = o.id AND submitted_items.kot_id IS NOT NULL), 0) AS submitted_total,
+        COALESCE((
+          SELECT SUM(
+            submitted_items.quantity * submitted_items.price
+            * CASE
+                WHEN UPPER(COALESCE(menu_item.tax_mode, 'INCLUSIVE')) = 'EXCLUSIVE'
+                  THEN 1 + (${Number.isFinite(taxRate) ? taxRate : 0} / 100.0)
+                ELSE 1
+              END
+          )
+          FROM order_items submitted_items
+          LEFT JOIN items menu_item ON menu_item.id = submitted_items.item_id
+          WHERE submitted_items.order_id = o.id AND submitted_items.kot_id IS NOT NULL
+        ), 0) AS submitted_total,
         o.created_at,
         c.name AS customer_name,
         c.phone AS customer_phone,
@@ -7463,6 +7643,7 @@ app.get('/kds/orders', (req, res) => {
         oi.quantity,
         oi.price,
         oi.notes,
+        COALESCE(oi.fulfillment_type, o.order_type, 'DINE_IN') AS fulfillment_type,
         oi.kitchen_id,
         kitchens.name AS kitchen_name,
         oi.kot_id,
@@ -7516,6 +7697,10 @@ app.get('/kds/orders', (req, res) => {
         quantity: row.quantity,
         price: row.price,
         notes: row.notes || '',
+        fulfillmentType: row.fulfillment_type || row.order_type || 'DINE_IN',
+        serviceLocation: row.fulfillment_type === 'TAKEAWAY' && row.table_no
+          ? `${row.table_no} - Parcel`
+          : (row.table_no || row.order_type || 'Parcel'),
         status: row.status || 'PENDING',
         startedAt: row.started_at,
         readyAt: row.ready_at,
@@ -10294,6 +10479,55 @@ function buildOwnerControlSnapshot(db) {
     WHERE o.payment_status = 'PAID' AND DATE(COALESCE(o.settled_at,p.created_at)) = DATE('now','localtime')
     GROUP BY UPPER(p.payment_mode)
   `);
+  const salesTimeline = safeAll(db, `
+    SELECT CAST(strftime('%H', COALESCE(settled_at, created_at), 'localtime') AS INTEGER) hour,
+           UPPER(COALESCE(order_type, 'OTHER')) order_type,
+           COUNT(*) orders, COALESCE(SUM(total_amount), 0) sales
+    FROM orders
+    WHERE payment_status = 'PAID' AND COALESCE(status,'') != 'CANCELLED'
+      AND DATE(COALESCE(settled_at, created_at), 'localtime') = DATE('now','localtime')
+    GROUP BY hour, UPPER(COALESCE(order_type, 'OTHER')) ORDER BY hour
+  `);
+  const orderOutcomes = safeGet(db, `
+    SELECT COUNT(*) total,
+      SUM(CASE WHEN payment_status = 'PAID' AND COALESCE(status,'') != 'CANCELLED' THEN 1 ELSE 0 END) successful,
+      SUM(CASE WHEN COALESCE(status,'') = 'CANCELLED' THEN 1 ELSE 0 END) cancelled,
+      SUM(CASE WHEN UPPER(COALESCE(status,'')) = 'COMPLIMENTARY' THEN 1 ELSE 0 END) complimentary
+    FROM orders WHERE DATE(created_at, 'localtime') = DATE('now','localtime')
+  `);
+  const itemPerformance = safeAll(db, `
+    SELECT i.name item_name, COALESCE(SUM(oi.quantity),0) quantity_sold,
+           COALESCE(SUM(oi.quantity * oi.price),0) total_sales
+    FROM order_items oi
+    JOIN items i ON i.id = oi.item_id
+    JOIN orders o ON o.id = oi.order_id
+    WHERE o.payment_status = 'PAID' AND COALESCE(o.status,'') != 'CANCELLED'
+      AND DATE(COALESCE(o.settled_at,o.created_at), 'localtime') >= DATE('now','-30 days','localtime')
+    GROUP BY i.id, i.name ORDER BY total_sales DESC LIMIT 20
+  `);
+  const onlineOrders = safeGet(db, `
+    SELECT COUNT(*) orders, COALESCE(SUM(total_amount),0) sales,
+      SUM(CASE WHEN payment_status = 'PAID' THEN 1 ELSE 0 END) prepaid_orders,
+      COALESCE(SUM(CASE WHEN payment_status = 'PAID' THEN total_amount ELSE 0 END),0) prepaid_sales,
+      SUM(CASE WHEN payment_status != 'PAID' THEN 1 ELSE 0 END) cod_orders,
+      COALESCE(SUM(CASE WHEN payment_status != 'PAID' THEN total_amount ELSE 0 END),0) cod_sales
+    FROM orders
+    WHERE (UPPER(COALESCE(order_type,'')) LIKE '%ONLINE%' OR UPPER(COALESCE(order_type,'')) LIKE '%DELIVERY%')
+      AND COALESCE(status,'') != 'CANCELLED'
+      AND DATE(created_at, 'localtime') = DATE('now','localtime')
+  `);
+  const leakage = {
+    kots: {
+      cancelled: Number(safeGet(db, "SELECT COUNT(*) count FROM kots WHERE UPPER(status)='CANCELLED' AND DATE(created_at,'localtime')=DATE('now','localtime')").count || 0),
+      modified: Number(safeGet(db, "SELECT COUNT(*) count FROM audit_logs WHERE UPPER(entity_type)='KOT' AND UPPER(action) IN ('UPDATE','MODIFY') AND DATE(created_at,'localtime')=DATE('now','localtime')").count || 0),
+      shifted: Number(safeGet(db, "SELECT COUNT(*) count FROM audit_logs WHERE UPPER(entity_type) IN ('KOT','ORDER') AND UPPER(action) LIKE '%SHIFT%' AND DATE(created_at,'localtime')=DATE('now','localtime')").count || 0)
+    },
+    bills: {
+      modified: Number(safeGet(db, "SELECT COUNT(*) count FROM audit_logs WHERE UPPER(entity_type) IN ('BILL','INVOICE','ORDER') AND UPPER(action) IN ('UPDATE','MODIFY') AND DATE(created_at,'localtime')=DATE('now','localtime')").count || 0),
+      reprinted: Number(safeGet(db, "SELECT COUNT(*) count FROM invoice_reprints WHERE DATE(created_at,'localtime')=DATE('now','localtime')").count || 0),
+      waived: Number(safeGet(db, "SELECT COALESCE(SUM(value),0) amount FROM discounts WHERE UPPER(type) IN ('WAIVE','WAIVED_OFF') AND DATE(created_at,'localtime')=DATE('now','localtime')").amount || 0)
+    }
+  };
   const refundRows = safeAll(db, `SELECT refund_mode, reason, COUNT(*) count, COALESCE(SUM(amount),0) amount
     FROM refunds WHERE DATE(created_at) >= DATE('now','-30 days','localtime') GROUP BY refund_mode, reason ORDER BY amount DESC`);
   const promoRows = safeAll(db, `SELECT COALESCE(promo_code,'UNSPECIFIED') code, COUNT(*) usage_count,
@@ -10308,6 +10542,11 @@ function buildOwnerControlSnapshot(db) {
       today: { orders: Number(sales.orders || 0), netSales: Number(sales.net_sales || 0), tax: Number(sales.tax || 0), loyaltyDiscount: Number(sales.loyalty_discount || 0), averageOrder: Number(sales.average_order || 0) },
       byOrderType: byType,
       byPayment: payments,
+      salesTimeline,
+      orderOutcomes,
+      leakage,
+      itemPerformance,
+      onlineOrders,
       generatedAt: new Date().toISOString()
     },
     refundSummary: { periodDays: 30, rows: refundRows, total: refundRows.reduce((sum, row) => sum + Number(row.amount || 0), 0) },
@@ -10317,7 +10556,7 @@ function buildOwnerControlSnapshot(db) {
       menu: {
         kitchens: safeAll(db, 'SELECT id, name, active FROM kitchens ORDER BY name'),
         categories: safeAll(db, 'SELECT id, name, kitchen_id, active FROM categories ORDER BY name'),
-        items: safeAll(db, 'SELECT id, name, category_id, price, is_veg, allow_dine_in, allow_parcel, allow_party_order, online_enabled, active FROM items ORDER BY name'),
+        items: safeAll(db, 'SELECT id, name, category_id, price, alpha_short_code, numeric_short_code, tax_mode, is_veg, allow_dine_in, allow_parcel, allow_party_order, online_enabled, active FROM items ORDER BY name'),
         modifierGroups: safeAll(db, 'SELECT id, name, min_select, max_select, required, active FROM modifier_groups ORDER BY name'),
         modifiers: safeAll(db, 'SELECT id, group_id, name, price_delta, active FROM modifiers ORDER BY name'),
         combos: safeAll(db, 'SELECT id, name, price, active FROM combos ORDER BY name'),
@@ -10325,7 +10564,7 @@ function buildOwnerControlSnapshot(db) {
       },
       billing: {
         settings: Object.fromEntries(['service_charge_enabled','service_charge_percent','round_off_enabled','allow_refund','require_manager_pin_for_refund','allow_discount','require_manager_pin_for_discount'].map((key) => [key, settings[key] ?? ''])),
-        promocodes: safeAll(db, 'SELECT id, code, discount_value, discount_type, min_order_amount, max_discount_amount, valid_from, valid_to, active FROM promo_codes ORDER BY code')
+        promocodes: safeAll(db, 'SELECT id, code, discount_value, discount_type, min_order_amount, max_discount_amount, valid_from, valid_to, stackable_with_promos, stackable_with_discounts, active FROM promo_codes ORDER BY code')
       },
       backup: Object.fromEntries(['backup_enabled','backup_folder_path','onedrive_folder_path','backup_interval_minutes','last_backup_at','last_sync_at'].map((key) => [key, settings[key] ?? ''])),
       onlineOrdering: Object.fromEntries(Object.keys(settings).filter((key) => key.startsWith('online_') || key.startsWith('qr_')).map((key) => [key, settings[key]]))
@@ -10336,7 +10575,7 @@ function buildOwnerControlSnapshot(db) {
 function applyRemoteMenu(db, payload) {
   const updateKitchen = db.prepare('UPDATE kitchens SET name = COALESCE(?, name), active = COALESCE(?, active) WHERE id = ?');
   const updateCategory = db.prepare('UPDATE categories SET name = COALESCE(?, name), kitchen_id = COALESCE(?, kitchen_id), active = COALESCE(?, active) WHERE id = ?');
-  const updateItem = db.prepare('UPDATE items SET name = COALESCE(?, name), category_id = COALESCE(?, category_id), price = COALESCE(?, price), is_veg = COALESCE(?, is_veg), allow_dine_in = COALESCE(?, allow_dine_in), allow_parcel = COALESCE(?, allow_parcel), allow_party_order = COALESCE(?, allow_party_order), online_enabled = COALESCE(?, online_enabled), active = COALESCE(?, active) WHERE id = ?');
+  const updateItem = db.prepare('UPDATE items SET name = COALESCE(?, name), category_id = COALESCE(?, category_id), price = COALESCE(?, price), alpha_short_code = COALESCE(?, alpha_short_code), numeric_short_code = COALESCE(?, numeric_short_code), tax_mode = COALESCE(?, tax_mode), is_veg = COALESCE(?, is_veg), allow_dine_in = COALESCE(?, allow_dine_in), allow_parcel = COALESCE(?, allow_parcel), allow_party_order = COALESCE(?, allow_party_order), online_enabled = COALESCE(?, online_enabled), active = COALESCE(?, active) WHERE id = ?');
   const updateModifier = db.prepare('UPDATE modifiers SET name = COALESCE(?, name), price_delta = COALESCE(?, price_delta), active = COALESCE(?, active) WHERE id = ?');
   const updateCombo = db.prepare('UPDATE combos SET name = COALESCE(?, name), price = COALESCE(?, price), active = COALESCE(?, active) WHERE id = ?');
   db.transaction(() => {
@@ -10345,7 +10584,13 @@ function applyRemoteMenu(db, payload) {
     (payload.items || []).forEach((row) => {
       const price = row.price == null ? null : Number(row.price);
       if (price != null && (!Number.isFinite(price) || price < 0)) throw new Error(`Invalid price for item ${row.id}`);
-      updateItem.run(row.name ?? null, row.category_id ?? null, price, row.is_veg ?? null, row.allow_dine_in ?? null, row.allow_parcel ?? null, row.allow_party_order ?? null, row.online_enabled ?? null, row.active ?? null, row.id);
+      const alphaShortCode = row.alpha_short_code == null ? null : String(row.alpha_short_code).trim().toUpperCase();
+      const numericShortCode = row.numeric_short_code == null ? null : String(row.numeric_short_code).trim();
+      const taxMode = row.tax_mode == null ? null : String(row.tax_mode).toUpperCase();
+      if (alphaShortCode != null && alphaShortCode !== '' && !/^[A-Z]+(?: [A-Z]+)*$/.test(alphaShortCode)) throw new Error(`Invalid alphabetic short code for item ${row.id}`);
+      if (numericShortCode != null && numericShortCode !== '' && !/^\d+$/.test(numericShortCode)) throw new Error(`Invalid numeric short code for item ${row.id}`);
+      if (taxMode != null && !['INCLUSIVE', 'EXCLUSIVE'].includes(taxMode)) throw new Error(`Invalid tax mode for item ${row.id}`);
+      updateItem.run(row.name ?? null, row.category_id ?? null, price, alphaShortCode || null, numericShortCode || null, taxMode, row.is_veg ?? null, row.allow_dine_in ?? null, row.allow_parcel ?? null, row.allow_party_order ?? null, row.online_enabled ?? null, row.active ?? null, row.id);
     });
     (payload.modifiers || []).forEach((row) => updateModifier.run(row.name ?? null, row.price_delta ?? null, row.active ?? null, row.id));
     (payload.combos || []).forEach((row) => updateCombo.run(row.name ?? null, row.price ?? null, row.active ?? null, row.id));
@@ -10364,8 +10609,8 @@ function applyRemoteConfiguration(db, domain, payload) {
   const filtered = Object.fromEntries(Object.entries(settings).filter(([key]) => (allowedSettings[domain] || []).includes(key)));
   if (Object.keys(filtered).length) setConfigValues(db, normaliseSettingsInput(filtered));
   if (domain === 'BILLING' && Array.isArray(payload.promocodes)) {
-    const update = db.prepare(`UPDATE promo_codes SET code = COALESCE(?,code), discount_value = COALESCE(?,discount_value), discount_type = COALESCE(?,discount_type), value = COALESCE(?,value), value_type = COALESCE(?,value_type), min_order_amount = COALESCE(?,min_order_amount), max_discount_amount = COALESCE(?,max_discount_amount), valid_from = ?, valid_to = ?, active = COALESCE(?,active) WHERE id = ?`);
-    db.transaction(() => payload.promocodes.forEach((row) => update.run(row.code ?? null, row.discount_value ?? null, row.discount_type ?? null, row.discount_value ?? null, row.discount_type ?? null, row.min_order_amount ?? null, row.max_discount_amount ?? null, row.valid_from || null, row.valid_to || null, row.active ?? null, row.id)))();
+    const update = db.prepare(`UPDATE promo_codes SET code = COALESCE(?,code), discount_value = COALESCE(?,discount_value), discount_type = COALESCE(?,discount_type), value = COALESCE(?,value), value_type = COALESCE(?,value_type), min_order_amount = COALESCE(?,min_order_amount), max_discount_amount = COALESCE(?,max_discount_amount), valid_from = ?, valid_to = ?, stackable_with_promos = COALESCE(?,stackable_with_promos), stackable_with_discounts = COALESCE(?,stackable_with_discounts), active = COALESCE(?,active) WHERE id = ?`);
+    db.transaction(() => payload.promocodes.forEach((row) => update.run(row.code ?? null, row.discount_value ?? null, row.discount_type ?? null, row.discount_value ?? null, row.discount_type ?? null, row.min_order_amount ?? null, row.max_discount_amount ?? null, row.valid_from || null, row.valid_to || null, row.stackable_with_promos ?? null, row.stackable_with_discounts ?? null, row.active ?? null, row.id)))();
   }
 }
 

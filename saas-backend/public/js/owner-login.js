@@ -41,7 +41,7 @@ async function ownerLogin() {
   localStorage.setItem("ownerToken:session", JSON.stringify({ loginAt: Date.now(), lastActiveAt: Date.now() }));
   window.location.href = data.owner.resetRequired
     ? "/owner-change-password.html"
-    : "/owner-dashboard.html";
+    : "/owner-control.html";
 }
 
 document.addEventListener('keydown', (event) => {

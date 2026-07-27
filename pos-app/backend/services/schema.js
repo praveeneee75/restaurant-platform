@@ -386,6 +386,17 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'items', 'allow_dine_in INTEGER DEFAULT 1');
   addColumn(db, 'items', 'allow_parcel INTEGER DEFAULT 1');
   addColumn(db, 'items', 'allow_party_order INTEGER DEFAULT 1');
+  addColumn(db, 'items', 'alpha_short_code TEXT');
+  addColumn(db, 'items', 'numeric_short_code TEXT');
+  addColumn(db, 'items', "tax_mode TEXT NOT NULL DEFAULT 'INCLUSIVE'");
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_items_alpha_short_code_unique
+      ON items(UPPER(TRIM(alpha_short_code)))
+      WHERE deleted_at IS NULL AND alpha_short_code IS NOT NULL AND TRIM(alpha_short_code) <> '';
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_items_numeric_short_code_unique
+      ON items(TRIM(numeric_short_code))
+      WHERE deleted_at IS NULL AND numeric_short_code IS NOT NULL AND TRIM(numeric_short_code) <> '';
+  `);
 
   // Phase 6: split payments use the same payments ledger with card/UPI metadata.
   addColumn(db, 'payments', 'reference_no TEXT');
@@ -494,6 +505,8 @@ function ensureRestaurantSchema(db) {
       min_order_amount REAL DEFAULT 0,
       valid_from DATE,
       valid_to DATE,
+      stackable_with_promos INTEGER DEFAULT 0,
+      stackable_with_discounts INTEGER DEFAULT 0,
       active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -624,6 +637,17 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'promo_codes', 'max_discount_amount REAL DEFAULT 0');
   addColumn(db, 'promo_codes', 'valid_from DATE');
   addColumn(db, 'promo_codes', 'valid_to DATE');
+  addColumn(db, 'promo_codes', 'stackable_with_promos INTEGER DEFAULT 0');
+  addColumn(db, 'promo_codes', 'stackable_with_discounts INTEGER DEFAULT 0');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS document_sequences (
+      sequence_key TEXT NOT NULL,
+      period_key TEXT NOT NULL,
+      last_number INTEGER NOT NULL DEFAULT 0,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (sequence_key, period_key)
+    );
+  `);
   const settingsCount = db.prepare("SELECT COUNT(*) AS count FROM settings WHERE key IN ('loyalty_earn_amount', 'loyalty_point_value')").get().count;
   if (settingsCount < 2) {
     db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('loyalty_earn_amount', '100')").run();

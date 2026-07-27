@@ -155,7 +155,7 @@ async function loadSettings() {
 async function loadPromoCodes() {
   const data = await fetchJson(`/admin/promo-codes?restaurantId=${encodeURIComponent(restaurantId)}&includeInactive=true`);
   if (!promoCodesTable) return;
-  promoCodesTable.innerHTML = (data.promoCodes || []).map((promo) => `<tr><td><strong>${esc(promo.code)}</strong></td><td>${esc(promo.discount_type === 'PERCENT' ? `${promo.discount_value}%` : `INR ${money(promo.discount_value)}`)}${promo.max_discount_amount > 0 ? ` (cap INR ${money(promo.max_discount_amount)})` : ''}</td><td>INR ${money(promo.min_order_amount)}</td><td>${esc(promo.valid_from || 'Any')} - ${esc(promo.valid_to || 'Any')}</td><td>${promo.active ? '<span class="status-pill success">Active</span>' : '<span class="status-pill">Disabled</span>'}</td><td><button type="button" class="mini-btn" data-edit-promo="${promo.id}">Edit</button><button type="button" class="danger-btn" data-delete-promo="${promo.id}">Disable</button></td></tr>`).join('') || '<tr><td colspan="6">No promocodes configured.</td></tr>';
+  promoCodesTable.innerHTML = (data.promoCodes || []).map((promo) => `<tr><td><strong>${esc(promo.code)}</strong></td><td>${esc(promo.discount_type === 'PERCENT' ? `${promo.discount_value}%` : `INR ${money(promo.discount_value)}`)}${promo.max_discount_amount > 0 ? ` (cap INR ${money(promo.max_discount_amount)})` : ''}</td><td>INR ${money(promo.min_order_amount)}</td><td>${esc(promo.valid_from || 'Any')} - ${esc(promo.valid_to || 'Any')}</td><td>${Number(promo.stackable_with_promos) ? 'Promos' : 'No promos'} · ${Number(promo.stackable_with_discounts) ? 'Discounts' : 'No discounts'}</td><td>${promo.active ? '<span class="status-pill success">Active</span>' : '<span class="status-pill">Disabled</span>'}</td><td><button type="button" class="mini-btn" data-edit-promo="${promo.id}">Edit</button><button type="button" class="danger-btn" data-delete-promo="${promo.id}">Disable</button></td></tr>`).join('') || '<tr><td colspan="7">No promocodes configured.</td></tr>';
   state.promoCodes = data.promoCodes || [];
 }
 
@@ -302,7 +302,7 @@ function renderAdmin() {
   printersTable.innerHTML = printers.map((printer) => `<tr><td>${esc(printer.name)}</td><td>${esc(printer.type)}</td><td>${esc(printer.connection)}</td><td>${esc(printer.paper_width_mm || 58)} mm</td><td>${esc(printer.address || "")}</td><td>${printer.active ? "Active" : "Inactive"}</td><td><span class="action-cell"><button type="button" class="secondary-btn" data-test-printer="${printer.id}">Test Print</button><button class="mini-btn" data-edit-printer="${printer.id}" type="button">Edit</button><button class="danger-btn" data-delete-printer="${printer.id}" type="button">Delete</button></span></td></tr>`).join("");
   categoriesTable.innerHTML = categories.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.kitchen_name || "Unassigned")}${Number(c.kitchen_active) === 0 ? " (inactive kitchen)" : ""}</td><td>${c.active ? "Active" : "Inactive"}</td><td>${actions("category", c.id)}</td></tr>`).join("");
   const term = (itemSearch?.value || "").toLowerCase();
-  itemsTable.innerHTML = items.filter((i) => !term || i.name.toLowerCase().includes(term)).map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td>${[['allow_dine_in','Dine In'],['allow_parcel','Parcel'],['allow_party_order','Party'],['online_enabled','Online'],['active','Active']].map(([field,label]) => `<td><label class="availability-toggle" title="${label}"><input type="checkbox" data-item-channel="${field}" data-item-id="${i.id}" ${Number(i[field] ?? 1) === 1 ? 'checked' : ''}><span>${label}</span></label></td>`).join('')}<td>${actions("item", i.id)}</td></tr>`).join("");
+  itemsTable.innerHTML = items.filter((i) => !term || `${i.name} ${i.alpha_short_code || ''} ${i.numeric_short_code || ''}`.toLowerCase().includes(term)).map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.alpha_short_code || "—")}</td><td>${esc(i.numeric_short_code || "—")}</td><td>${esc(String(i.tax_mode || "INCLUSIVE").toUpperCase() === "EXCLUSIVE" ? "Exclusive" : "Inclusive")}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td>${[['allow_dine_in','Dine In'],['allow_parcel','Parcel'],['allow_party_order','Party'],['online_enabled','Online'],['active','Active']].map(([field,label]) => `<td><label class="availability-toggle" title="${label}"><input type="checkbox" data-item-channel="${field}" data-item-id="${i.id}" ${Number(i[field] ?? 1) === 1 ? 'checked' : ''}><span>${label}</span></label></td>`).join('')}<td>${actions("item", i.id)}</td></tr>`).join("");
   usersTable.innerHTML = users.map((u) => {
     const canUnlock = isFutureDate(u.locked_until) || u.unlock_requested_at || Number(u.failed_login_attempts || 0) > 0;
     return `<tr>
@@ -804,6 +804,9 @@ function editItem(id) {
   itemName.value = row.name || "";
   itemCategory.value = row.category_id || "";
   itemPrice.value = row.price ?? 0;
+  itemAlphaShortCode.value = row.alpha_short_code || "";
+  itemNumericShortCode.value = row.numeric_short_code || "";
+  itemTaxMode.value = String(row.tax_mode || "INCLUSIVE").toUpperCase() === "EXCLUSIVE" ? "EXCLUSIVE" : "INCLUSIVE";
   itemOnlineDescription.value = row.online_description || "";
   itemImageUrl.value = row.image_url || "";
   itemVeg.checked = Number(row.is_veg ?? 1) === 1;
@@ -1317,7 +1320,7 @@ printerDiscoveryResults?.addEventListener('change', () => {
   printerName.value = printer.name; printerConnection.value = printer.connection; printerAddress.value = printer.address;
 });
 categoryForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/categories/save", { id: categoryId.value || null, name: categoryName.value, kitchenId: categoryKitchen.value, active: categoryActive.checked }); categoryForm.reset(); categoryActive.checked = true; await loadAdmin(); });
-itemForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, onlineDescription: itemOnlineDescription.value, imageUrl: itemImageUrl.value, isVeg: itemVeg.checked, allowDineIn: itemDineIn.checked, allowParcel: itemParcel.checked, allowPartyOrder: itemPartyOrder.checked, onlineEnabled: itemOnlineEnabled.checked, active: itemActive.checked }); itemForm.reset(); itemDineIn.checked = true; itemParcel.checked = true; itemPartyOrder.checked = true; itemActive.checked = true; itemOnlineEnabled.checked = true; await loadAdmin(); });
+itemForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, alphaShortCode: itemAlphaShortCode.value, numericShortCode: itemNumericShortCode.value, taxMode: itemTaxMode.value, onlineDescription: itemOnlineDescription.value, imageUrl: itemImageUrl.value, isVeg: itemVeg.checked, allowDineIn: itemDineIn.checked, allowParcel: itemParcel.checked, allowPartyOrder: itemPartyOrder.checked, onlineEnabled: itemOnlineEnabled.checked, active: itemActive.checked }); itemForm.reset(); itemDineIn.checked = true; itemParcel.checked = true; itemPartyOrder.checked = true; itemActive.checked = true; itemOnlineEnabled.checked = true; itemTaxMode.value = "INCLUSIVE"; await loadAdmin(); });
 
 itemsTable.addEventListener('change', async (event) => {
   const input = event.target.closest('[data-item-channel]');
@@ -1577,7 +1580,7 @@ document.addEventListener("click", async (event) => {
     if (pick("editPromo")) {
       const promo = (state.promoCodes || []).find((row) => String(row.id) === String(pick("editPromo")));
       if (promo) {
-        promoCodeId.value = promo.id; promoCodeValue.value = promo.code; promoDiscountType.value = promo.discount_type || 'RUPEES'; promoDiscountValue.value = promo.discount_value || 0; promoDiscountCap.value = promo.max_discount_amount || 0; promoMinOrder.value = promo.min_order_amount || 0; promoValidFrom.value = promo.valid_from || ''; promoValidTo.value = promo.valid_to || ''; promoActive.checked = Number(promo.active) === 1; document.querySelector('[data-view="settings"][data-settings-section="promos"]')?.click();
+        promoCodeId.value = promo.id; promoCodeValue.value = promo.code; promoDiscountType.value = promo.discount_type || 'RUPEES'; promoDiscountValue.value = promo.discount_value || 0; promoDiscountCap.value = promo.max_discount_amount || 0; promoMinOrder.value = promo.min_order_amount || 0; promoValidFrom.value = promo.valid_from || ''; promoValidTo.value = promo.valid_to || ''; promoStackablePromos.checked = Number(promo.stackable_with_promos) === 1; promoStackableDiscounts.checked = Number(promo.stackable_with_discounts) === 1; promoActive.checked = Number(promo.active) === 1; document.querySelector('[data-view="settings"][data-settings-section="promos"]')?.click();
       }
       return;
     }
@@ -1675,8 +1678,8 @@ exportProfitCsv.addEventListener("click", () => {
 document.getElementById("loadReservations").addEventListener("click", () => loadReservations().catch((err) => alert(err.message)));
 document.getElementById('savePromoCode')?.addEventListener("click", async () => {
   try {
-    await postJson('/admin/promo-codes/save', { id: promoCodeId.value || null, code: promoCodeValue.value, discountType: promoDiscountType.value, discountValue: promoDiscountValue.value, maxDiscountAmount: promoDiscountCap.value || 0, minOrderAmount: promoMinOrder.value || 0, validFrom: promoValidFrom.value || null, validTo: promoValidTo.value || null, active: promoActive.checked });
-    promoCodeId.value = ''; promoCodeValue.value = ''; promoDiscountValue.value = ''; promoDiscountCap.value = ''; promoMinOrder.value = ''; promoValidFrom.value = ''; promoValidTo.value = ''; promoActive.checked = true; await loadPromoCodes();
+    await postJson('/admin/promo-codes/save', { id: promoCodeId.value || null, code: promoCodeValue.value, discountType: promoDiscountType.value, discountValue: promoDiscountValue.value, maxDiscountAmount: promoDiscountCap.value || 0, minOrderAmount: promoMinOrder.value || 0, validFrom: promoValidFrom.value || null, validTo: promoValidTo.value || null, stackableWithPromos: promoStackablePromos.checked, stackableWithDiscounts: promoStackableDiscounts.checked, active: promoActive.checked });
+    promoCodeId.value = ''; promoCodeValue.value = ''; promoDiscountValue.value = ''; promoDiscountCap.value = ''; promoMinOrder.value = ''; promoValidFrom.value = ''; promoValidTo.value = ''; promoStackablePromos.checked = false; promoStackableDiscounts.checked = false; promoActive.checked = true; await loadPromoCodes();
   } catch (err) { alert(err.message); }
 });
 
@@ -1698,7 +1701,7 @@ staffCashSettingsForm.addEventListener("submit", async (e) => {
     staffCashSettingsStatus.textContent = err.message;
   }
 });
-document.getElementById('promoCodeReset')?.addEventListener('click', () => { promoCodeId.value = ''; promoCodeValue.value = ''; promoDiscountValue.value = ''; promoDiscountCap.value = ''; promoMinOrder.value = ''; promoValidFrom.value = ''; promoValidTo.value = ''; promoActive.checked = true; });
+document.getElementById('promoCodeReset')?.addEventListener('click', () => { promoCodeId.value = ''; promoCodeValue.value = ''; promoDiscountValue.value = ''; promoDiscountCap.value = ''; promoMinOrder.value = ''; promoValidFrom.value = ''; promoValidTo.value = ''; promoStackablePromos.checked = false; promoStackableDiscounts.checked = false; promoActive.checked = true; });
 
 loadInventoryReports.addEventListener("click", async () => {
   const data = await fetchJson(`/inventory/reports?restaurantId=${encodeURIComponent(restaurantId)}&from=${inventoryReportFrom.value}&to=${inventoryReportTo.value}`);

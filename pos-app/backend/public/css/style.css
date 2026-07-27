@@ -345,9 +345,12 @@ button:hover,
   gap: 6px;
   position: sticky;
   top: 0;
+  justify-items: stretch;
+  text-align: left;
 }
 
 .admin-category-btn {
+  width: 100%;
   min-height: 42px;
   padding: 9px 10px;
   border: 0;

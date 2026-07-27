@@ -151,6 +151,9 @@
         <label>Item name<input id="itemName" required></label>
         <label>Category<select id="itemCategory" required></select></label>
         <label>Price<input id="itemPrice" type="number" step="0.01" min="0" required></label>
+        <label>Alphabetic short code<input id="itemAlphaShortCode" maxlength="12" placeholder="Example: C B"></label>
+        <label>Numeric short code<input id="itemNumericShortCode" inputmode="numeric" maxlength="8" placeholder="Example: 77"></label>
+        <label>Tax treatment<select id="itemTaxMode"><option value="INCLUSIVE">Inclusive of tax</option><option value="EXCLUSIVE">Exclusive of tax</option></select></label>
         <label>Online description<input id="itemOnlineDescription" placeholder="Short customer-facing description"></label>
         <label>Online image URL<input id="itemImageUrl" placeholder="Leave blank for automatic food image"></label>
         <label class="check-row"><input id="itemVeg" type="checkbox" checked> Veg</label>
@@ -162,7 +165,7 @@
         <button>Save Item</button>
       </form>
       <div class="toolbar"><input id="itemSearch" placeholder="Search menu items"></div>
-      <div class="table-panel availability-items-panel"><table class="availability-items-table"><thead><tr><th>Name</th><th>Category</th><th>Kitchen</th><th>Price</th><th>Dine In</th><th>Parcel</th><th>Party</th><th>Online</th><th>Active</th><th>Actions</th></tr></thead><tbody id="itemsTable"></tbody></table></div>
+      <div class="table-panel availability-items-panel"><table class="availability-items-table"><thead><tr><th>Name</th><th>Alpha code</th><th>Number code</th><th>Tax</th><th>Category</th><th>Kitchen</th><th>Price</th><th>Dine In</th><th>Parcel</th><th>Party</th><th>Online</th><th>Active</th><th>Actions</th></tr></thead><tbody id="itemsTable"></tbody></table></div>
     </section>
 
     <section class="admin-view" id="view-users">
@@ -509,10 +512,12 @@
                 <label>Minimum order (optional)<input id="promoMinOrder" type="number" min="0" step="0.01"></label>
                 <label>Valid from<input id="promoValidFrom" type="date"></label>
                 <label>Valid to<input id="promoValidTo" type="date"></label>
+                <label class="check-row"><input id="promoStackablePromos" type="checkbox"> Stackable with other promocodes</label>
+                <label class="check-row"><input id="promoStackableDiscounts" type="checkbox"> Stackable with manual discounts</label>
                 <label class="check-row"><input id="promoActive" type="checkbox" checked> Active</label>
                 <div><button type="button" id="savePromoCode">Save promocode</button><button type="button" class="secondary-btn" id="promoCodeReset">Clear</button></div>
               </div>
-              <div class="table-panel"><table><thead><tr><th>Code</th><th>Discount</th><th>Minimum</th><th>Validity</th><th>Status</th><th></th></tr></thead><tbody id="promoCodesTable"></tbody></table></div>
+              <div class="table-panel"><table><thead><tr><th>Code</th><th>Discount</th><th>Minimum</th><th>Validity</th><th>Stacking</th><th>Status</th><th></th></tr></thead><tbody id="promoCodesTable"></tbody></table></div>
             </div>
           </article>
 

@@ -21,7 +21,7 @@ const cases=[
  [schema.includes("qr_pending_order_limit: '25'")&&cloud.includes('assertQrOrderingAvailable'), 'pending QR abuse limit locally and in cloud'],
  [server.includes('existingOrder?.id || order.id')&&server.includes('UPDATE order_items SET order_id'), 'same table customer merges into one order with new KOT'],
  [kdsHtml.includes('kitchen-multiselect')&&kds.includes('kitchenIds.join')&&server.includes('selectedKitchenIds'), 'KDS multi-kitchen selector'],
- [owner.includes('AbortController')&&owner.includes('took too long to load')&&owner.includes('finally{refreshButton.disabled=false}'), 'owner loading timeout and recovery'],
+ [owner.includes('AbortController')&&owner.includes('took too long to load')&&owner.includes("finally{$('refreshButton').disabled=false}"), 'owner loading timeout and recovery'],
  [styles.includes('grid-template-columns:24px minmax(0,1fr)')&&kds.includes('kitchenSelect.open = false'), 'KDS checkbox/text alignment and selector closes'],
  [billingHtml.includes('billingQrEnabled')&&billing.includes("settings:{ qr_ordering_enabled")&&billing.includes('qr_pending_order_limit'), 'Billing QR enable and pending-limit controls persist'],
  [qrHtml.includes('qr-order-fields')&&qrCss.includes('.qr-order-fields label')&&qrCss.includes('text-align:left'), 'QR customer fields are column-wise and left aligned'],
