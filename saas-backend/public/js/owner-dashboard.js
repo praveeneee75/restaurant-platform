@@ -48,12 +48,8 @@ function money(value) {
   return Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function firstRestaurant(restaurants = []) {
-  return restaurants[0] || {};
-}
-
 function renderAppCards(data) {
-  const restaurant = firstRestaurant(data.restaurants);
+  const branchCount = data.restaurants?.length || 0;
   appCards.innerHTML = `
     <article class="app-download-card">
       <div>
@@ -81,12 +77,12 @@ function renderAppCards(data) {
         <span class="app-card-kicker">Credentials</span>
         <h3>What You Need</h3>
         <dl>
-          <dt>Restaurant code</dt>
-          <dd><code>${restaurant.restaurant_code || "Shown below"}</code></dd>
-          <dt>License key</dt>
-          <dd><code>${restaurant.license_key || "Shown below"}</code></dd>
+          <dt>Branch activation</dt>
+          <dd>Choose the branch being installed in the <a href="#branchActivationTable">Individual Branch View</a>. Use that row's unique restaurant code and license key.</dd>
+          <dt>Assigned branches</dt>
+          <dd>${branchCount} branch${branchCount === 1 ? "" : "es"} available to this owner account.</dd>
           <dt>Owner login</dt>
-          <dd>${data.owner?.email || "Your owner username"} + your owner password</dd>
+          <dd>Use your owner email and password. The same owner login can view every branch assigned to this account.</dd>
         </dl>
       </div>
     </article>
@@ -94,19 +90,20 @@ function renderAppCards(data) {
 }
 
 function renderOwnerSteps(data) {
-  const restaurant = firstRestaurant(data.restaurants);
   ownerSteps.innerHTML = `
     <article class="owner-step-card">
       <strong>1. Activate the desktop POS</strong>
-      <p>Download the desktop POS on the billing counter computer. Open it, then enter the restaurant code and license key.</p>
-      <p><b>Restaurant code:</b> <code>${restaurant.restaurant_code || "Shown in the branch table"}</code></p>
-      <p><b>License key:</b> <code>${restaurant.license_key || "Shown in the branch table"}</code></p>
+      <p>Install the desktop POS on the billing-counter computer for the branch you are activating.</p>
+      <ol>
+        <li>Open <a href="#branchActivationTable">Individual Branch View</a>.</li>
+        <li>Find the required branch by restaurant name.</li>
+        <li>Enter that row's restaurant code and license key in the POS activation screen.</li>
+        <li>Repeat on another branch computer using that branch's own code and license key. Do not reuse another branch's activation details.</li>
+      </ol>
     </article>
     <article class="owner-step-card">
       <strong>2. Owner/admin login over internet</strong>
-      <p>In the POS login screen, use your owner email and owner password. This gives owner-level access when internet is available.</p>
-      <p><b>Username:</b> <code>${data.owner?.email || "Owner email"}</code></p>
-      <p><b>Password:</b> Your owner portal password.</p>
+      <p>After branch activation, sign in with your owner email and owner-portal password. This account can access all assigned branches when internet is available; select the branches you want to review in Owner Control.</p>
     </article>
     <article class="owner-step-card">
       <strong>3. Staff/mobile login on Wi-Fi</strong>

@@ -3,14 +3,16 @@ if (!token) window.location.replace('/owner-login.html');
 let current = null;
 let domain = 'MENU';
 let performanceMode = 'top';
-let lastSelectedRestaurant = '';
+let restaurantsList = [];
+const selectedRestaurants = new Set();
 const domainCapabilities = { MENU:'REMOTE_MENU', BILLING:'REMOTE_BILLING', BACKUP:'REMOTE_BACKUP', ONLINE_ORDERING:'REMOTE_ONLINE_ORDERING' };
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = (v) => Number(v || 0).toLocaleString('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:2});
 const number = (v) => Number(v || 0).toLocaleString('en-IN');
 const rows = (items, fn, empty='No data available') => items?.length ? items.map(fn).join('') : `<p class="od-subtitle">${empty}</p>`;
-const rid = () => $('restaurantSelect').value;
+const selectedRestaurantIds = () => [...selectedRestaurants];
+const rid = () => selectedRestaurantIds()[0] || '';
 const selectedDate = () => $('reportDate').value;
 const localDate = () => {
   const now = new Date();
@@ -66,6 +68,71 @@ function renderPerformance() {
   $('lowItemsButton').classList.toggle('active', performanceMode === 'low');
 }
 
+function groupRows(items, keys, numericFields) {
+  const grouped = new Map();
+  (items || []).forEach((item) => {
+    const id = keys.map((key) => item?.[key] ?? '').join('|');
+    const row = grouped.get(id) || { ...item };
+    numericFields.forEach((field) => { row[field] = Number(grouped.has(id) ? row[field] : 0) + Number(item?.[field] || 0); });
+    grouped.set(id, row);
+  });
+  return [...grouped.values()];
+}
+
+function aggregateDashboards(dashboards) {
+  if (dashboards.length === 1) return dashboards[0];
+  const all = (path) => dashboards.flatMap((data) => path(data) || []);
+  const latest = (values) => values.filter(Boolean).sort().at(-1) || null;
+  const result = {
+    success: true,
+    restaurant: { code: selectedRestaurantIds().join(','), name: `${dashboards.length} selected restaurants` },
+    freshness: {
+      lastSnapshotAt: latest(dashboards.map((data) => data.freshness?.lastSnapshotAt)),
+      lastHeartbeatAt: latest(dashboards.map((data) => data.freshness?.lastHeartbeatAt))
+    },
+    liveOperations: {},
+    executiveSales: {},
+    refunds: { rows: groupRows(all((data) => data.refunds?.rows), ['refund_mode','reason'], ['count','amount']) },
+    promocodes: { rows: groupRows(all((data) => data.promocodes?.rows), ['code'], ['usage_count','discount_amount']) },
+    dailyReports: groupRows(all((data) => data.dailyReports), ['report_date'], ['orders_count','gross_sales','net_sales','tax_amount','discount_amount','refunds_amount','cash_total','card_total','upi_total']).sort((a,b)=>String(b.report_date).localeCompare(String(a.report_date))),
+    topItems: groupRows(all((data) => data.topItems), ['item_name'], ['quantity_sold','total_sales']).sort((a,b)=>Number(b.total_sales)-Number(a.total_sales)),
+    alerts: all((data) => data.alerts),
+    commands: all((data) => data.commands).sort((a,b)=>String(b.requested_at).localeCompare(String(a.requested_at))),
+    pendingApprovals: all((data) => data.pendingApprovals),
+    capabilities: dashboards.map((data) => new Set(data.capabilities || [])).reduce((common,set)=>new Set([...common].filter((code)=>set.has(code)))),
+    configurationSnapshot: {}
+  };
+  result.capabilities = [...result.capabilities];
+  ['dineIn','parcel','party','online'].forEach((key) => { result.liveOperations[key] = all((data) => data.liveOperations?.[key]); });
+  const sales = result.executiveSales;
+  sales.today = dashboards.reduce((sum,data) => {
+    const row=data.executiveSales?.today||{};
+    sum.netSales+=Number(row.netSales||0);sum.orders+=Number(row.orders||0);return sum;
+  },{netSales:0,orders:0,averageOrder:0});
+  sales.today.averageOrder = sales.today.orders ? sales.today.netSales / sales.today.orders : 0;
+  sales.byPayment = groupRows(all((data)=>data.executiveSales?.byPayment), ['mode'], ['total']);
+  sales.byOrderType = groupRows(all((data)=>data.executiveSales?.byOrderType), ['order_type'], ['orders','sales']);
+  sales.salesTimeline = groupRows(all((data)=>data.executiveSales?.salesTimeline), ['hour','order_type'], ['sales','orders']);
+  sales.itemPerformance = groupRows(all((data)=>data.executiveSales?.itemPerformance || data.topItems), ['item_name'], ['quantity_sold','total_sales']).sort((a,b)=>Number(b.total_sales)-Number(a.total_sales));
+  sales.orderOutcomes = dashboards.reduce((sum,data)=>{const row=data.executiveSales?.orderOutcomes||{};['successful','complimentary','cancelled'].forEach(key=>sum[key]+=Number(row[key]||0));return sum;},{successful:0,complimentary:0,cancelled:0});
+  sales.onlineOrders = dashboards.reduce((sum,data)=>{const row=data.executiveSales?.onlineOrders||{};['sales','orders','prepaid_sales','prepaid_orders','cod_sales','cod_orders'].forEach(key=>sum[key]+=Number(row[key]||0));return sum;},{sales:0,orders:0,prepaid_sales:0,prepaid_orders:0,cod_sales:0,cod_orders:0});
+  sales.leakage = dashboards.reduce((sum,data)=>{const row=data.executiveSales?.leakage||{};['cancelled','modified','shifted'].forEach(key=>sum.kots[key]+=Number(row.kots?.[key]||0));['modified','reprinted','waived'].forEach(key=>sum.bills[key]+=Number(row.bills?.[key]||0));return sum;},{kots:{cancelled:0,modified:0,shifted:0},bills:{modified:0,reprinted:0,waived:0}});
+  return result;
+}
+
+function titleCase(value) {
+  return String(value || '').replace(/([a-z])([A-Z])/g,'$1 $2').replaceAll('_',' ').replace(/\b\w/g,(char)=>char.toUpperCase());
+}
+
+function renderLiveOperations(operations={}) {
+  const entries = ['dineIn','parcel','party','online'].map((key)=>[key,operations[key]||[]]);
+  const totalOrders = entries.reduce((sum,[,items])=>sum+items.length,0);
+  const totalValue = entries.flatMap(([,items])=>items).reduce((sum,item)=>sum+Number(item.total||0),0);
+  $('liveOperationsList').innerHTML = `<div class="ops-kpis"><div class="ops-kpi"><span>Open orders</span><strong>${number(totalOrders)}</strong></div><div class="ops-kpi"><span>Open value</span><strong>${money(totalValue)}</strong></div>${entries.slice(0,2).map(([key,items])=>`<div class="ops-kpi"><span>${titleCase(key)}</span><strong>${number(items.length)}</strong></div>`).join('')}</div><div class="ops-groups">${
+    entries.map(([key,items])=>`<section class="ops-group"><div class="ops-group-head"><h3>${titleCase(key)}</h3><span class="ops-count">${number(items.length)}</span></div><div class="ops-table">${items.length ? items.slice(0,8).map((order)=>`<div class="ops-row"><span><b>${esc(order.reference||'Order')}</b></span><small>${esc(order.table||order.status||titleCase(key))}</small><strong>${money(order.total)}</strong></div>`).join('') : '<div class="ops-empty">No open orders</div>'}</div></section>`).join('')
+  }</div>`;
+}
+
 function selectedDailyReport(data) {
   return (data.dailyReports || []).find((row) => String(row.report_date || '').slice(0,10) === selectedDate()) || null;
 }
@@ -115,8 +182,7 @@ function render(data) {
   const online=sales.onlineOrders || {};
   $('onlineSummary').innerHTML=`<div class="online-stat"><span>Total online</span><strong>${money(online.sales)}</strong><small>${number(online.orders)} orders</small></div><div class="online-stat" style="border-color:#2563eb"><span>Prepaid</span><strong>${money(online.prepaid_sales)}</strong><small>${number(online.prepaid_orders)} orders</small></div><div class="online-stat" style="border-color:#ef4444"><span>COD</span><strong>${money(online.cod_sales)}</strong><small>${number(online.cod_orders)} orders</small></div>`;
 
-  const ops=data.liveOperations||{};
-  $('liveOperationsList').innerHTML=Object.entries(ops).map(([type,list])=>`<h3>${esc(type.replace(/([A-Z])/g,' $1'))} (${list.length})</h3>${rows(list.slice(0,5),o=>`<div class="control-row"><span>${esc(o.reference)} · ${esc(o.table||o.status)}</span><b>${money(o.total)}</b></div>`)}`).join('');
+  renderLiveOperations(data.liveOperations||{});
   $('refunds').innerHTML=`<h3>Refunds</h3>${rows(data.refunds?.rows||[],r=>`<div class="control-row"><span>${esc(r.refund_mode)} · ${esc(r.reason||'No reason')} (${r.count})</span><b>${money(r.amount)}</b></div>`)}`;
   $('promocodes').innerHTML=`<h3>Promocodes</h3>${rows(data.promocodes?.rows||[],r=>`<div class="control-row"><span>${esc(r.code)} · ${r.usage_count} uses</span><b>${money(r.discount_amount)}</b></div>`)}`;
   $('alerts').innerHTML=rows(data.alerts||[],a=>`<div class="control-card ${a.severity==='HIGH'?'alert-high':''}"><b>${esc(a.alert_type)}</b><p>${esc(a.message)}</p></div>`,'No active alerts.');
@@ -137,15 +203,25 @@ function renderConfigTabs(){
   if(enabled) loadEditor();
 }
 function loadEditor(){const map={MENU:'menu',BILLING:'billing',BACKUP:'backup',ONLINE_ORDERING:'onlineOrdering'};$('configEditor').value=JSON.stringify(current?.configurationSnapshot?.[map[domain]]||{},null,2);$('configTitle').textContent=domain.replaceAll('_',' ');}
-async function restaurants(){const data=await api('/owners/dashboard');$('restaurantSelect').innerHTML=data.restaurants.map(r=>`<option value="${esc(r.restaurant_code)}">${esc(r.name)}</option>`).join('');}
+function updateRestaurantButton() {
+  const count=selectedRestaurants.size;
+  $('restaurantMultiButton').textContent=count===restaurantsList.length?'All restaurants':count===1?(restaurantsList.find((row)=>selectedRestaurants.has(row.restaurant_code))?.name||'1 restaurant'):`${count} restaurants`;
+}
+function renderRestaurantMenu() {
+  const allSelected=restaurantsList.length>0&&selectedRestaurants.size===restaurantsList.length;
+  $('restaurantMultiMenu').innerHTML=`<label class="od-multi-option od-multi-all"><input id="restaurantSelectAll" type="checkbox" ${allSelected?'checked':''}><span>Select all restaurants</span></label>${restaurantsList.map((row)=>`<label class="od-multi-option"><input type="checkbox" data-restaurant-id="${esc(row.restaurant_code)}" ${selectedRestaurants.has(row.restaurant_code)?'checked':''}><span>${esc(row.name)}</span></label>`).join('')}`;
+  $('restaurantSelectAll').onchange=(event)=>{selectedRestaurants.clear();if(event.target.checked)restaurantsList.forEach((row)=>selectedRestaurants.add(row.restaurant_code));renderRestaurantMenu();updateRestaurantButton();load();};
+  document.querySelectorAll('[data-restaurant-id]').forEach((input)=>input.onchange=()=>{input.checked?selectedRestaurants.add(input.dataset.restaurantId):selectedRestaurants.delete(input.dataset.restaurantId);if(!selectedRestaurants.size){input.checked=true;selectedRestaurants.add(input.dataset.restaurantId);}$('restaurantSelectAll').checked=selectedRestaurants.size===restaurantsList.length;updateRestaurantButton();load();});
+}
+async function restaurants(){const data=await api('/owners/dashboard');restaurantsList=data.restaurants||[];restaurantsList.forEach((row)=>selectedRestaurants.add(row.restaurant_code));renderRestaurantMenu();updateRestaurantButton();}
 async function load(){
-  if(!rid())return;
+  const ids=selectedRestaurantIds();
+  if(!ids.length)return;
   $('status').innerHTML='<span class="sync-pill">Loading cloud snapshot…</span>';
   $('refreshButton').disabled=true;
   try {
-    const data=await api(`/owner-control/owner/dashboard?restaurantId=${encodeURIComponent(rid())}`);
-    render(data);
-    lastSelectedRestaurant=rid();
+    const dashboards=await Promise.all(ids.map((id)=>api(`/owner-control/owner/dashboard?restaurantId=${encodeURIComponent(id)}`)));
+    render(aggregateDashboards(dashboards));
   } catch(error) {
     $('status').innerHTML=`<div class="od-error">${esc(error.message)}</div>`;
     $('salesChart').innerHTML='<div class="chart-empty">Cloud data unavailable. Request POS sync and retry.</div>';
@@ -153,8 +229,8 @@ async function load(){
 }
 async function command(type){
   try {
-    const result=await api('/owner-control/owner/commands',{method:'POST',body:JSON.stringify({restaurantId:rid(),type})});
-    $('status').innerHTML=`<span class="sync-pill">${esc(result.message)}</span>`;
+    const results=await Promise.all(selectedRestaurantIds().map((restaurantId)=>api('/owner-control/owner/commands',{method:'POST',body:JSON.stringify({restaurantId,type})})));
+    $('status').innerHTML=`<span class="sync-pill">${number(results.length)} POS sync request${results.length===1?'':'s'} queued</span>`;
   } catch(error) {$('status').innerHTML=`<div class="od-error">${esc(error.message)}</div>`;}
 }
 async function confirmApproval(id){try{await api(`/owner-control/owner/approvals/${id}/confirm`,{method:'POST',body:JSON.stringify({restaurantId:rid()})});await load();}catch(error){$('status').innerHTML=`<div class="od-error">${esc(error.message)}</div>`;}}
@@ -165,7 +241,6 @@ function focusSection(target) {
   section.scrollIntoView({behavior:'smooth',block:'start'});
   section.classList.remove('od-section-flash');
   requestAnimationFrame(()=>section.classList.add('od-section-flash'));
-  $('ownerSidebar').classList.remove('open');
 }
 
 function selectConfig(nextDomain) {
@@ -198,13 +273,12 @@ function downloadReports() {
 }
 
 $('refreshButton').onclick=load;
-$('restaurantSelect').onchange=()=>{if(rid()!==lastSelectedRestaurant)load();};
+$('restaurantMultiButton').onclick=()=>{const menu=$('restaurantMultiMenu');menu.hidden=!menu.hidden;$('restaurantMultiButton').setAttribute('aria-expanded',String(!menu.hidden));};
 $('reportDate').onchange=()=>current&&render(current);
 $('requestSyncButton').onclick=()=>command('REQUEST_SYNC');
 $('runBackupButton').onclick=()=>command('RUN_BACKUP');
 $('topItemsButton').onclick=()=>{performanceMode='top';renderPerformance();};
 $('lowItemsButton').onclick=()=>{performanceMode='low';renderPerformance();};
-$('mobileMenuButton').onclick=()=>$('ownerSidebar').classList.toggle('open');
 $('notificationsButton').onclick=openDrawer;
 $('settingsButton').onclick=()=>focusSection('remoteConfig');
 $('closeDrawerButton').onclick=()=>$('ownerDrawer').hidden=true;
@@ -220,8 +294,9 @@ document.querySelectorAll('[data-owner-nav]').forEach(button=>button.onclick=()=
     $('status').innerHTML='<span class="sync-pill">Inventory is view-only until the Remote Inventory capability is enabled by SaaS administration.</span>';
   } else focusSection(target);
 });
-document.querySelectorAll('.od-nav a[href^="#"]').forEach(link=>link.onclick=()=>setTimeout(()=>$('ownerSidebar').classList.remove('open'),0));
+document.querySelectorAll('[data-owner-section]').forEach((button)=>button.onclick=()=>focusSection(button.dataset.ownerSection));
+document.addEventListener('click',(event)=>{if(!event.target.closest('.od-restaurant-filter')){$('restaurantMultiMenu').hidden=true;$('restaurantMultiButton').setAttribute('aria-expanded','false');}});
 $('reportDate').value=localDate();
-$('saveConfigButton').onclick=async()=>{let payload;try{payload=JSON.parse($('configEditor').value)}catch(_){$('status').innerHTML='<div class="od-error">Configuration JSON is invalid.</div>';return}await api(`/owner-control/owner/config/${domain}?restaurantId=${encodeURIComponent(rid())}`,{method:'PUT',body:JSON.stringify({restaurantId:rid(),payload})});await load();};
+$('saveConfigButton').onclick=async()=>{if(selectedRestaurants.size!==1){$('status').innerHTML='<div class="od-error">Select one restaurant before publishing branch configuration.</div>';return;}let payload;try{payload=JSON.parse($('configEditor').value)}catch(_){$('status').innerHTML='<div class="od-error">Configuration JSON is invalid.</div>';return}await api(`/owner-control/owner/config/${domain}?restaurantId=${encodeURIComponent(rid())}`,{method:'PUT',body:JSON.stringify({restaurantId:rid(),payload})});await load();};
 restaurants().then(load).catch(error=>$('status').innerHTML=`<div class="od-error">${esc(error.message)}</div>`);
 setInterval(load,60000);
