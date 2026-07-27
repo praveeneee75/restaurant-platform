@@ -6,6 +6,19 @@ const { publicError } = require('../config');
 const router = express.Router();
 router.use(authenticate);
 
+const OWNER_CAPABILITY_MODULES = new Set(['REMOTE_MENU']);
+
+async function syncOwnerCapability(tenantId, moduleCode, enabled) {
+  if (!OWNER_CAPABILITY_MODULES.has(moduleCode)) return;
+  await pool.query(`
+    INSERT INTO tenant_owner_capabilities (tenant_id, capability_code, enabled, updated_at)
+    VALUES ($1, $2, $3, NOW())
+    ON CONFLICT(tenant_id, capability_code) DO UPDATE SET
+      enabled = EXCLUDED.enabled,
+      updated_at = NOW()
+  `, [tenantId, moduleCode, enabled]);
+}
+
 function isDevAdmin(role) {
   return ['DEV_ADMIN', 'DEV', 'OWNER'].includes(role);
 }
@@ -108,6 +121,7 @@ router.post('/modules/enable', async (req, res) => {
         deactivated_at = NULL
       RETURNING *
     `, [tenant.id, module.id, Number(trialDays || 0)]);
+    await syncOwnerCapability(tenant.id, module.code, true);
     await logSaasAudit(req, 'ENABLE', 'TENANT_MODULE', result.rows[0].id, oldValue, { restaurantId, moduleCode: module.code });
     res.json({ success: true, tenantModule: result.rows[0] });
   } catch (err) {
@@ -133,6 +147,7 @@ router.post('/modules/disable', async (req, res) => {
       ON CONFLICT(tenant_id, module_id) DO UPDATE SET enabled = false, deactivated_at = NOW()
       RETURNING *
     `, [tenant.id, module.id]);
+    await syncOwnerCapability(tenant.id, module.code, false);
     await logSaasAudit(req, 'DISABLE', 'TENANT_MODULE', result.rows[0].id, oldValue, { restaurantId, moduleCode: module.code });
     res.json({ success: true, tenantModule: result.rows[0] });
   } catch (err) {

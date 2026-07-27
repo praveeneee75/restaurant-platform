@@ -800,8 +800,13 @@ async function migrate() {
       ('WHITE_LABEL', 'White Label', 'Partner branding and reseller management', 'ENTERPRISE', 'ACTIVE'),
       ('ONLINE_ORDERING', 'Online Ordering', 'Customer web ordering for takeaway, delivery and prepaid/cash orders', 'SALES', 'ACTIVE'),
       ('MOBILE_APP', 'White-label Mobile App', 'Cross-platform owner, captain and waiter mobile app packaging', 'PREMIUM', 'ACTIVE'),
-      ('MESSAGING', 'SMS / WhatsApp / Email Marketing', 'Bulk customer communication with per-restaurant sender and gateway configuration', 'CUSTOMER', 'ACTIVE')
-    ON CONFLICT(code) DO NOTHING
+      ('MESSAGING', 'SMS / WhatsApp / Email Marketing', 'Bulk customer communication with per-restaurant sender and gateway configuration', 'CUSTOMER', 'ACTIVE'),
+      ('REMOTE_MENU', 'Remote Menu Publishing', 'Publish versioned menu changes from the owner portal to selected POS branches', 'ENTERPRISE', 'ACTIVE')
+    ON CONFLICT(code) DO UPDATE SET
+      name = EXCLUDED.name,
+      description = EXCLUDED.description,
+      category = EXCLUDED.category,
+      status = EXCLUDED.status
   `);
   await pool.query(`
     UPDATE subscription_plans SET price = CASE code
@@ -845,7 +850,8 @@ async function migrate() {
         ('ENTERPRISE', 'MOBILE_APP'),
         ('ENTERPRISE', 'MESSAGING'),
         ('ENTERPRISE', 'MULTI_BRANCH'),
-        ('ENTERPRISE', 'WHITE_LABEL')
+        ('ENTERPRISE', 'WHITE_LABEL'),
+        ('ENTERPRISE', 'REMOTE_MENU')
     )
     INSERT INTO subscription_plan_modules (plan_id, module_id, included)
     SELECT p.id, m.id, true
@@ -868,6 +874,27 @@ async function migrate() {
     ) s ON true
     JOIN subscription_plan_modules spm ON spm.plan_id = s.plan_id AND spm.included = true
     ON CONFLICT(tenant_id, module_id) DO NOTHING
+  `);
+
+  await pool.query(`
+    INSERT INTO tenant_owner_capabilities (tenant_id, capability_code, enabled, updated_at)
+    SELECT
+      t.id,
+      'REMOTE_MENU',
+      EXISTS (
+        SELECT 1
+        FROM tenant_modules tm
+        JOIN modules m ON m.id = tm.module_id
+        WHERE tm.tenant_id = t.id
+          AND m.code = 'REMOTE_MENU'
+          AND m.status = 'ACTIVE'
+          AND tm.enabled = true
+      ),
+      NOW()
+    FROM tenants t
+    ON CONFLICT(tenant_id, capability_code) DO UPDATE SET
+      enabled = EXCLUDED.enabled,
+      updated_at = NOW()
   `);
 
   await pool.query('CREATE INDEX IF NOT EXISTS idx_tenants_restaurant_code ON tenants(restaurant_code)');

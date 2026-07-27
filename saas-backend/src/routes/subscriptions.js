@@ -6,6 +6,33 @@ const { publicError } = require('../config');
 const router = express.Router();
 router.use(authenticate);
 
+const OWNER_CAPABILITY_MODULES = ['REMOTE_MENU'];
+
+async function syncOwnerCapabilities(client, tenantId) {
+  for (const capabilityCode of OWNER_CAPABILITY_MODULES) {
+    await client.query(`
+      INSERT INTO tenant_owner_capabilities (tenant_id, capability_code, enabled, updated_at)
+      VALUES (
+        $1,
+        $2,
+        EXISTS (
+          SELECT 1
+          FROM tenant_modules tm
+          JOIN modules m ON m.id = tm.module_id
+          WHERE tm.tenant_id = $1
+            AND m.code = $2
+            AND m.status = 'ACTIVE'
+            AND tm.enabled = true
+        ),
+        NOW()
+      )
+      ON CONFLICT(tenant_id, capability_code) DO UPDATE SET
+        enabled = EXCLUDED.enabled,
+        updated_at = NOW()
+    `, [tenantId, capabilityCode]);
+  }
+}
+
 router.get('/plans', async (_req, res) => {
   try {
     const result = await pool.query(`
@@ -171,6 +198,8 @@ async function applyPlanModules(client, tenantId, planId) {
       )
       AND module_id IN (SELECT id FROM modules WHERE code != 'WHITE_LABEL')
   `, [tenantId, planId]);
+
+  await syncOwnerCapabilities(client, tenantId);
 }
 
 router.post('/assign', async (req, res) => {
