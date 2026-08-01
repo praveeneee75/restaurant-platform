@@ -1,0 +1,10 @@
+const fs = require('fs');
+const path = require('path');
+const root = path.join(__dirname, '..');
+const main = fs.readFileSync(path.join(root, 'pos-app/electron/main.js'), 'utf8');
+const build = fs.readFileSync(path.join(root, 'scripts/build-windows-release.ps1'), 'utf8');
+if (!main.includes("new Database(':memory:')") || !main.includes("prepare('SELECT 1 AS ok')")) throw new Error('Desktop runtime check does not load the SQLite native binary');
+if (!main.includes("health?.database?.status === 'ERROR'")) throw new Error('Database startup failure can still be mislabeled as a license failure');
+if (!build.includes('ELECTRON_RUN_AS_NODE') || !build.includes('Packaged SQLite validation failed')) throw new Error('Release build does not execute the packaged SQLite module under Electron');
+if (!build.includes('if ($LASTEXITCODE -ne 0)')) throw new Error('Release build does not propagate nested command failures');
+console.log('Packaged startup gate regression passed.');

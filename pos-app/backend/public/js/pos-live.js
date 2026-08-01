@@ -18,6 +18,7 @@ const actor = { id: sessionUser.id, role };
 const modeParam = String(new URLSearchParams(window.location.search).get("mode") || "DINE_IN").toUpperCase();
 const posMode = ["DINE_IN", "PARCEL", "PARTY"].includes(modeParam) ? modeParam : "DINE_IN";
 const cashierDineLayout = posMode === "DINE_IN" && new URLSearchParams(window.location.search).get("layout") === "cashier";
+const directDineLayout = posMode === "DINE_IN" && !cashierDineLayout;
 const usesStructuredItemEntry = posMode === "PARCEL" || cashierDineLayout;
 const requestedTableId = Number(new URLSearchParams(window.location.search).get("tableId") || 0);
 const restaurantId = new URLSearchParams(window.location.search).get("restaurantId") || localStorage.getItem("restaurantId");
@@ -165,6 +166,21 @@ function applyRoleAndModeUI() {
   if (settlementType) settlementType.hidden = role !== "MANAGER_1";
   if (posMode !== "DINE_IN") document.body.classList.add("pos-non-dine-in");
   else document.body.classList.add("pos-mode-dine-in");
+  if (directDineLayout) {
+    document.body.classList.add("pos-mode-direct-dine");
+    const tablePanel = document.querySelector(".pos-tables");
+    const menuPanel = document.querySelector(".pos-menu");
+    const categoryPanel = document.getElementById("categories");
+    const tableList = document.getElementById("tablesList");
+    if (tablePanel && menuPanel && categoryPanel && tableList) {
+      const categorySlot = document.createElement("div");
+      tableList.before(categorySlot);
+      const tableSlot = document.createElement("div");
+      categoryPanel.before(tableSlot);
+      categorySlot.replaceWith(categoryPanel);
+      tableSlot.replaceWith(tableList);
+    }
+  }
   if (posMode === "PARTY") {
     document.body.classList.add("pos-mode-party");
     saveOrder.hidden = true;
@@ -999,14 +1015,14 @@ function openSplitBillModal() {
   splitBillModal.hidden = false;
 }
 
-function addCombo(comboId) {
+function addCombo(comboId, options = {}) {
   if (state.billingReady) return alert("Final bill has been requested for this order. Start a new customer check to add items.");
   if (isDineIn() && !state.selectedTable) return alert("Select a table first");
   const combo = state.combos.find((row) => row.id === comboId);
   if (!combo) return;
   const key = `combo-${combo.id}`;
   const included = state.comboItems.filter((item) => item.combo_id === combo.id).map((item) => `${item.item_name} x${item.quantity}`).join(", ");
-  const line = state.cart.find((item) => item.key === key);
+  const line = options.forceNew ? null : state.cart.find((item) => item.key === key && !item.sentToKitchen);
   if (line) line.quantity += 1;
   else state.cart.push({ key, comboId: combo.id, name: combo.name, price: combo.price, quantity: 1, modifiers: included ? [{ name: included, id: 0 }] : [], savedLocally: false });
   state.selectedCartKey = key;
@@ -1133,6 +1149,7 @@ async function submitCurrentKot() {
   const submittedFulfillment = currentFulfillmentType();
   const data = await postJson("/orders/submit-kot", { orderId: state.orderId, fulfillmentType: submittedFulfillment });
   if (data.success) {
+    if (data.orderReference) state.orderReference = data.orderReference;
     state.kotSubmitted = true;
     state.dirty = false;
     state.cart.forEach((item) => { item.sentToKitchen = true; });
@@ -1261,7 +1278,11 @@ document.addEventListener("click", async (event) => {
   const comboControl = event.target.closest("[data-combo-plus], [data-combo-minus]");
   if (comboControl) {
     const comboId = Number(comboControl.dataset.comboPlus || comboControl.dataset.comboMinus);
-    const line = state.cart.find((item) => Number(item.comboId) === comboId);
+    const line = state.cart.find((item) => Number(item.comboId) === comboId && !item.sentToKitchen);
+    if (!line && comboControl.dataset.comboPlus) {
+      addCombo(comboId, { forceNew: true });
+      return;
+    }
     if (line && !line.sentToKitchen) {
       line.quantity += comboControl.dataset.comboPlus ? 1 : -1;
       state.selectedCartKey = line.key;
@@ -1340,8 +1361,13 @@ items.addEventListener("click", (event) => {
   event.preventDefault();
   event.stopPropagation();
   const itemId = Number(target.dataset.itemPlus || target.dataset.itemMinus);
-  const line = state.cart.find((item) => Number(item.id) === itemId && !item.comboId);
-  if (!line || line.sentToKitchen) return;
+  const line = state.cart.find((item) => Number(item.id) === itemId && !item.comboId && !item.sentToKitchen);
+  if (!line && target.dataset.itemPlus) {
+    const sourceItem = state.items.find((item) => Number(item.id) === itemId);
+    if (sourceItem) addItemToCart(sourceItem, [], { forceNew: true });
+    return;
+  }
+  if (!line) return;
   if (target.dataset.itemPlus) line.quantity += 1;
   else line.quantity -= 1;
   state.selectedCartKey = line.key;

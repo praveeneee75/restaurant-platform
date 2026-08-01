@@ -155,7 +155,14 @@ async function loadSettings() {
 async function loadPromoCodes() {
   const data = await fetchJson(`/admin/promo-codes?restaurantId=${encodeURIComponent(restaurantId)}&includeInactive=true`);
   if (!promoCodesTable) return;
-  promoCodesTable.innerHTML = (data.promoCodes || []).map((promo) => `<tr><td><strong>${esc(promo.code)}</strong></td><td>${esc(promo.discount_type === 'PERCENT' ? `${promo.discount_value}%` : `INR ${money(promo.discount_value)}`)}${promo.max_discount_amount > 0 ? ` (cap INR ${money(promo.max_discount_amount)})` : ''}</td><td>INR ${money(promo.min_order_amount)}</td><td>${esc(promo.valid_from || 'Any')} - ${esc(promo.valid_to || 'Any')}</td><td>${Number(promo.stackable_with_promos) ? 'Promos' : 'No promos'} · ${Number(promo.stackable_with_discounts) ? 'Discounts' : 'No discounts'}</td><td>${promo.active ? '<span class="status-pill success">Active</span>' : '<span class="status-pill">Disabled</span>'}</td><td><button type="button" class="mini-btn" data-edit-promo="${promo.id}">Edit</button><button type="button" class="danger-btn" data-delete-promo="${promo.id}">Disable</button></td></tr>`).join('') || '<tr><td colspan="7">No promocodes configured.</td></tr>';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  promoCodesTable.innerHTML = (data.promoCodes || []).map((promo) => {
+    const expired = Boolean(promo.valid_to) && new Date(`${promo.valid_to}T23:59:59`).getTime() < today.getTime();
+    const upcoming = Boolean(promo.valid_from) && new Date(`${promo.valid_from}T00:00:00`).getTime() > today.getTime();
+    const status = !promo.active ? '<span class="status-pill">Disabled</span>' : expired ? '<span class="status-pill danger">Expired</span>' : upcoming ? '<span class="status-pill">Scheduled</span>' : '<span class="status-pill success">Active</span>';
+    return `<tr><td><strong>${esc(promo.code)}</strong></td><td>${esc(promo.discount_type === 'PERCENT' ? `${promo.discount_value}%` : `INR ${money(promo.discount_value)}`)}${promo.max_discount_amount > 0 ? ` (cap INR ${money(promo.max_discount_amount)})` : ''}</td><td>INR ${money(promo.min_order_amount)}</td><td>${esc(promo.valid_from || 'Any')} - ${esc(promo.valid_to || 'Any')}</td><td>${Number(promo.stackable_with_promos) ? 'Promos' : 'No promos'} · ${Number(promo.stackable_with_discounts) ? 'Discounts' : 'No discounts'}</td><td>${status}</td><td><button type="button" class="mini-btn" data-edit-promo="${promo.id}">Edit</button><button type="button" class="danger-btn" data-delete-promo="${promo.id}">Disable</button></td></tr>`;
+  }).join('') || '<tr><td colspan="7">No promocodes configured.</td></tr>';
   state.promoCodes = data.promoCodes || [];
 }
 
@@ -636,12 +643,26 @@ const PRINT_STYLE_GROUPS = {
   bill: [['header', 'Restaurant header'], ['title', 'Document title'], ['details', 'Invoice / reference details'], ['items', 'Item headings and rows'], ['totals', 'Tax and totals'], ['footer', 'Footer']],
   kot: [['header', 'Kitchen header'], ['title', 'KOT title'], ['details', 'Date, reference, type and table'], ['items', 'Item headings and rows'], ['footer', 'Footer']]
 };
+const BILL_LINE_OPTIONS = [
+  ['restaurant_header','Restaurant name / legal name'], ['address','Address'], ['contact','Phone and email'], ['gstin','GSTIN'], ['fssai','FSSAI'],
+  ['document_title','Document title'], ['invoice_number','Invoice number'], ['datetime','Date / time'], ['order_table','Order / table'],
+  ['kot_references','KOT references'], ['customer','Customer'], ['payment','Payment method'], ['tax_details','SAC / place of supply / reverse charge'],
+  ['items','Item headings and rows'], ['service_charge','Service charge'], ['tax_breakup','Tax breakup'], ['grand_total','Grand total'], ['footer','Footer text'], ['signatory','Authorised signatory']
+];
+function renderBillLineVisibilityRows() {
+  const body = document.getElementById('billLineVisibilityRows'); if (!body) return;
+  body.innerHTML = BILL_LINE_OPTIONS.map(([key,label]) => `<tr><th scope="row">${esc(label)}</th><td><input id="settingBillLine${key.split('_').map(part=>part[0].toUpperCase()+part.slice(1)).join('')}" type="checkbox" aria-label="Print ${esc(label)}"></td><td>${key === 'invoice_number' ? '<div class="invoice-number-format-options"><label class="check-row"><input type="radio" name="billInvoiceNumberFormat" id="settingBillInvoiceNumberFull" value="FULL"><span>Full invoice number</span></label><label class="check-row"><input type="radio" name="billInvoiceNumberFormat" id="settingBillInvoiceNumberLast4" value="LAST4"><span>Last 4 digits</span></label></div>' : ''}</td></tr>`).join('');
+}
+renderBillLineVisibilityRows();
+const billLineId = (key) => `settingBillLine${key.split('_').map(part=>part[0].toUpperCase()+part.slice(1)).join('')}`;
+function loadBillLineOptions(settings) { BILL_LINE_OPTIONS.forEach(([key]) => setChecked(document.getElementById(billLineId(key)), settings[`bill_line_${key}`] === undefined ? true : settings[`bill_line_${key}`])); const format=String(settings.bill_invoice_number_format||'FULL').toUpperCase(); settingBillInvoiceNumberLast4.checked=format==='LAST4'; settingBillInvoiceNumberFull.checked=format!=='LAST4'; }
+function collectBillLineOptions() { return Object.fromEntries(BILL_LINE_OPTIONS.map(([key])=>[`bill_line_${key}`, checkedValue(document.getElementById(billLineId(key)))]).concat([['bill_invoice_number_format', settingBillInvoiceNumberLast4.checked?'LAST4':'FULL']])); }
 let activeReportType = "sales";
 let currentOperationalReport = { columns: [], rows: [] };
 const styleId = (prefix, section, name) => `setting${prefix[0].toUpperCase()}${prefix.slice(1)}${section[0].toUpperCase()}${section.slice(1)}${name}`;
 function renderPrintStyleRows(prefix) {
   const body = document.getElementById(`${prefix}PrintStyleRows`); if (!body) return;
-  body.innerHTML = PRINT_STYLE_GROUPS[prefix].map(([section, label]) => `<tr><th scope="row">${esc(label)}</th><td><select id="${styleId(prefix, section, 'FontType')}"><option value="FONT_A">Font A</option><option value="FONT_B">Font B</option></select></td><td><select id="${styleId(prefix, section, 'FontSize')}"><option value="SMALL">Small</option><option value="NORMAL">Normal</option><option value="LARGE">Large</option></select></td><td><select id="${styleId(prefix, section, 'Alignment')}"><option value="LEFT">Left</option><option value="CENTER">Centre</option><option value="RIGHT">Right</option></select></td><td><input id="${styleId(prefix, section, 'Bold')}" type="checkbox" aria-label="Bold ${esc(label)}"></td></tr>`).join('');
+  body.innerHTML = PRINT_STYLE_GROUPS[prefix].map(([section, label]) => `<tr><th scope="row">${esc(label)}</th><td><select id="${styleId(prefix, section, 'FontType')}"><option value="FONT_A">Font A</option><option value="FONT_B">Font B</option><option value="FONT_C">Font C</option><option value="FONT_D">Font D</option></select></td><td><select id="${styleId(prefix, section, 'FontSize')}"><option value="SMALL">Small</option><option value="COMPACT">Compact</option><option value="NORMAL">Normal</option><option value="LARGE">Large</option><option value="TALL">Tall</option></select></td><td><select id="${styleId(prefix, section, 'Alignment')}"><option value="LEFT">Left</option><option value="CENTER">Centre</option><option value="RIGHT">Right</option></select></td><td><input id="${styleId(prefix, section, 'Bold')}" type="checkbox" aria-label="Bold ${esc(label)}"></td></tr>`).join('');
 }
 renderPrintStyleRows('bill'); renderPrintStyleRows('kot');
 function printStyles(prefix) { return Object.fromEntries(PRINT_STYLE_GROUPS[prefix].map(([section]) => [section, { fontType: document.getElementById(styleId(prefix, section, 'FontType')).value, fontSize: document.getElementById(styleId(prefix, section, 'FontSize')).value, alignment: document.getElementById(styleId(prefix, section, 'Alignment')).value, bold: document.getElementById(styleId(prefix, section, 'Bold')).checked }])); }
@@ -657,6 +678,34 @@ async function renderRawPreview(prefix) {
 }
 function renderBillTemplatePreview(){return renderRawPreview('bill');}
 function renderKotTemplatePreview(){return renderRawPreview('kot');}
+
+function printLayoutPreviewHtml(prefix) {
+  const preview = document.getElementById(`${prefix}TemplatePreview`);
+  const paper = preview?.querySelector('.raw-paper');
+  if (!paper) throw new Error('Wait for the print preview to finish generating.');
+  const width = Number(document.getElementById(`setting${prefix[0].toUpperCase()+prefix.slice(1)}PreviewPaperWidth`)?.value || 58);
+  return `<!doctype html><html><head><title>${prefix.toUpperCase()} print preview</title><style>@page{size:${width}mm auto;margin:3mm}body{margin:0;font-family:"Courier New",monospace;font-size:10px}.paper{width:${Math.max(48,width-6)}mm;white-space:pre;overflow:hidden}.raw-line{display:block;min-height:1em}.align-center{text-align:center}.align-right{text-align:right}.bold{font-weight:700}.size-small{font-size:8px}.size-compact{font-size:9px}.size-large{font-size:13px}.size-tall{font-size:15px}</style></head><body><div class="paper">${paper.innerHTML}</div></body></html>`;
+}
+
+async function testLayoutPrint(prefix) {
+  await renderRawPreview(prefix);
+  const html = printLayoutPreviewHtml(prefix);
+  if (window.posDesktop?.printHtml) return window.posDesktop.printHtml(html);
+  const popup = window.open('', '_blank', 'width=520,height=720');
+  if (!popup) throw new Error('Printing was blocked. Enable pop-ups and try again.');
+  popup.document.write(html); popup.document.close(); popup.onload = () => { popup.focus(); popup.print(); };
+}
+
+async function saveLayoutPdf(prefix) {
+  await renderRawPreview(prefix);
+  if (!window.posDesktop?.savePdf) throw new Error('Save as PDF is available in the installed desktop POS app.');
+  return window.posDesktop.savePdf(printLayoutPreviewHtml(prefix), `${prefix}-layout-preview.pdf`);
+}
+
+document.getElementById('testBillLayoutPrint')?.addEventListener('click', () => testLayoutPrint('bill').catch((error)=>alert(error.message)));
+document.getElementById('saveBillLayoutPdf')?.addEventListener('click', () => saveLayoutPdf('bill').catch((error)=>alert(error.message)));
+document.getElementById('testKotLayoutPrint')?.addEventListener('click', () => testLayoutPrint('kot').catch((error)=>alert(error.message)));
+document.getElementById('saveKotLayoutPdf')?.addEventListener('click', () => saveLayoutPdf('kot').catch((error)=>alert(error.message)));
 
 settingBillTemplate?.addEventListener('change', renderBillTemplatePreview);
 settingBillDetailsLayout?.addEventListener('change', renderBillTemplatePreview);
@@ -699,7 +748,7 @@ function invoicePrintHtml(invoice, items, discounts = [], payments = [], reprint
   const paymentText = payments.map((payment) => `${payment.method}: ${Number(payment.amount || 0).toFixed(2)}`).join(', ') || invoice.payment_mode || 'CASH';
   const title = `${reprint ? `REPRINT #${Number(reprint.reprintNumber)} · ` : ''}${registered ? 'TAX INVOICE' : 'RECEIPT / BILL'}`;
   const template = String(profile.bill_template || 'BORDERED').toUpperCase();
-  const templateCss = template === 'BORDERLESS' ? '.items th,.items td{border:0;border-bottom:1px solid #bbb}.summary{border:0}' : template === 'COMPACT' ? 'body{font-size:9px}.items th,.items td{padding:2px 1px}.meta{grid-template-columns:22mm 1fr}.items th,.items td{border:0;border-bottom:1px dashed #999}' : '';
+  const templateCss = template === 'BORDERLESS' ? '.items th,.items td{border:0;border-bottom:1px solid #bbb}.summary{border:0}' : template === 'COMPACT' ? 'body{font-size:9px}.items th,.items td{padding:2px 1px}.meta{grid-template-columns:22mm 1fr}.items th,.items td{border:0;border-bottom:1px dashed #999}' : template === 'MODERN' ? 'h2{border:0;border-left:4px solid #111}.items th{background:#111;color:#fff}.summary{border:0;border-top:2px solid #111}' : template === 'MINIMAL' ? 'h2,.meta,.footer{border:0}.items th,.items td,.summary{border:0}.items th{border-bottom:1px solid #111}.grand{border-top:2px solid #111}' : '';
   const reprintBanner = reprint ? `<div style="border:2px solid #111;padding:3px;margin-bottom:4px;font-size:12px;font-weight:900;text-align:center">REPRINT #${Number(reprint.reprintNumber)}<br><small>${esc(formatDateTime(reprint.reprintedAt))} · ${esc(reprint.reprintedBy || '')}</small></div>` : '';
   const html = `<!doctype html><html><head><title>${esc(invoice.invoice_no || 'Invoice')}</title><style>
     @page{size:auto;margin:1.5mm}html,body{width:auto;max-width:100%;margin:0;padding:0;overflow:hidden}*{box-sizing:border-box;max-width:100%}body{color:#111;font:9px Arial,sans-serif;line-height:1.25;overflow-wrap:anywhere}header{text-align:center}h1{font-size:14px;margin:0 0 2px;text-transform:uppercase;overflow-wrap:anywhere}h2{font-size:12px;margin:5px 0 3px;border-top:1px solid #111;border-bottom:1px solid #111;padding:3px}p{margin:1px 0}.legal{font-weight:700}.meta{display:grid;grid-template-columns:35% minmax(0,65%);gap:2px 3px;border-bottom:1px dashed #111;padding:4px 0}.meta span,.meta b{min-width:0;overflow-wrap:anywhere}.meta b{font-weight:700}.items{width:100%;max-width:100%;table-layout:fixed;border-collapse:collapse;margin-top:4px}.items th,.items td{padding:2px 1px;border:1px solid #555;vertical-align:top;overflow-wrap:anywhere;word-break:break-word}.items th{text-align:center;font-size:8px}.items th:nth-child(1),.items td:nth-child(1){width:7%;text-align:center}.items th:nth-child(2),.items td:nth-child(2){width:43%}.items th:nth-child(3),.items td:nth-child(3){width:11%;text-align:center}.items th:nth-child(4),.items td:nth-child(4){width:18%;text-align:right}.items th:nth-child(5),.items td:nth-child(5){width:21%;text-align:right}.items small{display:block}.summary{border:1px solid #555;border-top:0;padding:3px}.summary p{display:flex;justify-content:space-between;gap:4px}.summary p b{white-space:nowrap}.grand{border-top:1px solid #111;margin-top:3px;padding-top:4px;font-weight:800;font-size:12px}.footer{text-align:center;border-top:1px dashed #111;margin-top:6px;padding-top:5px}.compliance{font-size:8px}${templateCss}@media print{button{display:none}}
@@ -989,6 +1038,7 @@ function renderSettings() {
   setChecked(settingBillPrintAuthorisedSignatory, settings.bill_print_authorised_signatory);
   settingBillFooterText.value = settings.bill_footer_text || 'THANK YOU. VISIT AGAIN.';
   settingBillTemplate.value = settings.bill_template || 'BORDERED';
+  loadBillLineOptions(settings);
   settingBillLeftMarginDots.value = settings.bill_left_margin_dots ?? '0';
   settingBillTrailingFeedLines.value = settings.bill_trailing_feed_lines ?? '0';
   settingBillCutMode.value = settings.bill_cut_mode === 'PRINTER_DEFAULT' ? 'NONE' : (settings.bill_cut_mode || 'NONE');
@@ -1008,6 +1058,13 @@ function renderSettings() {
   setChecked(settingServiceChargeEnabled, settings.service_charge_enabled);
   settingServiceChargePercent.value = settings.service_charge_percent || "0";
   setChecked(settingRoundOffEnabled, settings.round_off_enabled);
+  setChecked(settingBillingShowPromocode, settings.billing_show_promocode === undefined ? true : settings.billing_show_promocode);
+  setChecked(settingBillingShowRewardPoints, settings.billing_show_reward_points === undefined ? true : settings.billing_show_reward_points);
+  setChecked(settingBillingShowCashDiscount, settings.billing_show_cash_discount === undefined ? true : settings.billing_show_cash_discount);
+  setChecked(settingBillingShowPercentageDiscount, settings.billing_show_percentage_discount === undefined ? true : settings.billing_show_percentage_discount);
+  setChecked(settingBillingShowSettlePrint, settings.billing_show_settle_print === undefined ? true : settings.billing_show_settle_print);
+  setChecked(settingBillingShowSettleInvoice, settings.billing_show_settle_invoice === undefined ? true : settings.billing_show_settle_invoice);
+  setChecked(settingBillingShowSettleOnly, settings.billing_show_settle_only === undefined ? true : settings.billing_show_settle_only);
   setChecked(settingAutoPrintKot, settings.auto_print_kot);
   setChecked(settingPrintKotOnSave, settings.print_kot_on_save);
   setChecked(settingPrintKotOnSubmit, settings.print_kot_on_submit);
@@ -1097,6 +1154,7 @@ function collectSettings() {
     bill_print_authorised_signatory: checkedValue(settingBillPrintAuthorisedSignatory),
     bill_footer_text: settingBillFooterText.value.trim(),
     bill_template: settingBillTemplate.value,
+    ...collectBillLineOptions(),
     bill_left_margin_dots: settingBillLeftMarginDots.value || '0',
     bill_trailing_feed_lines: settingBillTrailingFeedLines.value || '0',
     bill_cut_mode: settingBillCutMode.value,
@@ -1115,6 +1173,13 @@ function collectSettings() {
     service_charge_enabled: checkedValue(settingServiceChargeEnabled),
     service_charge_percent: settingServiceChargePercent.value,
     round_off_enabled: checkedValue(settingRoundOffEnabled),
+    billing_show_promocode: checkedValue(settingBillingShowPromocode),
+    billing_show_reward_points: checkedValue(settingBillingShowRewardPoints),
+    billing_show_cash_discount: checkedValue(settingBillingShowCashDiscount),
+    billing_show_percentage_discount: checkedValue(settingBillingShowPercentageDiscount),
+    billing_show_settle_print: checkedValue(settingBillingShowSettlePrint),
+    billing_show_settle_invoice: checkedValue(settingBillingShowSettleInvoice),
+    billing_show_settle_only: checkedValue(settingBillingShowSettleOnly),
     auto_print_kot: checkedValue(settingAutoPrintKot),
     print_kot_on_save: checkedValue(settingPrintKotOnSave),
     print_kot_on_submit: checkedValue(settingPrintKotOnSubmit),
@@ -1157,8 +1222,8 @@ function collectSettings() {
 const SETTINGS_KEYS_BY_SECTION = {
   profile: ["restaurant_display_name", "legal_name", "gstin", "fssai_license_no", "state_code", "address_line_1", "address_line_2", "city", "state", "country", "phone", "email", "currency", "timezone", "logo_path"],
   pos: ["default_order_type", "allow_non_invoice_orders", "allow_discount", "allow_manual_price_override", "allow_refund", "allow_order_cancel", "require_manager_pin_for_discount", "require_manager_pin_for_refund", "require_manager_pin_for_void", "require_clock_in_before_order"],
-  billing: ["invoice_prefix", "invoice_reset_frequency", "show_tax_on_bill", "tax_name", "tax_rate", "sac_code", "show_qr_on_bill", "qr_require_table_pin", "qr_session_minutes", "qr_ordering_enabled", "qr_pending_order_limit", "upi_id", "service_charge_enabled", "service_charge_percent", "round_off_enabled"],
-  "bill-print": ["bill_template", "bill_print_contact", "bill_print_kot_references", "bill_compact_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text", "bill_left_margin_dots", "bill_trailing_feed_lines", "bill_cut_mode", "bill_print_width_58", "bill_print_width_80", "bill_font_type", "bill_font_size", "bill_line_spacing_dots", "bill_details_layout", ...Object.keys(flatPrintStyles('bill'))],
+  billing: ["invoice_prefix", "invoice_reset_frequency", "show_tax_on_bill", "tax_name", "tax_rate", "sac_code", "show_qr_on_bill", "qr_require_table_pin", "qr_session_minutes", "qr_ordering_enabled", "qr_pending_order_limit", "upi_id", "service_charge_enabled", "service_charge_percent", "round_off_enabled", "billing_show_promocode", "billing_show_reward_points", "billing_show_cash_discount", "billing_show_percentage_discount", "billing_show_settle_print", "billing_show_settle_invoice", "billing_show_settle_only"],
+  "bill-print": ["bill_template", "bill_print_contact", "bill_print_kot_references", "bill_compact_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text", ...BILL_LINE_OPTIONS.map(([key])=>`bill_line_${key}`), "bill_invoice_number_format", "bill_left_margin_dots", "bill_trailing_feed_lines", "bill_cut_mode", "bill_print_width_58", "bill_print_width_80", "bill_font_type", "bill_font_size", "bill_line_spacing_dots", "bill_details_layout", ...Object.keys(flatPrintStyles('bill'))],
   kot: ["auto_print_kot", "print_kot_on_save", "print_kot_on_submit", "allow_kot_reprint", "kot_header_text", "kot_footer_text", "kot_template", "kot_print_table", "kot_print_customer", "kot_print_kitchen", "kot_compact_spacing", "kot_left_margin_dots", "kot_trailing_feed_lines", "kot_cut_mode", "kot_print_width_58", "kot_print_width_80", "kot_font_type", "kot_font_size", "kot_line_spacing_dots", ...Object.keys(flatPrintStyles('kot'))],
   online: ["mobile_app_enabled", "online_order_enabled", "online_storefront_slug", "online_theme", "online_primary_color", "online_accent_color", "online_logo_path", "online_payment_methods", "online_require_otp", "online_allow_loyalty_credit", "online_delivery_enabled", "online_takeaway_enabled", "online_min_order_amount"]
 };

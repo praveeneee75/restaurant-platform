@@ -910,7 +910,7 @@ function normaliseSettingsInput(input) {
     }
     if (key.endsWith('_font_type')) {
       const font = String(value || '').toUpperCase();
-      if (!['FONT_A', 'FONT_B'].includes(font)) throw new Error(`${key} is invalid`);
+      if (!['FONT_A', 'FONT_B', 'FONT_C', 'FONT_D'].includes(font)) throw new Error(`${key} is invalid`);
       output[key] = font;
       return;
     }
@@ -930,6 +930,12 @@ function normaliseSettingsInput(input) {
       const detailsLayout = String(value || '').toUpperCase();
       if (!['TWO_COLUMN', 'STACKED'].includes(detailsLayout)) throw new Error('bill_details_layout is invalid');
       output[key] = detailsLayout;
+      return;
+    }
+    if (key === 'bill_invoice_number_format') {
+      const format = String(value || '').toUpperCase();
+      if (!['FULL', 'LAST4'].includes(format)) throw new Error('bill_invoice_number_format is invalid');
+      output[key] = format;
       return;
     }
     if (key === 'online_theme') {
@@ -1240,6 +1246,17 @@ function nextStandaloneOrderIdentity(db) {
   );
   const customerRef = `A${sequence}`;
   return { orderSequence: sequence, customerRef, orderReference: `${sequence}-${customerRef}` };
+}
+
+function promoteDraftOrderIdentity(db, actor, orderId) {
+  const order = db.prepare('SELECT table_id, order_reference FROM orders WHERE id = ?').get(orderId);
+  if (!order) throw new Error('Order not found');
+  if (order.order_reference && !String(order.order_reference).startsWith('DRAFT-')) return order.order_reference;
+  const identity = order.table_id ? nextOrderIdentity(db, order.table_id) : nextStandaloneOrderIdentity(db);
+  db.prepare('UPDATE orders SET order_sequence = ?, customer_ref = ?, order_reference = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+    .run(identity.orderSequence, identity.customerRef, identity.orderReference, orderId);
+  writeAudit(db, actor, 'PROMOTE_DRAFT', 'ORDER', orderId, { orderReference: order.order_reference || null }, { orderReference: identity.orderReference });
+  return identity.orderReference;
 }
 
 function touchDeviceSession(db, actor, req, deviceName) {
@@ -3165,13 +3182,21 @@ function getThermalSectionStyles(db, prefix) {
   const sections = prefix === 'kot' ? ['header', 'title', 'details', 'items', 'footer'] : ['header', 'title', 'details', 'items', 'totals', 'footer'];
   const defaultAlignment = { header: 'CENTER', title: 'CENTER', details: prefix === 'kot' ? 'CENTER' : 'LEFT', items: 'LEFT', totals: 'LEFT', footer: 'CENTER' };
   return Object.fromEntries(sections.map((section) => {
-    const fontType = String(getConfigValue(db, `${prefix}_${section}_font_type`, 'FONT_A')).toUpperCase() === 'FONT_B' ? 'FONT_B' : 'FONT_A';
+    const requestedFont = String(getConfigValue(db, `${prefix}_${section}_font_type`, 'FONT_A')).toUpperCase();
+    const fontType = ['FONT_A', 'FONT_B', 'FONT_C', 'FONT_D'].includes(requestedFont) ? requestedFont : 'FONT_A';
     const rawSize = String(getConfigValue(db, `${prefix}_${section}_font_size`, section === 'title' && prefix === 'kot' ? 'LARGE' : 'NORMAL')).toUpperCase();
-    const fontSize = ['SMALL', 'NORMAL', 'LARGE'].includes(rawSize) ? rawSize : 'NORMAL';
+    const fontSize = ['SMALL', 'COMPACT', 'NORMAL', 'LARGE', 'TALL'].includes(rawSize) ? rawSize : 'NORMAL';
     const rawAlignment = String(getConfigValue(db, `${prefix}_${section}_alignment`, defaultAlignment[section])).toUpperCase();
     const alignment = ['LEFT', 'CENTER', 'RIGHT'].includes(rawAlignment) ? rawAlignment : defaultAlignment[section];
     return [section, { fontType, fontSize, alignment, bold: getBooleanConfig(db, `${prefix}_${section}_bold`, ['header', 'title'].includes(section)) }];
   }));
+}
+function getBillLineOptions(db) {
+  const keys = ['restaurant_header','address','contact','gstin','fssai','document_title','invoice_number','datetime','order_table','kot_references','customer','payment','tax_details','items','service_charge','tax_breakup','grand_total','footer','signatory'];
+  return {
+    lineVisibility: Object.fromEntries(keys.map((key) => [key, getBooleanConfig(db, `bill_line_${key}`, true)])),
+    invoiceNumberFormat: String(getConfigValue(db, 'bill_invoice_number_format', 'FULL')).toUpperCase() === 'LAST4' ? 'LAST4' : 'FULL'
+  };
 }
 
 app.get('/print-jobs/pending', (req, res) => {
@@ -3207,7 +3232,7 @@ app.get('/print-jobs/pending', (req, res) => {
           ? String(getConfigValue(db, `${prefix}_cut_mode`, 'NONE')).toUpperCase() : 'NONE',
         printWidth58: Math.max(24, Math.min(32, Number(getConfigValue(db, `${prefix}_print_width_58`, '32')) || 32)),
         printWidth80: Math.max(32, Math.min(48, Number(getConfigValue(db, `${prefix}_print_width_80`, '48')) || 48)),
-        fontType: String(getConfigValue(db, `${prefix}_font_type`, 'FONT_A')).toUpperCase() === 'FONT_B' ? 'FONT_B' : 'FONT_A',
+        fontType: ['FONT_A', 'FONT_B', 'FONT_C', 'FONT_D'].includes(String(getConfigValue(db, `${prefix}_font_type`, 'FONT_A')).toUpperCase()) ? String(getConfigValue(db, `${prefix}_font_type`, 'FONT_A')).toUpperCase() : 'FONT_A',
         fontSize: ['COMPACT', 'NORMAL', 'TALL'].includes(String(getConfigValue(db, `${prefix}_font_size`, 'NORMAL')).toUpperCase()) ? String(getConfigValue(db, `${prefix}_font_size`, 'NORMAL')).toUpperCase() : 'NORMAL',
         lineSpacingDots: Math.max(16, Math.min(60, Number(getConfigValue(db, `${prefix}_line_spacing_dots`, '24')) || 24)),
         detailsLayout: prefix === 'bill' && String(getConfigValue(db, 'bill_details_layout', 'TWO_COLUMN')).toUpperCase() === 'STACKED' ? 'STACKED' : 'TWO_COLUMN',
@@ -3903,7 +3928,9 @@ app.get('/admin/promo-codes', (req, res) => {
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
-    const rows = db.prepare(`SELECT id, code, discount_value, discount_type, min_order_amount, max_discount_amount, valid_from, valid_to, stackable_with_promos, stackable_with_discounts, active, created_at FROM promo_codes ${includeInactive === 'true' ? '' : 'WHERE active = 1'} ORDER BY code`).all();
+    const rows = db.prepare(`SELECT id, code, discount_value, discount_type, min_order_amount, max_discount_amount, valid_from, valid_to, stackable_with_promos, stackable_with_discounts, active, created_at,
+      CASE WHEN active = 0 THEN 'DISABLED' WHEN valid_to IS NOT NULL AND valid_to < date('now','localtime') THEN 'EXPIRED' WHEN valid_from IS NOT NULL AND valid_from > date('now','localtime') THEN 'SCHEDULED' ELSE 'ACTIVE' END AS effective_status
+      FROM promo_codes ${includeInactive === 'true' ? '' : 'WHERE active = 1'} ORDER BY code`).all();
     res.json({ success: true, promoCodes: rows });
   } catch (err) { sendError(res, err); } finally { db.close(); }
 });
@@ -4861,8 +4888,8 @@ app.post('/admin/printers/layout-preview', (req, res) => {
   }
   const type = String(kind || '').toUpperCase() === 'KOT' ? 'KOT' : 'BILL';
   const safeStyles = Object.fromEntries(Object.entries(layout.styles || {}).map(([section, style]) => [section, {
-    fontType: String(style?.fontType || '').toUpperCase() === 'FONT_B' ? 'FONT_B' : 'FONT_A',
-    fontSize: ['SMALL', 'NORMAL', 'LARGE'].includes(String(style?.fontSize || '').toUpperCase()) ? String(style.fontSize).toUpperCase() : 'NORMAL',
+    fontType: ['FONT_A', 'FONT_B', 'FONT_C', 'FONT_D'].includes(String(style?.fontType || '').toUpperCase()) ? String(style.fontType).toUpperCase() : 'FONT_A',
+    fontSize: ['SMALL', 'COMPACT', 'NORMAL', 'LARGE', 'TALL'].includes(String(style?.fontSize || '').toUpperCase()) ? String(style.fontSize).toUpperCase() : 'NORMAL',
     alignment: ['LEFT', 'CENTER', 'RIGHT'].includes(String(style?.alignment || '').toUpperCase()) ? String(style.alignment).toUpperCase() : 'LEFT',
     bold: style?.bold === true || style?.bold === 1 || style?.bold === '1'
   }]));
@@ -4872,7 +4899,7 @@ app.post('/admin/printers/layout-preview', (req, res) => {
     cutMode: ['NONE', 'PARTIAL', 'FULL'].includes(String(layout.cutMode || '').toUpperCase()) ? String(layout.cutMode).toUpperCase() : 'NONE',
     printWidth58: Math.max(24, Math.min(32, Number(layout.printWidth58) || 28)),
     printWidth80: Math.max(32, Math.min(48, Number(layout.printWidth80) || 38)),
-    fontType: String(layout.fontType || '').toUpperCase() === 'FONT_B' ? 'FONT_B' : 'FONT_A',
+    fontType: ['FONT_A', 'FONT_B', 'FONT_C', 'FONT_D'].includes(String(layout.fontType || '').toUpperCase()) ? String(layout.fontType).toUpperCase() : 'FONT_A',
     fontSize: ['COMPACT', 'NORMAL', 'TALL'].includes(String(layout.fontSize || '').toUpperCase()) ? String(layout.fontSize).toUpperCase() : 'NORMAL',
     lineSpacingDots: Math.max(16, Math.min(60, Number(layout.lineSpacingDots) || 24)),
     detailsLayout: String(layout.detailsLayout || '').toUpperCase() === 'STACKED' ? 'STACKED' : 'TWO_COLUMN', styles: safeStyles
@@ -4888,7 +4915,8 @@ app.post('/admin/printers/layout-preview', (req, res) => {
       gstin: getConfigValue(db, 'gstin', ''), fssaiLicenseNo: getConfigValue(db, 'fssai_license_no', ''), currency: getConfigValue(db, 'currency', 'INR'),
       footerText: type === 'BILL' ? getConfigValue(db, 'bill_footer_text', 'THANK YOU. VISIT AGAIN.') : '',
       compactKotReferences: getBooleanConfig(db, 'bill_compact_kot_references', true),
-      billTemplate: String(template || 'BORDERED').toUpperCase()
+      billTemplate: String(template || 'BORDERED').toUpperCase(),
+      ...getBillLineOptions(db)
     };
     const job = type === 'KOT' ? {
       type, paper_width_mm: Number(paperWidthMm) === 80 ? 80 : 58, ref_id: 'PREVIEW', created_at: '2026-07-22T10:30:00.000Z',
@@ -6205,6 +6233,7 @@ app.get('/orders/open', (req, res) => {
     }
     const items = order ? db.prepare(`
       SELECT oi.id AS order_item_id, oi.item_id AS id, i.name, oi.quantity, oi.price, oi.kot_id,
+             COALESCE(i.tax_mode, 'INCLUSIVE') AS tax_mode,
              COALESCE(oi.fulfillment_type, order_row.order_type, 'DINE_IN') AS fulfillment_type,
              COALESCE(k.suborder_no, k.id) AS kot_sequence,
              oi.combo_id, oi.combo_name, oi.combo_quantity, oi.notes
@@ -6260,7 +6289,39 @@ app.get('/orders/open', (req, res) => {
     });
     const customer = order?.customer_id ? customerWithBalance(db, db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id)) : null;
     const lock = tableId ? currentLockForTable(db, tableId) : null;
-    res.json({ success: true, order, items: [...plainItems, ...comboLines.values()], customer, lock });
+    const pricing = order ? calculateOrderPricing(db, order.id) : { listedSubtotal: 0, taxAmount: 0, payableSubtotal: 0, taxRate: 0 };
+    const discounts = order ? db.prepare(`
+      SELECT id, type, value, value_type, promo_code
+      FROM discounts
+      WHERE order_id = ?
+      ORDER BY id
+    `).all(order.id) : [];
+    const discountAmount = discounts.reduce((sum, discount) => {
+      const value = Number(discount.value || 0);
+      const amount = String(discount.value_type || '').toUpperCase() === 'PERCENT'
+        ? pricing.payableSubtotal * value / 100
+        : value;
+      return sum + Math.max(0, amount);
+    }, 0);
+    const serviceCharge = order ? serviceChargeForAmount(db, pricing.payableSubtotal) : 0;
+    const netBeforeRoundOff = Math.max(pricing.payableSubtotal + serviceCharge - Math.min(discountAmount, pricing.payableSubtotal + serviceCharge), 0);
+    const netPayable = order ? applyRoundOff(db, netBeforeRoundOff) : 0;
+    res.json({
+      success: true,
+      order,
+      items: [...plainItems, ...comboLines.values()],
+      customer,
+      lock,
+      pricing,
+      discounts,
+      adjustments: {
+        grossAmount: pricing.payableSubtotal,
+        discountAmount,
+        serviceCharge,
+        roundOff: netPayable - netBeforeRoundOff,
+        netPayable
+      }
+    });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -6827,18 +6888,7 @@ app.post('/orders/submit-kot', (req, res) => {
     db.transaction(() => {
       const safeFulfillmentType = fulfillmentType ? normaliseOrderType(fulfillmentType) : null;
       if (fulfillmentType && !safeFulfillmentType) throw new Error('Invalid KOT fulfilment type');
-      const orderIdentity = db.prepare('SELECT table_id, order_type, order_sequence, customer_ref, order_reference FROM orders WHERE id = ?').get(orderId);
-      if (!orderIdentity) throw new Error('Order not found');
-      if (!orderIdentity.order_reference || String(orderIdentity.order_reference).startsWith('DRAFT-')) {
-        const identity = orderIdentity.table_id ? nextOrderIdentity(db, orderIdentity.table_id) : nextStandaloneOrderIdentity(db);
-        db.prepare('UPDATE orders SET order_sequence = ?, customer_ref = ?, order_reference = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-          .run(identity.orderSequence, identity.customerRef, identity.orderReference, orderId);
-        writeAudit(db, actor, 'PROMOTE_DRAFT', 'ORDER', orderId, {
-          orderReference: orderIdentity.order_reference || null
-        }, {
-          orderReference: identity.orderReference
-        });
-      }
+      promoteDraftOrderIdentity(db, actor, orderId);
       kotResult = createKotJobs(db, orderId, safeFulfillmentType);
       deductInventoryForOrder(db, actor, orderId, 'KOT_SUBMIT');
       const order = db.prepare('SELECT order_type FROM orders WHERE id = ?').get(orderId);
@@ -6848,7 +6898,8 @@ app.post('/orders/submit-kot', (req, res) => {
       }
       writeAudit(db, actor, 'SUBMIT_KOT', 'ORDER', orderId);
     })();
-    res.json({ success: true, suborderNo: kotResult?.suborderNo || null, kotReference: kotResult?.kotReference || null, message: kotResult?.kotReference ? `KOT ${kotResult.kotReference} submitted` : 'KOT submitted' });
+    const updatedOrder = db.prepare('SELECT order_reference FROM orders WHERE id = ?').get(orderId);
+    res.json({ success: true, orderReference: updatedOrder?.order_reference || null, suborderNo: kotResult?.suborderNo || null, kotReference: kotResult?.kotReference || null, message: kotResult?.kotReference ? `KOT ${kotResult.kotReference} submitted` : 'KOT submitted' });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -6900,6 +6951,21 @@ app.post('/orders/final-bill', (req, res) => {
     const order = db.prepare("SELECT * FROM orders WHERE id = ? AND payment_status != 'PAID' AND status != 'CANCELLED'").get(orderId);
     if (!order) throw new Error('Open order not found');
     if (Number(order.billing_ready) === 1) throw new Error('Final bill has already been requested for this order');
+    const billPrinter = db.prepare("SELECT id, name, connection, address FROM printers WHERE type = 'BILL' AND active = 1 ORDER BY id LIMIT 1").get();
+    if (!billPrinter) throw new Error('Configure an active BILL printer before requesting Final Bill & Print');
+    const pendingKotCount = Number(db.prepare('SELECT COUNT(*) AS total FROM order_items WHERE order_id = ? AND kot_id IS NULL').get(orderId)?.total || 0);
+    let submittedKotReference = null;
+    if (pendingKotCount > 0) {
+      db.transaction(() => {
+        promoteDraftOrderIdentity(db, actor, orderId);
+        const kotResult = createKotJobs(db, orderId);
+        submittedKotReference = kotResult?.kotReference || null;
+        deductInventoryForOrder(db, actor, orderId, 'KOT_SUBMIT');
+        writeAudit(db, actor, 'SUBMIT_KOT', 'ORDER', orderId, null, { source: 'FINAL_BILL_PRINT', kotReference: submittedKotReference });
+      })();
+    }
+    const promotedOrder = db.prepare('SELECT order_reference FROM orders WHERE id = ?').get(orderId);
+    order.order_reference = promotedOrder?.order_reference || order.order_reference;
     const items = db.prepare('SELECT i.name, oi.quantity, oi.price FROM order_items oi JOIN items i ON i.id = oi.item_id WHERE oi.order_id = ? AND oi.kot_id IS NOT NULL ORDER BY oi.id').all(orderId);
     if (!items.length) throw new Error('Submit a KOT before requesting the final bill');
     const grossAmount = items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.price || 0), 0);
@@ -6910,24 +6976,14 @@ app.post('/orders/final-bill', (req, res) => {
     const payable = applyRoundOff(db, payableBeforeRoundOff);
     const roundOff = payable - payableBeforeRoundOff;
     const customer = order.customer_id ? db.prepare('SELECT name, phone FROM customers WHERE id = ?').get(order.customer_id) : null;
-    const billPrinter = db.prepare("SELECT id, name, connection, address FROM printers WHERE type = 'BILL' AND active = 1 ORDER BY id LIMIT 1").get();
-    if (!billPrinter) throw new Error('Configure an active BILL printer before requesting Final Bill & Print');
     const kotReferences = db.prepare(`SELECT GROUP_CONCAT(kot_ref, ', ') AS kot_refs FROM (SELECT DISTINCT COALESCE(o.order_reference, CAST(o.id AS TEXT)) || '-' || COALESCE(k.suborder_no, k.id) AS kot_ref FROM kots k JOIN orders o ON o.id = k.order_id WHERE k.order_id = ? ORDER BY COALESCE(k.suborder_no, k.id))`).get(orderId)?.kot_refs || '';
     let printQueued = false;
     db.transaction(() => {
-    const savedItems = db.prepare('SELECT id FROM order_items WHERE order_id = ? AND kot_id IS NULL').all(orderId);
-    if (savedItems.length) {
-      const savedItemIds = savedItems.map((item) => Number(item.id));
-      const placeholders = savedItemIds.map(() => '?').join(',');
-      db.prepare(`DELETE FROM order_item_modifiers WHERE order_item_id IN (${placeholders})`).run(...savedItemIds);
-      db.prepare('DELETE FROM order_items WHERE order_id = ? AND kot_id IS NULL').run(orderId);
-      writeAudit(db, actor, 'DISCARD', 'ORDER_DRAFT_ITEMS', orderId, { itemCount: savedItemIds.length }, { reason: 'Final Bill and Print' });
-    }
     if (billPrinter) {
       db.prepare("INSERT INTO print_jobs (type, ref_id, kitchen_id, printer_id, payload, status) VALUES ('BILL', ?, NULL, ?, ?, 'PENDING')").run(orderId, billPrinter.id, JSON.stringify({
         orderId, orderReference: order.order_reference || String(orderId), invoiceNo: `FINAL-${order.order_reference || orderId}`, finalBill: true, items,
         printer: { name: billPrinter.name, connection: billPrinter.connection, address: billPrinter.address },
-        restaurantProfile: { displayName:getConfigValue(db,'restaurant_display_name',''), legalName:getConfigValue(db,'legal_name',''), gstin:getConfigValue(db,'gstin',''), fssaiLicenseNo:getConfigValue(db,'fssai_license_no',''), stateCode:getConfigValue(db,'state_code','33'), sacCode:getConfigValue(db,'sac_code','996331'), addressLine1:getConfigValue(db,'address_line_1',''), addressLine2:getConfigValue(db,'address_line_2',''), city:getConfigValue(db,'city',''), state:getConfigValue(db,'state',''), country:getConfigValue(db,'country',''), phone:getConfigValue(db,'phone',''), email:getConfigValue(db,'email',''), currency:getConfigValue(db,'currency','INR'), showTaxOnBill:getBooleanConfig(db,'show_tax_on_bill',true), printContact:getBooleanConfig(db,'bill_print_contact',true), printKotReferences:getBooleanConfig(db,'bill_print_kot_references',true), compactKotReferences:getBooleanConfig(db,'bill_compact_kot_references',true), printCustomer:getBooleanConfig(db,'bill_print_customer',true), printPayment:false, printAuthorisedSignatory:getBooleanConfig(db,'bill_print_authorised_signatory',true), footerText:getConfigValue(db,'bill_footer_text','THANK YOU. VISIT AGAIN.'), billTemplate:getConfigValue(db,'bill_template','BORDERED') },
+        restaurantProfile: { displayName:getConfigValue(db,'restaurant_display_name',''), legalName:getConfigValue(db,'legal_name',''), gstin:getConfigValue(db,'gstin',''), fssaiLicenseNo:getConfigValue(db,'fssai_license_no',''), stateCode:getConfigValue(db,'state_code','33'), sacCode:getConfigValue(db,'sac_code','996331'), addressLine1:getConfigValue(db,'address_line_1',''), addressLine2:getConfigValue(db,'address_line_2',''), city:getConfigValue(db,'city',''), state:getConfigValue(db,'state',''), country:getConfigValue(db,'country',''), phone:getConfigValue(db,'phone',''), email:getConfigValue(db,'email',''), currency:getConfigValue(db,'currency','INR'), showTaxOnBill:getBooleanConfig(db,'show_tax_on_bill',true), printContact:getBooleanConfig(db,'bill_print_contact',true), printKotReferences:getBooleanConfig(db,'bill_print_kot_references',true), compactKotReferences:getBooleanConfig(db,'bill_compact_kot_references',true), printCustomer:getBooleanConfig(db,'bill_print_customer',true), printPayment:false, printAuthorisedSignatory:getBooleanConfig(db,'bill_print_authorised_signatory',true), footerText:getConfigValue(db,'bill_footer_text','THANK YOU. VISIT AGAIN.'), billTemplate:getConfigValue(db,'bill_template','BORDERED'), ...getBillLineOptions(db) },
         customerId:order.customer_id || null, customerName:customer?.name || '', customerPhone:customer?.phone || '', tableNumber:order.table_no || '', orderType:order.order_type || 'DINE_IN', settledAt:new Date().toISOString(), serviceCharge, roundOff, payable, taxName:getConfigValue(db,'tax_name','GST'), taxRate:getNumberConfig(db,'tax_rate',getConfigValue(db,'gstin','') ? 5 : 0), paymentMode:'Pending settlement', kotReferences
       }));
       printQueued = true;
@@ -6943,7 +6999,7 @@ app.post('/orders/final-bill', (req, res) => {
     });
     })();
     writeAudit(db, actor, 'FINAL_BILL_REQUEST', 'ORDER', orderId, null, { printQueued, payable });
-    res.json({ success:true, billingReady:true, printQueued, message:'Final bill sent to the configured BILL printer. Order marked ready for billing.' });
+    res.json({ success:true, billingReady:true, printQueued, submittedKotReference, message:`${submittedKotReference ? `KOT ${submittedKotReference} submitted. ` : ''}Final bill sent to the configured BILL printer. Order marked ready for billing.` });
   } catch (err) { sendError(res, err); }
   finally { db.close(); }
 });
@@ -7248,6 +7304,7 @@ app.post('/orders/settle', async (req, res) => {
           printAuthorisedSignatory: getBooleanConfig(db, 'bill_print_authorised_signatory', true),
           footerText: getConfigValue(db, 'bill_footer_text', 'THANK YOU. VISIT AGAIN.')
           ,billTemplate: getConfigValue(db, 'bill_template', 'BORDERED')
+          ,...getBillLineOptions(db)
         },
         payments,
         customerId: linkedCustomerId || null,

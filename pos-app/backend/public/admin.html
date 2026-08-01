@@ -23,6 +23,7 @@
         <button type="button" class="admin-category-btn active" data-nav-category="menu">Menu Setup</button>
         <button type="button" class="admin-category-btn" data-nav-category="tables">Table Management</button>
         <button type="button" class="admin-category-btn" data-nav-category="users">User Management</button>
+        <button type="button" class="admin-category-btn" data-nav-category="customers">Customers</button>
         <button type="button" class="admin-category-btn" data-nav-category="business">Business</button>
         <button type="button" class="admin-category-btn" data-nav-category="printing">Printer Configuration</button>
         <button type="button" class="admin-category-btn" data-nav-category="settings">Settings</button>
@@ -50,6 +51,11 @@
         <button class="nav-btn" data-view="staff-cash">Staff & Cash</button>
         <button class="nav-btn" data-view="devices">Devices</button>
         <button class="nav-btn" data-view="users">Users</button>
+      </div>
+
+      <div class="nav-group" data-nav-group="customers" hidden>
+        <p class="nav-group-title">Customers</p>
+        <a class="nav-link" href="/customer.html">Customer Management</a>
       </div>
 
       <div class="nav-group" data-nav-group="business" hidden>
@@ -95,7 +101,6 @@
         <a class="nav-link" href="/pos-live.html">Open POS</a>
         <a class="nav-link" href="/orders.html">Orders</a>
         <a class="nav-link" href="/kds.html">Open KDS</a>
-        <a class="nav-link" href="/customer.html">Customers</a>
       </div>
       </nav>
     </div>
@@ -502,6 +507,17 @@
             <label class="check-row"><input id="settingServiceChargeEnabled" type="checkbox"> Enable service charge</label>
             <label>Service charge %<input id="settingServiceChargePercent" type="number" min="0" max="100" step="0.01"></label>
             <label class="check-row"><input id="settingRoundOffEnabled" type="checkbox"> Round off bill</label>
+            <fieldset><legend>Billing page discounts</legend>
+              <label class="check-row"><input id="settingBillingShowPromocode" type="checkbox"> Show promocode</label>
+              <label class="check-row"><input id="settingBillingShowRewardPoints" type="checkbox"> Show reward points</label>
+              <label class="check-row"><input id="settingBillingShowCashDiscount" type="checkbox"> Show cash discount</label>
+              <label class="check-row"><input id="settingBillingShowPercentageDiscount" type="checkbox"> Show percentage discount</label>
+            </fieldset>
+            <fieldset><legend>Billing settlement buttons</legend>
+              <label class="check-row"><input id="settingBillingShowSettlePrint" type="checkbox"> Show Settle &amp; Print</label>
+              <label class="check-row"><input id="settingBillingShowSettleInvoice" type="checkbox"> Show Settle &amp; Create Invoice</label>
+              <label class="check-row"><input id="settingBillingShowSettleOnly" type="checkbox"> Show Settle</label>
+            </fieldset>
           </article>
 
           <article class="settings-section" data-settings-panel="promos" hidden>
@@ -542,7 +558,7 @@
               <p class="settings-help">Start with width 28 for 58 mm or 38 for 80 mm. Reduce the width if the right edge is clipped. Changes are applied to the next print job.</p>
               <label>58 mm printable characters<input id="settingKotPrintWidth58" type="number" min="24" max="32" step="1" value="32"></label>
               <label>80 mm printable characters<input id="settingKotPrintWidth80" type="number" min="32" max="48" step="1" value="48"></label>
-              <label>Printer font type<select id="settingKotFontType"><option value="FONT_A">Font A — standard</option><option value="FONT_B">Font B — condensed</option></select></label>
+              <label>Printer font type<select id="settingKotFontType"><option value="FONT_A">Font A — standard</option><option value="FONT_B">Font B — condensed</option><option value="FONT_C">Font C — alternate</option><option value="FONT_D">Font D — alternate condensed</option></select></label>
               <label>Font size<select id="settingKotFontSize"><option value="COMPACT">Compact</option><option value="NORMAL">Normal</option><option value="TALL">Tall</option></select></label>
               <label>Line spacing (printer dots)<input id="settingKotLineSpacingDots" type="number" min="16" max="60" step="1" value="24"></label>
               <label>Left margin (printer dots)<input id="settingKotLeftMarginDots" type="number" min="0" max="255" step="1" value="0"></label>
@@ -554,13 +570,14 @@
               <div class="table-panel"><table class="print-style-table"><thead><tr><th>Lines</th><th>Font</th><th>Size</th><th>Alignment</th><th>Bold</th></tr></thead><tbody id="kotPrintStyleRows"></tbody></table></div>
             </fieldset>
             <label>Preview paper width<select id="settingKotPreviewPaperWidth"><option value="58">58 mm</option><option value="80">80 mm</option></select></label>
+            <div class="print-preview-actions"><button type="button" class="secondary-btn" id="testKotLayoutPrint">Test Print</button><button type="button" class="secondary-btn" id="saveKotLayoutPdf">Save as PDF</button></div>
             <div id="kotTemplatePreview" class="bill-template-preview" aria-label="KOT template preview"></div>
           </article>
 
           <article class="settings-section" data-settings-panel="bill-print" hidden>
             <h3>Bill Configuration</h3>
             <p class="settings-help">Supplier identity, GSTIN, FSSAI, invoice number/date, SAC, place of supply and statutory tax breakup are always printed on GST tax invoices.</p>
-            <label>Bill template<select id="settingBillTemplate"><option value="BORDERED">Classic with borders</option><option value="BORDERLESS">Classic without line borders</option><option value="COMPACT">Compact thermal</option></select></label>
+            <label>Bill template<select id="settingBillTemplate"><option value="BORDERED">Classic with borders</option><option value="BORDERLESS">Classic without line borders</option><option value="COMPACT">Compact thermal</option><option value="MODERN">Modern clean</option><option value="MINIMAL">Minimal receipt</option></select></label>
             <label class="check-row"><input id="settingBillPrintContact" type="checkbox"> Print restaurant phone and email</label>
             <label class="check-row"><input id="settingBillPrintKotReferences" type="checkbox"> Print KOT reference numbers</label>
             <label class="check-row"><input id="settingBillCompactKotReferences" type="checkbox"> Compact continuous KOT references (example: 1-A7-1,2)</label>
@@ -568,11 +585,15 @@
             <label class="check-row"><input id="settingBillPrintPayment" type="checkbox"> Print payment method</label>
             <label class="check-row"><input id="settingBillPrintAuthorisedSignatory" type="checkbox"> Print authorised-signatory line</label>
             <label>Bill footer text<input id="settingBillFooterText" maxlength="120" placeholder="THANK YOU. VISIT AGAIN."></label>
+            <fieldset><legend>Bill line visibility</legend>
+              <p class="settings-help">Select every line that should appear on printed bills, previews and PDFs.</p>
+              <div class="table-panel"><table class="print-style-table"><thead><tr><th>Bill line</th><th>Print</th><th>Format</th></tr></thead><tbody id="billLineVisibilityRows"></tbody></table></div>
+            </fieldset>
             <fieldset><legend>Thermal paper layout</legend>
               <p class="settings-help">Start with width 28 for 58 mm or 38 for 80 mm. Reduce the width if the right edge is clipped. RAW printing bypasses the Windows driver; select an application cut when the printer has a cutter.</p>
               <label>58 mm printable characters<input id="settingBillPrintWidth58" type="number" min="24" max="32" step="1" value="32"></label>
               <label>80 mm printable characters<input id="settingBillPrintWidth80" type="number" min="32" max="48" step="1" value="48"></label>
-              <label>Printer font type<select id="settingBillFontType"><option value="FONT_A">Font A — standard</option><option value="FONT_B">Font B — condensed</option></select></label>
+              <label>Printer font type<select id="settingBillFontType"><option value="FONT_A">Font A — standard</option><option value="FONT_B">Font B — condensed</option><option value="FONT_C">Font C — alternate</option><option value="FONT_D">Font D — alternate condensed</option></select></label>
               <label>Font size<select id="settingBillFontSize"><option value="COMPACT">Compact</option><option value="NORMAL">Normal</option><option value="TALL">Tall</option></select></label>
               <label>Line spacing (printer dots)<input id="settingBillLineSpacingDots" type="number" min="16" max="60" step="1" value="24"></label>
               <label>Bill details layout<select id="settingBillDetailsLayout"><option value="TWO_COLUMN">Two columns - compact</option><option value="STACKED">Single column - stacked</option></select></label>
@@ -586,6 +607,7 @@
             </fieldset>
             <label>Preview paper width<select id="settingBillPreviewPaperWidth"><option value="58">58 mm</option><option value="80">80 mm</option></select></label>
             <fieldset><legend>Invoice reprint security</legend><p class="settings-help">Cashiers must enter this six-digit PIN before reprinting a paid invoice. Only owners and managers can change it.</p><label>New six-digit reprint PIN<input id="settingInvoiceReprintPin" type="password" inputmode="numeric" minlength="6" maxlength="6" pattern="[0-9]{6}" autocomplete="new-password" placeholder="Leave blank to keep current PIN"></label><button type="button" class="secondary-btn" id="saveInvoiceReprintPin">Update reprint PIN</button><span id="invoiceReprintPinStatus" class="settings-help"></span></fieldset>
+            <div class="print-preview-actions"><button type="button" class="secondary-btn" id="testBillLayoutPrint">Test Print</button><button type="button" class="secondary-btn" id="saveBillLayoutPdf">Save as PDF</button></div>
             <div id="billTemplatePreview" class="bill-template-preview" aria-label="Bill template preview"></div>
           </article>
 

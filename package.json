@@ -37,6 +37,11 @@
     ,"test:latest-feedback": "node tests/latest-production-feedback-regression.js"
     ,"test:central-loyalty": "node tests/central-loyalty-regression.js"
     ,"test:printing": "node tests/thermal-escpos-regression.js"
+    ,"test:pos:layout": "node tests/pos-dine-layout-regression.js"
+    ,"test:printing:customisation": "node tests/print-customisation-regression.js"
+    ,"test:billing:workflow": "node tests/billing-workflow-config-regression.js"
+    ,"test:bill-lines": "node tests/bill-line-visibility-regression.js"
+    ,"test:packaged-startup": "node tests/packaged-startup-gate-regression.js"
     ,"test:whitelabel-branches": "node tests/whitelabel-branch-provisioning-regression.js"
   }
 }

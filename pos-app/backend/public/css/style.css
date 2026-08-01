@@ -350,6 +350,9 @@ button:hover,
 }
 
 .admin-category-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
   width: 100%;
   min-height: 42px;
   padding: 9px 10px;
@@ -423,10 +426,25 @@ button:hover,
 
 .admin-nav .nav-btn,
 .admin-nav .nav-link {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  color: var(--text);
+  opacity: 1;
+  text-align: left;
   font-family: inherit;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.25;
+}
+
+.admin-nav .nav-btn:hover,
+.admin-nav .nav-btn.active,
+.admin-nav .nav-link:hover,
+.admin-nav .nav-link:focus-visible {
+  background: #eaf1ff;
+  color: #1e3a8a;
 }
 
 .settings-save-status {
@@ -674,6 +692,22 @@ button:hover,
 .pos-mode-cashier-dine .pos-tables { display:none; }
 .pos-shell.pos-mode-cashier-dine { grid-template-columns:minmax(0,1fr) 500px; }
 .pos-mode-cashier-dine .parcel-intake-grid { grid-template-columns:minmax(170px,.55fr) minmax(260px,1.1fr) minmax(280px,1.2fr); }
+.pos-mode-direct-dine .pos-tables .category-strip {
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  overflow:auto;
+}
+.pos-mode-direct-dine .pos-tables .category-strip button { width:100%; text-align:left; }
+.pos-mode-direct-dine .pos-menu > .table-list {
+  display:flex;
+  flex-wrap:nowrap;
+  gap:8px;
+  min-height:72px;
+  max-height:112px;
+  overflow:auto;
+}
+.pos-mode-direct-dine .pos-menu > .table-list button { min-width:112px; }
 .billing-table-card[data-cashier-table-id] { cursor:pointer; }
 .pos-mode-parcel .parcel-intake {
   grid-column: 1 / -1;
@@ -874,7 +908,7 @@ button:hover,
   font-style: italic;
 }
 
-.billing-shell { display: grid; grid-template-columns: 180px minmax(0, 1fr) 500px; grid-template-rows: auto minmax(0, 1fr); min-height: 100vh; background: #f4f7fb; }.billing-shell > .app-home-nav { grid-column: 1 / -1; }
+.billing-shell { display: grid; grid-template-columns: 500px minmax(0, 1fr) 500px; grid-template-rows: auto minmax(0, 1fr); min-height: 100vh; background: #f4f7fb; }.billing-shell > .app-home-nav { grid-column: 1 / -1; }
 .billing-sidebar { padding: 20px 14px; background: #fff; border-right: 1px solid var(--border); }
 .billing-brand { padding: 8px 10px 24px; font-weight: 900; color: #123b8f; letter-spacing: .04em; }
 .billing-brand span { color: #e85d2a; }
@@ -962,6 +996,12 @@ button:hover,
 .app-home-brand small b { margin-left: 8px; color: #2563eb; }.app-home-nav [data-notification-count] { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 4px; border-radius: 999px; background: #f59e0b; color: #fff; font-size: 11px; }
 .billing-detail a[href*="/pos-live.html"] { display: none !important; }
 .billing-adjustments { margin: 16px 0; padding: 14px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }.billing-adjustments h3 { margin: 0 0 14px; }.billing-adjustment-grid { display: grid; gap: 7px; }.billing-adjustment-grid label { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: .9rem; font-weight: 700; }.field-help { color: var(--muted); font-size: .8rem; font-weight: 400; }.billing-adjustment-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: stretch; margin-bottom: 7px; }.billing-adjustment-row input { min-width: 0; width: 100%; }.billing-adjustment-row button { white-space: nowrap; }.billing-adjustments #billingAdjustmentStatus { min-height: 1.4em; margin: 8px 0 0; color: var(--muted); }
+.billing-discount-pair { display:grid; grid-template-columns:1fr; gap:12px; }
+.invoice-number-format-options { display:flex; flex-wrap:wrap; gap:10px 22px; align-items:center; }
+.invoice-number-format-options .check-row { display:inline-flex; width:auto; margin:0; gap:7px; align-items:center; white-space:nowrap; }
+.invoice-number-format-options input[type="radio"] { width:18px; height:18px; margin:0; }
+.print-preview-actions { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+.pos-non-dine-in .customer-panel > label:has(#redeemPoints), .pos-non-dine-in .pos-discount-tools, .pos-non-dine-in #discountStatus, .pos-non-dine-in #payableTotal, .pos-non-dine-in #paymentMode, .pos-non-dine-in #paymentAmount { display:none!important; }
 .pos-discount-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 10px; }.pos-discount-tools input:nth-of-type(2) { grid-column: 1; }.pos-discount-tools button:nth-of-type(2) { grid-column: 2; grid-row: 2; }.pos-discount-tools + p { margin: 6px 0; min-height: 18px; }
 
 @media (max-width: 1180px) {
@@ -988,13 +1028,14 @@ button:hover,
 @media (max-width: 1000px) { .billing-shell { grid-template-columns: 170px minmax(0, 1fr); }.billing-detail { grid-column: 1 / -1; border-top: 1px solid var(--border); border-left: 0; }.billing-empty { margin-top: 10px; } }
 @media (max-width: 850px) { .app-home-nav { align-items: stretch; flex-direction: column; }.app-home-nav nav { justify-content: flex-start; overflow-x: auto; flex-wrap: nowrap; }.app-home-nav a,.app-home-nav button { flex: 0 0 auto; } }
 @media (max-width: 650px) { .billing-shell { display: block; }.billing-sidebar { border-right: 0; border-bottom: 1px solid var(--border); }.billing-sidebar nav { display: flex; overflow-x: auto; }.billing-recent { display: none; }.billing-main { padding: 14px; }.billing-topbar, .billing-toolbar { align-items: stretch; flex-direction: column; }.billing-summary-panel { grid-template-columns: 1fr; }.billing-detail { padding: 14px; } }
+@media (max-width: 700px) { .billing-discount-pair { grid-template-columns:1fr; } }
 
 /* Release layout guards: keep navigation and form controls usable at narrow widths. */
 @media (min-width: 651px) and (max-width: 1180px) {
   .pos-shell:not(.pos-non-dine-in) { grid-template-columns: 190px minmax(0, 1fr) 420px; }
   .pos-shell.pos-non-dine-in:not(.pos-mode-parcel) { grid-template-columns: minmax(0, 1fr) 480px; }
   .pos-shell.pos-mode-parcel { grid-template-columns: minmax(0, 1fr) 480px; }
-  .billing-shell { grid-template-columns: 160px minmax(0, 1fr) 420px; }
+  .billing-shell { grid-template-columns: 420px minmax(0, 1fr) 420px; }
   .item-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
   .invoice-workspace { grid-template-columns: minmax(0, 1fr) minmax(280px, .8fr); }
 }

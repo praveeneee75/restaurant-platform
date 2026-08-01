@@ -10,7 +10,7 @@ document.querySelectorAll('[data-role-nav="admin"]').forEach((el) => { el.hidden
 document.querySelectorAll('[data-role-nav="availability"]').forEach((el) => { el.hidden = !['OWNER', 'MANAGER_1', 'MANAGER_2', 'CASHIER', 'CAPTAIN'].includes(String(sessionUser.role || '').toUpperCase()); });
 document.querySelectorAll('[data-role-nav="kds"]').forEach((el) => { el.hidden = !['OWNER', 'MANAGER_2', 'KITCHEN'].includes(String(sessionUser.role || '').toUpperCase()); });
 document.querySelectorAll('[data-logout]').forEach((button) => button.addEventListener('click', () => { localStorage.clear(); location.href = '/login.html'; }));
-const state = { tables: [], orders: [], selected: null, filter: 'ALL' };
+const state = { tables: [], orders: [], selected: null, filter: 'ALL', billingSettings: {} };
 const privilegedBillingRoles = new Set(['CASHIER', 'MANAGER_1', 'MANAGER_2', 'OWNER']);
 const canSettleAndPrint = privilegedBillingRoles.has(String(sessionUser.role || '').toUpperCase());
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -19,6 +19,7 @@ async function getJson(url) { const r = await fetch(url); const d = await r.json
 async function loadBillingQrSettings() {
   const data = await getJson(`/settings?restaurantId=${encodeURIComponent(restaurantId)}`);
   const settings = data.settings || {};
+  state.billingSettings = settings;
   billingQrEnabled.checked = !['0', 0, false, 'false'].includes(settings.qr_ordering_enabled);
   billingQrPendingLimit.value = settings.qr_pending_order_limit || 25;
 }
@@ -118,23 +119,42 @@ async function showSubmittedOrder(orderId) {
     return groups;
   }, new Map());
   const kotSections = [...kotGroups.entries()].map(([reference, kotItems]) => `<section class="bill-kot-group"><h3>KOT ${esc(reference)}</h3>${kotItems.map(i => `<div><span>${esc(i.name)} × ${i.quantity}</span><strong>${money(i.price * i.quantity)}</strong></div>`).join('')}</section>`).join('');
-  const submittedTotal = items.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
+  const listedTotal = items.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
+  const pricing = d.pricing || {};
+  const grossTotal = Number(pricing.payableSubtotal ?? listedTotal);
+  const persistedAdjustments = d.adjustments || {};
+  const submittedTotal = Number(persistedAdjustments.netPayable ?? grossTotal);
+  const persistedPromo = (d.discounts || []).find((discount) => String(discount.type || '').toUpperCase() === 'PROMO');
+  const persistedManual = (d.discounts || []).find((discount) => String(discount.type || '').toUpperCase() === 'MANUAL');
+  const enabled = (key) => !['0', 0, false, 'false'].includes(state.billingSettings[key] ?? '1');
   const cashierUrl = `/pos-live.html?mode=DINE_IN&layout=cashier&returnTo=billing&restaurantId=${encodeURIComponent(restaurantId)}&tableId=${encodeURIComponent(d.order.table_id || '')}&orderId=${encodeURIComponent(d.order.id)}`;
-  billingDetail.innerHTML = `<header><div><h2>${esc(d.order.order_reference || `Order ${d.order.id}`)}</h2><p>${esc(d.order.table_no || d.order.order_type)} · ${esc(d.customer?.name || 'No customer')}</p></div><div class="billing-detail-actions"><button type="button" class="secondary-btn" id="billingSplitBill">Split Bill</button><a class="primary-btn" href="${cashierUrl}">Open POS</a></div></header><div class="bill-lines">${kotSections || '<p>No submitted items</p>'}</div><div class="bill-total"><span>Submitted total</span><strong>${money(submittedTotal)}</strong></div><div class="billing-payment"><h3>Payment</h3><p class="billing-hint">Only KOT-submitted items are billed. Any saved draft items are discarded when settling.</p><select id="billingPaymentMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></select><input id="billingPaymentAmount" type="number" step="0.01" value="${submittedTotal.toFixed(2)}"><div class="billing-settlement-actions"><button id="settleWithoutInvoice" class="primary-btn" data-settlement-mode="NO_INVOICE" data-settle-order="${d.order.id}">Settle</button><button id="settleBilling" class="primary-btn" data-action-shortcut="F11" data-settlement-mode="INVOICE" data-settle-order="${d.order.id}">Settle &amp; Create Invoice</button><button id="settlePrintBilling" class="primary-btn" data-action-shortcut="F12" data-settlement-mode="PRINT" data-settle-order="${d.order.id}">Settle &amp; Print</button></div></div>`;
+  billingDetail.innerHTML = `<header><div><h2>${esc(d.order.order_reference || `Order ${d.order.id}`)}</h2><p>${esc(d.order.table_no || d.order.order_type)} · ${esc(d.customer?.name || 'No customer')}</p></div><div class="billing-detail-actions"><button type="button" class="secondary-btn" id="billingSplitBill">Split Bill</button><a class="primary-btn" href="${cashierUrl}">Open POS</a></div></header><div class="bill-lines">${kotSections || '<p>No submitted items</p>'}</div><div class="bill-total"><span>Payable total (including tax)</span><strong>${money(submittedTotal)}</strong></div><div class="billing-payment"><h3>Payment</h3><p class="billing-hint">Only KOT-submitted items are billed.</p><select id="billingPaymentMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></select><input id="billingPaymentAmount" type="number" step="0.01" value="${submittedTotal.toFixed(2)}"><div class="billing-settlement-actions">${enabled('billing_show_settle_print') ? `<button id="settlePrintBilling" class="primary-btn" data-action-shortcut="F12" data-settlement-mode="PRINT" data-settle-order="${d.order.id}">Settle &amp; Print</button>` : ''}${enabled('billing_show_settle_invoice') ? `<button id="settleBilling" class="primary-btn" data-action-shortcut="F11" data-settlement-mode="INVOICE" data-settle-order="${d.order.id}">Settle &amp; Create Invoice</button>` : ''}${enabled('billing_show_settle_only') ? `<button id="settleWithoutInvoice" class="primary-btn" data-settlement-mode="NO_INVOICE" data-settle-order="${d.order.id}">Settle</button>` : ''}</div></div>`;
   document.getElementById('billingSplitBill')?.addEventListener('click', () => openBillingSplit(d, items));
   const adjustments = document.createElement('section');
   adjustments.className = 'billing-adjustments';
+  adjustments.hidden = !['billing_show_promocode', 'billing_show_reward_points', 'billing_show_cash_discount', 'billing_show_percentage_discount'].some(enabled);
   adjustments.innerHTML = '<h3>Discounts and rewards</h3>'
     + '<div class="billing-adjustment-grid">'
-    + '<label for="billingPromoCode">Promocode <span class="field-help">Optional</span></label>'
-    + '<div class="billing-adjustment-row"><input id="billingPromoCode" type="text" maxlength="40" autocomplete="off" placeholder="Enter promocode"><button type="button" class="secondary-btn" id="applyBillingPromo">Apply promocode</button></div>'
-    + '<label for="billingCashDiscount">Cash discount amount <span class="field-help">INR</span></label>'
-    + '<div class="billing-adjustment-row"><input id="billingCashDiscount" type="number" min="0" step="0.01" value="0" inputmode="decimal" autocomplete="off" placeholder="Enter amount"><button type="button" class="secondary-btn" id="applyBillingCashDiscount">Apply cash discount</button></div>'
-    + '<label for="billingRedeemPoints">Reward points to redeem <span class="field-help">Whole points</span></label>'
-    + '<div class="billing-adjustment-row"><input id="billingRedeemPoints" type="number" min="0" step="1" value="0" inputmode="numeric" autocomplete="off" placeholder="Enter points"><button type="button" class="secondary-btn" id="applyBillingRedeemPoints">Apply reward points</button></div>'
+    + (enabled('billing_show_promocode') ? '<div class="billing-adjustment-option"><label for="billingPromoCode">Promocode <span class="field-help">Optional</span></label><div class="billing-adjustment-row"><input id="billingPromoCode" type="text" maxlength="40" autocomplete="off" placeholder="Enter promocode"><button type="button" class="secondary-btn" id="applyBillingPromo">Apply promocode</button></div></div>' : '')
+    + '<div class="billing-discount-pair">'
+    + (enabled('billing_show_cash_discount') ? '<div class="billing-adjustment-option"><label for="billingCashDiscount">Cash discount amount <span class="field-help">INR</span></label><div class="billing-adjustment-row"><input id="billingCashDiscount" type="number" min="0" step="0.01" value="0" inputmode="decimal" placeholder="Enter amount"><button type="button" class="secondary-btn" id="applyBillingCashDiscount">Apply cash discount</button></div></div>' : '')
+    + (enabled('billing_show_percentage_discount') ? '<div class="billing-adjustment-option"><label for="billingPercentageDiscount">Percentage discount <span class="field-help">%</span></label><div class="billing-adjustment-row"><input id="billingPercentageDiscount" type="number" min="0" max="100" step="0.01" value="0" inputmode="decimal" placeholder="Enter percent"><button type="button" class="secondary-btn" id="applyBillingPercentageDiscount">Apply percentage</button></div></div>' : '')
+    + '</div>'
+    + (enabled('billing_show_reward_points') ? '<div class="billing-adjustment-option"><label for="billingRedeemPoints">Reward points to redeem <span class="field-help">Whole points</span></label><div class="billing-adjustment-row"><input id="billingRedeemPoints" type="number" min="0" step="1" value="0" inputmode="numeric" placeholder="Enter points"><button type="button" class="secondary-btn" id="applyBillingRedeemPoints">Apply reward points</button></div></div>' : '')
     + '</div><p class="billing-hint">Enter only the adjustment you want to use. Each adjustment is checked again when the bill is settled.</p><p id="billingAdjustmentStatus" role="status" aria-live="polite"></p>';
   billingDetail.querySelector('.billing-payment')?.before(adjustments);
-  document.getElementById('settlePrintBilling').hidden = !canSettleAndPrint;
+  const promoInput = document.getElementById('billingPromoCode');
+  const cashDiscountInput = document.getElementById('billingCashDiscount');
+  const adjustmentStatus = document.getElementById('billingAdjustmentStatus');
+  if (persistedPromo && promoInput) promoInput.value = persistedPromo.promo_code || '';
+  if (persistedManual && cashDiscountInput && String(persistedManual.value_type || '').toUpperCase() !== 'PERCENT') cashDiscountInput.value = Number(persistedManual.amount || persistedManual.value || 0).toFixed(2);
+  if (persistedPromo || persistedManual) {
+    const parts = [];
+    if (persistedPromo) parts.push(`Promocode ${persistedPromo.promo_code || ''} applied`);
+    if (persistedManual) parts.push(`cash discount ${money(persistedManual.amount || 0)} applied`);
+    adjustmentStatus.textContent = `${parts.join('; ')}. Payable: ${money(submittedTotal)}.`;
+  }
+  if (document.getElementById('settlePrintBilling')) document.getElementById('settlePrintBilling').hidden = !canSettleAndPrint;
   document.getElementById('applyBillingPromo')?.addEventListener('click', async () => {
     const status = document.getElementById('billingAdjustmentStatus');
     const code = document.getElementById('billingPromoCode').value.trim().toUpperCase();
@@ -157,6 +177,18 @@ async function showSubmittedOrder(orderId) {
       if (!response.ok || result.success === false) throw Error(result.message || 'Cash discount could not be applied');
       document.getElementById('billingPaymentAmount').value = Number(result.netPayable).toFixed(2);
       status.textContent = `Cash discount applied: ${money(result.discountAmount)}.`;
+    } catch (error) { status.textContent = error.message; }
+  });
+  document.getElementById('applyBillingPercentageDiscount')?.addEventListener('click', async () => {
+    const status = document.getElementById('billingAdjustmentStatus');
+    const value = Number(document.getElementById('billingPercentageDiscount').value || 0);
+    if (!Number.isFinite(value) || value <= 0 || value > 100) { status.textContent = 'Enter a percentage between 0 and 100.'; return; }
+    try {
+      const response = await fetch('/orders/apply-discount', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ restaurantId, orderId: d.order.id, type: 'MANUAL', value, valueType: 'PERCENT', appliedByRole: String(sessionUser.role || '').toUpperCase() }) });
+      const result = await response.json();
+      if (!response.ok || result.success === false) throw Error(result.message || 'Percentage discount could not be applied');
+      document.getElementById('billingPaymentAmount').value = Number(result.netPayable).toFixed(2);
+      status.textContent = `Percentage discount applied: ${value.toFixed(2)}%.`;
     } catch (error) { status.textContent = error.message; }
   });
   document.getElementById('applyBillingRedeemPoints')?.addEventListener('click', () => {
