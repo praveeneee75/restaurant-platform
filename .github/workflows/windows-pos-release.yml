@@ -59,7 +59,7 @@ jobs:
           node tests/reported-issues-regression.js
 
       - name: Build and validate NSIS installer
-        run: npm run release:win
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/build-windows-release.ps1 -SkipNativeRebuild
 
       - name: Upload verified installer
         uses: actions/upload-artifact@v4

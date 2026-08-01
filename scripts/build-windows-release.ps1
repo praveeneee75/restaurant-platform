@@ -1,3 +1,5 @@
+param([switch]$SkipNativeRebuild)
+
 $ErrorActionPreference = 'Stop'
 
 $repo = Split-Path -Parent $PSScriptRoot
@@ -14,7 +16,11 @@ if (Get-Process -Name 'K''Master POS','makensis','electron-builder' -ErrorAction
 
 Push-Location $app
 try {
-  npm run dist:win
+  if ($SkipNativeRebuild) {
+    npx electron-builder --win nsis
+  } else {
+    npm run dist:win
+  }
   if ($LASTEXITCODE -ne 0) { throw "Windows packaging failed with exit code $LASTEXITCODE" }
   $packagedNative = Join-Path $app 'dist-installers\win-unpacked\resources\app.asar.unpacked\node_modules\better-sqlite3'
   $electron = Join-Path $app 'node_modules\electron\dist\electron.exe'
