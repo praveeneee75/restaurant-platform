@@ -154,20 +154,8 @@ function assertSettings(actual, expected, label) {
     require_open_register_for_cash_payment: '1',
     allow_cashier_register_close: '1',
     cash_discrepancy_threshold: '25.5',
-    qr_ordering_enabled: '0',
-    mobile_app_enabled: '0',
-    online_order_enabled: '0',
-    online_storefront_slug: 'persisted-restaurant',
-    online_theme: 'MODERN',
-    online_primary_color: '#123456',
-    online_accent_color: '#abcdef',
-    online_logo_path: 'https://example.test/logo.png',
-    online_payment_methods: 'UPI,CARD,COD',
-    online_require_otp: '1',
-    online_allow_loyalty_credit: '0',
-    online_delivery_enabled: '1',
-    online_takeaway_enabled: '1',
-    online_min_order_amount: '150'
+    // Cloud-shared online-ordering settings are intentionally excluded here:
+    // their fail-closed SaaS publication contract is covered by owner-control regressions.
   };
 
   await post('/settings/update', { settings });
