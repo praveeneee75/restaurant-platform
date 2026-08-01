@@ -31,6 +31,7 @@ try {
   } finally {
     Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
   }
+  New-Item -ItemType Directory -Path $output -Force | Out-Null
   Copy-Item -LiteralPath (Join-Path $app "dist-installers\KMaster-POS-Setup-$version.exe") -Destination $artifact -Force
   if (-not (Test-Path -LiteralPath $artifact)) {
     throw "NSIS completed without producing the expected installer: $artifact"
