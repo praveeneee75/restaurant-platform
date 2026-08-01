@@ -916,11 +916,14 @@ button:hover,
 .billing-sidebar nav a { padding: 11px 12px; border-radius: 8px; color: var(--muted); text-decoration: none; font-weight: 700; }
 .billing-sidebar nav a.active, .billing-sidebar nav a:hover { color: #1e3a8a; background: #eaf1ff; }
 .billing-recent { margin-top: 32px; }
-.billing-recent h3 { font-size: 14px; }
+.billing-sidebar nav a { font-size: 14px; }
+.billing-recent h3 { font-size: 16px; }
 .billing-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
-.billing-tabs button { min-height: 32px; padding: 6px 8px; font-size: 11px; background: #f1f5f9; color: var(--muted); }
+.billing-tabs button { min-height: 36px; padding: 7px 10px; font-size: 13px; background: #f1f5f9; color: var(--muted); }
 .billing-tabs button.active { background: #2563eb; color: #fff; }
-.recent-order { display: grid; gap: 3px; width: 100%; margin: 4px 0; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--text); text-align: left; font-size: 11px; }
+.recent-order { display: grid; gap: 4px; width: 100%; margin: 5px 0; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--text); text-align: left; font-size: 14px; line-height: 1.25; }
+.recent-order strong { font-size: 15px; }
+.recent-order small { font-size: 12px; }
 .recent-order small { color: var(--muted); }
 .billing-main { min-width: 0; padding: 22px; }
 .billing-topbar, .billing-detail header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }

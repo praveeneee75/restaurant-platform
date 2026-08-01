@@ -12,6 +12,8 @@ const thermal = read('pos-app/electron/thermalEscPos.js');
 
 assert.match(css, /grid-template-columns:\s*500px minmax\(0, 1fr\) 500px/, 'Billing left and right panels must have equal desktop widths');
 assert.match(css, /\.billing-discount-pair\s*\{[^}]*grid-template-columns:1fr/s, 'Cash and percentage discounts must use separate rows');
+assert.match(css, /\.recent-order\s*\{[^}]*font-size:\s*14px/s, 'Billing recent-order cards need readable left-panel typography');
+assert.match(css, /\.billing-recent h3\s*\{\s*font-size:\s*16px/, 'Billing recent-order heading needs readable typography');
 assert.match(adminJs, /invoice-number-format-options/, 'Invoice number radio controls need a dedicated layout wrapper');
 assert.match(adminHtml, /id="testKotLayoutPrint"[\s\S]*id="saveKotLayoutPdf"/, 'KOT configuration needs print and PDF actions');
 assert.match(adminHtml, /id="testBillLayoutPrint"[\s\S]*id="saveBillLayoutPdf"/, 'Bill configuration needs print and PDF actions');
