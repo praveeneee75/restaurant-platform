@@ -118,7 +118,9 @@ async function showSubmittedOrder(orderId) {
     groups.get(reference).push(item);
     return groups;
   }, new Map());
-  const kotSections = [...kotGroups.entries()].map(([reference, kotItems]) => `<section class="bill-kot-group"><h3>KOT ${esc(reference)}</h3>${kotItems.map(i => `<div><span>${esc(i.name)} × ${i.quantity}</span><strong>${money(i.price * i.quantity)}</strong></div>`).join('')}</section>`).join('');
+  const taxRate = Number(d.pricing?.taxRate || 0);
+  const grossLineAmount = (item) => Number(item.price || 0) * Number(item.quantity || 0) * (String(item.tax_mode || 'INCLUSIVE').toUpperCase() === 'EXCLUSIVE' ? (1 + taxRate / 100) : 1);
+  const kotSections = [...kotGroups.entries()].map(([reference, kotItems]) => `<section class="bill-kot-group"><h3>KOT ${esc(reference)}</h3>${kotItems.map(i => `<div><span>${esc(i.name)} × ${i.quantity}</span><strong>${money(grossLineAmount(i))}</strong></div>`).join('')}</section>`).join('');
   const listedTotal = items.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
   const pricing = d.pricing || {};
   const grossTotal = Number(pricing.payableSubtotal ?? listedTotal);

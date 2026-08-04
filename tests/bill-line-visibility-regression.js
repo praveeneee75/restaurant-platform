@@ -7,7 +7,7 @@ const html = read('pos-app/backend/public/admin.html');
 const admin = read('pos-app/backend/public/js/admin-dashboard.js');
 const server = read('pos-app/backend/server.js');
 const thermal = read('pos-app/electron/thermalEscPos.js');
-const keys = ['restaurant_header','address','contact','gstin','fssai','document_title','invoice_number','datetime','order_table','kot_references','customer','payment','tax_details','items','service_charge','tax_breakup','grand_total','footer','signatory'];
+const keys = ['restaurant_header','address','contact','gstin','fssai','document_title','invoice_number','datetime','order_table','kot_references','customer','payment','tax_details','items','service_charge','discount','tax_breakup','grand_total','footer','signatory'];
 for (const key of keys) {
   if (!schema.includes(`bill_line_${key}: '1'`) || !admin.includes(`['${key}'`)) throw new Error(`Missing bill-line option ${key}`);
 }

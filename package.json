@@ -43,5 +43,6 @@
     ,"test:bill-lines": "node tests/bill-line-visibility-regression.js"
     ,"test:packaged-startup": "node tests/packaged-startup-gate-regression.js"
     ,"test:whitelabel-branches": "node tests/whitelabel-branch-provisioning-regression.js"
+    ,"test:historical-audit": "node tests/historical-request-audit-regression.js"
   }
 }

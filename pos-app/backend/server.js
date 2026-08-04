@@ -6973,9 +6973,9 @@ app.post('/orders/final-bill', (req, res) => {
     }
     const promotedOrder = db.prepare('SELECT order_reference FROM orders WHERE id = ?').get(orderId);
     order.order_reference = promotedOrder?.order_reference || order.order_reference;
-    const items = db.prepare('SELECT i.name, oi.quantity, oi.price FROM order_items oi JOIN items i ON i.id = oi.item_id WHERE oi.order_id = ? AND oi.kot_id IS NOT NULL ORDER BY oi.id').all(orderId);
+    const items = db.prepare("SELECT i.name, oi.quantity, oi.price, COALESCE(i.tax_mode, 'INCLUSIVE') AS tax_mode FROM order_items oi JOIN items i ON i.id = oi.item_id WHERE oi.order_id = ? AND oi.kot_id IS NOT NULL ORDER BY oi.id").all(orderId);
     if (!items.length) throw new Error('Submit a KOT before requesting the final bill');
-    const grossAmount = items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.price || 0), 0);
+    const grossAmount = calculateOrderPricing(db, orderId).payableSubtotal;
     const serviceCharge = serviceChargeForAmount(db, grossAmount);
     const discountRows = tableExists(db, 'discounts') ? db.prepare('SELECT value, value_type FROM discounts WHERE order_id = ?').all(orderId) : [];
     const discountAmount = discountRows.reduce((sum, discount) => sum + (String(discount.value_type || '').toUpperCase() === 'PERCENT' ? grossAmount * Number(discount.value || 0) / 100 : Number(discount.value || 0)), 0);
@@ -7283,7 +7283,7 @@ app.post('/orders/settle', async (req, res) => {
         orderId,
         orderReference: order.order_reference || String(orderId),
         invoiceNo,
-        items: db.prepare(`SELECT i.name, oi.quantity, oi.price FROM order_items oi JOIN items i ON i.id = oi.item_id WHERE oi.order_id = ? AND oi.kot_id IS NOT NULL ORDER BY oi.id`).all(orderId),
+        items: db.prepare(`SELECT i.name, oi.quantity, oi.price, COALESCE(i.tax_mode, 'INCLUSIVE') AS tax_mode FROM order_items oi JOIN items i ON i.id = oi.item_id WHERE oi.order_id = ? AND oi.kot_id IS NOT NULL ORDER BY oi.id`).all(orderId),
         printer: billPrinter ? { name: billPrinter.name, connection: billPrinter.connection, address: billPrinter.address } : null,
         restaurantProfile: {
           displayName: getConfigValue(db, 'restaurant_display_name', ''),
@@ -8136,25 +8136,28 @@ app.get('/reports/dashboard', (req, res) => {
     if (role) {
       requirePermission(db, role, canRole(db, role, 'reports.view_all') ? 'reports.view_all' : 'reports.view_invoice_only', 'Reports permission required');
     }
+    const invoiceOnly = Boolean(role) && !['OWNER', 'ADMIN', 'MANAGER_2'].includes(String(role).toUpperCase());
+    const orderInvoiceClause = invoiceOnly ? ' AND COALESCE(is_invoice, 0) = 1' : '';
+    const aliasedInvoiceClause = invoiceOnly ? ' AND COALESCE(o.is_invoice, 0) = 1' : '';
     res.json({
       success: true,
       dailySales: db.prepare(`
         SELECT DATE(created_at) AS day, COUNT(*) AS orders, COALESCE(SUM(total_amount), 0) AS total
-        FROM orders WHERE payment_status = 'PAID' AND DATE(created_at) BETWEEN DATE(?) AND DATE(?) GROUP BY DATE(created_at)
+        FROM orders WHERE payment_status = 'PAID' AND DATE(created_at) BETWEEN DATE(?) AND DATE(?)${orderInvoiceClause} GROUP BY DATE(created_at)
       `).all(from, to),
       topSellingItems: db.prepare(`
         SELECT i.name, SUM(oi.quantity) AS quantity, SUM(oi.quantity * oi.price) AS total
         FROM order_items oi JOIN items i ON i.id = oi.item_id JOIN orders o ON o.id = oi.order_id
-        WHERE o.payment_status = 'PAID' AND DATE(o.created_at) BETWEEN DATE(?) AND DATE(?)
+        WHERE o.payment_status = 'PAID' AND DATE(o.created_at) BETWEEN DATE(?) AND DATE(?)${aliasedInvoiceClause}
         GROUP BY i.id ORDER BY quantity DESC LIMIT 10
       `).all(from, to),
       orderSummary: db.prepare(`
         SELECT status, payment_status, COUNT(*) AS count, COALESCE(SUM(total_amount), 0) AS total
-        FROM orders WHERE DATE(created_at) BETWEEN DATE(?) AND DATE(?) GROUP BY status, payment_status
+        FROM orders WHERE DATE(created_at) BETWEEN DATE(?) AND DATE(?)${orderInvoiceClause} GROUP BY status, payment_status
       `).all(from, to),
       taxSummary: db.prepare(`
         SELECT COALESCE(SUM(total_amount), 0) AS taxableSales, COALESCE(SUM(tax_amount), 0) AS tax
-        FROM orders WHERE payment_status = 'PAID' AND DATE(created_at) BETWEEN DATE(?) AND DATE(?)
+        FROM orders WHERE payment_status = 'PAID' AND DATE(created_at) BETWEEN DATE(?) AND DATE(?)${orderInvoiceClause}
       `).get(from, to)
     });
   } catch (err) {

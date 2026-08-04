@@ -1686,6 +1686,8 @@ loadReports.addEventListener("click", async () => {
     const data = await fetchJson(`/reports/dashboard?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`);
     const report = await fetchJson(`/reports/operational-summary?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&type=${encodeURIComponent(activeReportType)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`);
     currentOperationalReport = report;
+    const reportProfile = state.settings?.settings || {};
+    operationalReportPrintHeader.innerHTML = `<strong>${esc(reportProfile.restaurant_display_name || reportProfile.legal_name || 'K\'Master POS')}</strong>${reportProfile.gstin ? `<span>GSTIN: ${esc(reportProfile.gstin)}</span>` : ''}<span>${esc(reportTitles[activeReportType])}</span><span>${esc(reportFrom.value)} to ${esc(reportTo.value)}</span>`;
     operationalReportHead.innerHTML = `<tr>${report.columns.map((column) => `<th>${esc(column[1])}</th>`).join("")}</tr>`;
     const moneyKeys = new Set(["net_amount","discount_amount","additional_charge","tax_amount","total_amount","net_sales","discount","tax","total_sales","cash","card","upi","total"]);
     salesReportRows.innerHTML = (report.rows || []).map((row) => `<tr>${report.columns.map(([key]) => `<td>${moneyKeys.has(key) ? money(row[key]) : esc(row[key] ?? "-")}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${report.columns.length}">No data for the selected period.</td></tr>`;

@@ -677,11 +677,20 @@ button:hover,
 .report-type-tabs button.active { background:#2563eb; color:#fff; }
 #operationalReportPanel table { table-layout:auto; width:100%; }
 #operationalReportPanel th, #operationalReportPanel td { white-space:nowrap; text-align:left; }
+.operational-report-print-header { display:none; }
 @media print {
+  @page { size:80mm auto; margin:3mm; }
   body * { visibility:hidden; }
   #view-reports, #view-reports * { visibility:visible; }
   #view-reports { position:absolute; inset:0; }
   #view-reports .toolbar, #view-reports .report-type-tabs, #view-reports .report-grid, #view-reports .editor-panel { display:none !important; }
+  #view-reports { width:74mm; max-width:74mm; background:#fff; font:9px/1.25 Arial,sans-serif; }
+  #view-reports .section-heading { display:none!important; }
+  .operational-report-print-header { display:block; text-align:center; margin-bottom:8px; border-bottom:1px dashed #111; padding-bottom:6px; }
+  .operational-report-print-header strong,.operational-report-print-header span { display:block; }
+  #operationalReportPanel { border:0; box-shadow:none; overflow:visible; }
+  #operationalReportPanel table { width:100%; table-layout:auto; font-size:8px; border-collapse:collapse; }
+  #operationalReportPanel th,#operationalReportPanel td { padding:3px 2px; white-space:normal; border-bottom:1px dotted #555; }
 }
 
 .parcel-intake { display: none; }
@@ -806,6 +815,13 @@ button:hover,
 .pos-mode-dine-in .payment-panel > .pos-primary-actions button { display:inline-flex; align-items:center; justify-content:center; gap:6px; width:100%; min-width:0; min-height:52px; margin:0; padding:10px 12px; line-height:1.15; text-align:center; }
 .pos-mode-party .payment-panel > .pos-primary-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:stretch; gap:10px; }
 .pos-mode-party .payment-panel > .pos-primary-actions button { display:inline-flex; align-items:center; justify-content:center; gap:6px; width:100%; min-width:0; min-height:48px; margin:0; padding:10px 12px; line-height:1.15; text-align:center; }
+.pos-non-dine-in .payment-panel > #paymentMode,
+.pos-non-dine-in .payment-panel > #settlementType,
+.pos-non-dine-in .payment-panel > #paymentAmount,
+.pos-non-dine-in .customer-panel > label,
+.pos-non-dine-in .customer-panel > .pos-discount-tools,
+.pos-non-dine-in .customer-panel > #discountStatus,
+.pos-non-dine-in .customer-panel > #payableTotal { display:none!important; }
 .billing-settlement-actions { display:grid; grid-template-columns:1fr; gap:8px; margin-top:10px; }
 .billing-settlement-actions button { width:100%; min-height:44px; }
 

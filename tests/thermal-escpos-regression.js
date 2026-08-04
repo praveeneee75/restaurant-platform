@@ -85,4 +85,14 @@ for (const paperWidth of [58, 80]) {
   }
 }
 
+const mixedItems = [
+  { name: 'Inclusive item', quantity: 1, price: 105, tax_mode: 'INCLUSIVE' },
+  { name: 'Exclusive item', quantity: 1, price: 100, tax_mode: 'EXCLUSIVE' }
+];
+const mixedBase = { type: 'BILL', paper_width_mm: 80, payload: { printLayout: { printWidth80: 48 }, invoiceNo: 'MIX-1', payable: 210, taxRate: 5, restaurantProfile: { displayName: 'Tax Test', gstin: '33ABCDE1234F1Z5' }, items: mixedItems } };
+const inclusiveMixed = buildThermalPreview({ ...mixedBase, payload: { ...mixedBase.payload, taxDisplayMode: 'INCLUSIVE' } }, (items) => items);
+const exclusiveMixed = buildThermalPreview({ ...mixedBase, payload: { ...mixedBase.payload, taxDisplayMode: 'EXCLUSIVE' } }, (items) => items);
+assert(inclusiveMixed.text.includes('105.00'), 'Inclusive print mode must gross-up tax-exclusive item prices');
+assert(exclusiveMixed.text.includes('100.00'), 'Exclusive print mode must remove tax from tax-inclusive item prices');
+
 console.log('Thermal ESC/POS regression passed (continuous 58/80 mm KOT and bill output)');
