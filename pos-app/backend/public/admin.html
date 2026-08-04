@@ -173,8 +173,25 @@
         <label class="check-row"><input id="itemActive" type="checkbox" checked> Active</label>
         <button>Save Item</button>
       </form>
-      <div class="toolbar"><input id="itemSearch" placeholder="Search menu items"></div>
-      <div class="table-panel availability-items-panel"><table class="availability-items-table"><thead><tr><th>Name</th><th>Alpha code</th><th>Number code</th><th>Tax</th><th>Category</th><th>Kitchen</th><th>Price</th><th>Dine In</th><th>Parcel</th><th>Party</th><th>Online</th><th>Active</th><th>Actions</th></tr></thead><tbody id="itemsTable"></tbody></table></div>
+      <div class="toolbar item-filter-toolbar"><input id="itemSearch" placeholder="Search all menu item columns"><button type="button" class="secondary-btn" id="clearItemFilters">Clear filters</button></div>
+      <div class="table-panel availability-items-panel"><table class="availability-items-table"><thead>
+        <tr><th>Name</th><th>Alpha code</th><th>Number code</th><th>Tax</th><th>Category</th><th>Kitchen</th><th>Price</th><th>Dine In</th><th>Parcel</th><th>Party</th><th>Online</th><th>Active</th><th>Actions</th></tr>
+        <tr class="item-column-filters" aria-label="Menu item column filters">
+          <th><input data-item-filter="name" aria-label="Filter by name" placeholder="Filter"></th>
+          <th><input data-item-filter="alpha_short_code" aria-label="Filter by alpha code" placeholder="Filter"></th>
+          <th><input data-item-filter="numeric_short_code" aria-label="Filter by number code" placeholder="Filter"></th>
+          <th><select data-item-filter="tax_mode" aria-label="Filter by tax"><option value="">All</option><option value="INCLUSIVE">Inclusive</option><option value="EXCLUSIVE">Exclusive</option></select></th>
+          <th><input data-item-filter="category_name" aria-label="Filter by category" placeholder="Filter"></th>
+          <th><input data-item-filter="kitchen_name" aria-label="Filter by kitchen" placeholder="Filter"></th>
+          <th><input data-item-filter="price" aria-label="Filter by price" inputmode="decimal" placeholder="Filter"></th>
+          <th><select data-item-filter="allow_dine_in" aria-label="Filter Dine In availability"><option value="">All</option><option value="1">Yes</option><option value="0">No</option></select></th>
+          <th><select data-item-filter="allow_parcel" aria-label="Filter Parcel availability"><option value="">All</option><option value="1">Yes</option><option value="0">No</option></select></th>
+          <th><select data-item-filter="allow_party_order" aria-label="Filter Party availability"><option value="">All</option><option value="1">Yes</option><option value="0">No</option></select></th>
+          <th><select data-item-filter="online_enabled" aria-label="Filter Online availability"><option value="">All</option><option value="1">Yes</option><option value="0">No</option></select></th>
+          <th><select data-item-filter="active" aria-label="Filter active status"><option value="">All</option><option value="1">Yes</option><option value="0">No</option></select></th>
+          <th><span class="filter-count" id="itemFilterCount" aria-live="polite"></span></th>
+        </tr>
+      </thead><tbody id="itemsTable"></tbody></table></div>
     </section>
 
     <section class="admin-view" id="view-users">
@@ -483,7 +500,12 @@
             <label class="check-row"><input id="settingRequireManagerPinForRefund" type="checkbox"> Manager PIN for refund</label>
             <label class="check-row"><input id="settingRequireManagerPinForVoid" type="checkbox"> Manager PIN for void</label>
             <label class="check-row"><input id="settingRequireClockInBeforeOrder" type="checkbox"> Require clock-in before order</label>
-            <label class="check-row"><input id="settingPosShowFinalBillPrint" type="checkbox"> Show Final Bill &amp; Print in POS</label>
+            <fieldset class="settings-choice-group">
+              <legend>Show Final Bill &amp; Print button</legend>
+              <label class="check-row"><input id="settingPosShowFinalBillPrintDineIn" type="checkbox"> POS Dine In</label>
+              <label class="check-row"><input id="settingPosShowFinalBillPrintParcel" type="checkbox"> POS Parcel</label>
+              <label class="check-row"><input id="settingPosShowFinalBillPrintParty" type="checkbox"> POS Party Order</label>
+            </fieldset>
           </article>
 
           <article class="settings-section" data-settings-panel="billing" hidden>

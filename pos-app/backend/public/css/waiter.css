@@ -99,6 +99,16 @@ button {
   flex-wrap: wrap;
 }
 .qty-controls button { min-width: 38px; padding: 8px; }
+.menu-qty-controls { display:grid; grid-template-columns:38px 28px 38px; gap:4px; align-items:center; text-align:center; }
+.menu-qty-controls button { min-width:38px; padding:9px 6px; font-size:20px; }
+.check-controls,.customer-controls { display:grid; gap:8px; padding:10px 0; border-bottom:1px solid var(--border); }
+.check-controls label,.customer-controls label { display:grid; gap:5px; font-size:12px; font-weight:700; color:#536071; }
+.check-controls select,.customer-controls input { width:100%; min-height:42px; padding:9px 10px; border:1px solid var(--border); border-radius:10px; background:white; font:inherit; }
+.check-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.customer-controls { grid-template-columns:minmax(0,1fr) auto; }
+.customer-controls p { grid-column:1/-1; margin:0; color:#536071; }
+.fulfilment-status { padding:8px 10px; border-radius:9px; background:#ecfeff; color:#155e75; font-weight:700; }
+#finalWaiterCheck { background:#1d4ed8; }
 .item-note { color:#9a3412; font-weight:700; }
 .qty-controls button:disabled { opacity:.45; cursor:not-allowed; }
 .actions {
@@ -177,5 +187,6 @@ button {
   .table-btn { min-height:64px; padding:8px 4px; }
   .category-strip { position:sticky; top:57px; z-index:4; padding:8px 0; background:var(--surface); }
   .item-row { grid-template-columns:minmax(0,1fr) auto; min-height:58px; }
+  .customer-controls { grid-template-columns:minmax(0,1fr) auto; }
   .cart-panel .actions { position:sticky; bottom:0; padding:10px 0 max(4px,env(safe-area-inset-bottom)); background:var(--surface); }
 }

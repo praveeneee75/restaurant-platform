@@ -38,6 +38,18 @@
     <section class="panel cart-panel" data-waiter-panel="order">
       <h2>Order</h2>
       <p id="lockStatus">No table locked</p>
+      <div class="check-controls">
+        <label>Customer check<select id="waiterOrderSelector"><option value="">New customer check</option></select></label>
+        <div class="check-actions"><button id="newWaiterCheck" type="button">New customer check</button><button id="parcelWaiterCheck" type="button">Parcel check</button></div>
+      </div>
+      <div class="customer-controls">
+        <label>Customer phone<input id="waiterCustomerPhone" inputmode="tel" placeholder="Customer phone"></label>
+        <button id="searchWaiterCustomer" type="button">Search</button>
+        <label>Customer name<input id="waiterCustomerName" placeholder="Customer name"></label>
+        <button id="createWaiterCustomer" type="button">Create customer</button>
+        <p id="waiterCustomerStatus">No customer attached</p>
+      </div>
+      <p id="fulfilmentStatus" class="fulfilment-status">Dine In check</p>
       <div id="waiterCart" class="cart-list"></div>
       <strong id="waiterTotal">Total: 0.00</strong>
       <div class="transfer-panel">
@@ -49,6 +61,7 @@
       <div class="actions">
         <button id="saveWaiterOrder" type="button">Save Order</button>
         <button id="submitWaiterKot" type="button">Submit KOT</button>
+        <button id="finalWaiterCheck" type="button">Final Bill &amp; Print</button>
         <button id="unlockWaiterTable" type="button">Unlock</button>
       </div>
     </section>

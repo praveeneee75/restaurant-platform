@@ -93,6 +93,9 @@ function assertSettings(actual, expected, label) {
     require_manager_pin_for_refund: '1',
     require_manager_pin_for_void: '1',
     require_clock_in_before_order: '1',
+    pos_show_final_bill_print_dine_in: '0',
+    pos_show_final_bill_print_parcel: '1',
+    pos_show_final_bill_print_party: '0',
     invoice_prefix: 'TST',
     invoice_reset_frequency: 'MONTHLY',
     show_tax_on_bill: '1',
@@ -161,6 +164,10 @@ function assertSettings(actual, expected, label) {
   await post('/settings/update', { settings });
   let loaded = await request('GET', `/settings?restaurantId=${restaurantId}`);
   assertSettings(loaded.data.settings, settings, 'save and reload');
+  const posBootstrap = await request('GET', `/pos/bootstrap?restaurantId=${restaurantId}`);
+  if (posBootstrap.data.settings?.showFinalBillPrintDineIn !== false || posBootstrap.data.settings?.showFinalBillPrintParcel !== true || posBootstrap.data.settings?.showFinalBillPrintParty !== false) {
+    throw new Error(`Per-mode Final Bill & Print settings were not mapped into POS bootstrap: ${JSON.stringify(posBootstrap.data.settings)}`);
+  }
 
   const refreshDb = openDatabase(restaurantId);
   seedWhitelabelDemoData(refreshDb, { restaurantId, force: true });

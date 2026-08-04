@@ -29,10 +29,15 @@ const { PREFERRED_POS_PORT, findAvailablePort } = require(path.join(root, 'pos-a
   const refreshStart = mobile.indexOf('await fetchRestaurantDirectory()', loginStart);
   assert.ok(refreshStart > loginStart && refreshStart < attemptsStart, 'mobile login should refresh POS discovery before connecting');
   assert.match(mobile, /CAPTAIN:\s*"captain"/, 'captains should land in the dedicated Dine In workspace');
+  assert.match(mobile, /captain:\s*`\$\{posBase\}\/pos-live\.html\?mode=DINE_IN&layout=mobile/, 'captains should use the full POS Dine In engine in mobile layout');
   assert.doesNotMatch(mobile, /CAPTAIN[^\n]+WAITER[^\n]+\]\s*,\s*\n\s*waiter:/, 'captains should not be offered the separate waiter role');
 
   const posLive = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/pos-live.js'), 'utf8');
   assert.match(posLive, /mobileSessionParams\.get\("mobileRole"\)/, 'generic mobile POS links should restore the authenticated mobile session');
+  assert.match(posLive, /mobileDineLayout/, 'POS Dine In should expose its shared mobile presentation mode');
+  for (const control of ['newCheckBtn', 'parcelCheckBtn', 'customerPhone', 'customerName', 'submitKot', 'finalBillPrintOrder']) {
+    assert.ok(posLive.includes(control), `mobile POS engine should retain desktop control: ${control}`);
+  }
 
   const waiter = fs.readFileSync(path.join(root, 'pos-app/backend/public/waiter.html'), 'utf8');
   for (const step of ['tables', 'menu', 'order']) {

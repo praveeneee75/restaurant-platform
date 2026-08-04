@@ -324,7 +324,7 @@ function reportMobileAttempt(details) {
       posReachable: Boolean(details.posReachable),
       loginSucceeded: Boolean(details.loginSucceeded),
       error: String(details.error || "").slice(0, 300),
-      appVersion: "1.0.20",
+      appVersion: "1.0.21",
       platform: navigator.userAgent || "Mobile app"
     })
   }).catch(() => undefined);
@@ -648,8 +648,8 @@ async function openRoleWorkspace(role, button) {
   });
   const paths = {
     owner: `${posBase}/admin.html?${mobileParams.toString()}`,
-    captain: `${posBase}/waiter.html?${mobileParams.toString()}`,
-    waiter: `${posBase}/waiter.html?${mobileParams.toString()}`,
+    captain: `${posBase}/pos-live.html?mode=DINE_IN&layout=mobile&${mobileParams.toString()}`,
+    waiter: `${posBase}/pos-live.html?mode=DINE_IN&layout=mobile&${mobileParams.toString()}`,
     cashier: `${posBase}/pos-live.html?${mobileParams.toString()}`,
     pos: `${posBase}/pos-live.html?${mobileParams.toString()}`,
     kitchen: `${posBase}/kds.html?${mobileParams.toString()}`
@@ -662,7 +662,9 @@ async function openRoleWorkspace(role, button) {
   dashboardStatus.textContent = `Connecting to ${restaurant.name || "restaurant"} POS...`;
   try {
     await fetchJson(`${posBase}/mobile-app/config?restaurantId=${encodeURIComponent(restId)}`);
-    activeRole.textContent = button.textContent;
+    const workspaceLabels = { captain: "POS Dine In", waiter: "POS Dine In", cashier: "Cashier POS", pos: "POS", kitchen: "Kitchen KDS", owner: "Full Admin" };
+    activeRole.textContent = workspaceLabels[role] || "Mobile View";
+    closeFrame.textContent = state.user?.cloudOwner ? "Close" : "Logout";
     appFrame.src = paths[role];
     webviewPanel.hidden = false;
     dashboardStatus.textContent = `${button.textContent} opened.`;
@@ -695,6 +697,7 @@ drawerLogoutButton.addEventListener("click", () => { ownerDrawer.hidden = true; 
 closeFrame.addEventListener("click", () => {
   appFrame.src = "about:blank";
   webviewPanel.hidden = true;
+  if (state.user && !state.user.cloudOwner) logoutButton.click();
 });
 
 showRoleGrid(state.user?.role || "");

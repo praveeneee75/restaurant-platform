@@ -308,8 +308,21 @@ function renderAdmin() {
   kitchensTable.innerHTML = kitchens.map((k) => `<tr><td>${esc(k.name)}</td><td>${esc(k.printer_name || "Not assigned")}</td><td>${k.active ? "Active" : "Inactive"}</td><td>${actions("kitchen", k.id)}</td></tr>`).join("");
   printersTable.innerHTML = printers.map((printer) => `<tr><td>${esc(printer.name)}</td><td>${esc(printer.type)}</td><td>${esc(printer.connection)}</td><td>${esc(printer.paper_width_mm || 58)} mm</td><td>${esc(printer.address || "")}</td><td>${printer.active ? "Active" : "Inactive"}</td><td><span class="action-cell"><button type="button" class="secondary-btn" data-test-printer="${printer.id}">Test Print</button><button class="mini-btn" data-edit-printer="${printer.id}" type="button">Edit</button><button class="danger-btn" data-delete-printer="${printer.id}" type="button">Delete</button></span></td></tr>`).join("");
   categoriesTable.innerHTML = categories.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.kitchen_name || "Unassigned")}${Number(c.kitchen_active) === 0 ? " (inactive kitchen)" : ""}</td><td>${c.active ? "Active" : "Inactive"}</td><td>${actions("category", c.id)}</td></tr>`).join("");
-  const term = (itemSearch?.value || "").toLowerCase();
-  itemsTable.innerHTML = items.filter((i) => !term || `${i.name} ${i.alpha_short_code || ''} ${i.numeric_short_code || ''}`.toLowerCase().includes(term)).map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.alpha_short_code || "—")}</td><td>${esc(i.numeric_short_code || "—")}</td><td>${esc(String(i.tax_mode || "INCLUSIVE").toUpperCase() === "EXCLUSIVE" ? "Exclusive" : "Inclusive")}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td>${[['allow_dine_in','Dine In'],['allow_parcel','Parcel'],['allow_party_order','Party'],['online_enabled','Online'],['active','Active']].map(([field,label]) => `<td><label class="availability-toggle" title="${label}"><input type="checkbox" data-item-channel="${field}" data-item-id="${i.id}" ${Number(i[field] ?? 1) === 1 ? 'checked' : ''}><span>${label}</span></label></td>`).join('')}<td>${actions("item", i.id)}</td></tr>`).join("");
+  const term = (itemSearch?.value || "").trim().toLowerCase();
+  const columnFilters = Object.fromEntries([...document.querySelectorAll('[data-item-filter]')].map((control) => [control.dataset.itemFilter, control.value.trim().toLowerCase()]));
+  const booleanItemFields = new Set(['allow_dine_in', 'allow_parcel', 'allow_party_order', 'online_enabled', 'active']);
+  const visibleItems = items.filter((item) => {
+    const searchable = [item.name, item.alpha_short_code, item.numeric_short_code, item.tax_mode, item.category_name, item.kitchen_name, money(item.price)].join(' ').toLowerCase();
+    if (term && !searchable.includes(term)) return false;
+    return Object.entries(columnFilters).every(([field, filterValue]) => {
+      if (!filterValue) return true;
+      if (booleanItemFields.has(field)) return String(Number(item[field] ?? 1)) === filterValue;
+      if (field === 'price') return money(item.price).toLowerCase().includes(filterValue);
+      return String(item[field] || '').toLowerCase().includes(filterValue);
+    });
+  });
+  if (itemFilterCount) itemFilterCount.textContent = `${visibleItems.length}/${items.length}`;
+  itemsTable.innerHTML = visibleItems.map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.alpha_short_code || "—")}</td><td>${esc(i.numeric_short_code || "—")}</td><td>${esc(String(i.tax_mode || "INCLUSIVE").toUpperCase() === "EXCLUSIVE" ? "Exclusive" : "Inclusive")}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td>${[['allow_dine_in','Dine In'],['allow_parcel','Parcel'],['allow_party_order','Party'],['online_enabled','Online'],['active','Active']].map(([field,label]) => `<td><label class="availability-toggle" title="${label}"><input type="checkbox" data-item-channel="${field}" data-item-id="${i.id}" ${Number(i[field] ?? 1) === 1 ? 'checked' : ''}><span>${label}</span></label></td>`).join('')}<td>${actions("item", i.id)}</td></tr>`).join("");
   usersTable.innerHTML = users.map((u) => {
     const canUnlock = isFutureDate(u.locked_until) || u.unlock_requested_at || Number(u.failed_login_attempts || 0) > 0;
     return `<tr>
@@ -1023,7 +1036,10 @@ function renderSettings() {
   setChecked(settingRequireManagerPinForRefund, settings.require_manager_pin_for_refund);
   setChecked(settingRequireManagerPinForVoid, settings.require_manager_pin_for_void);
   setChecked(settingRequireClockInBeforeOrder, settings.require_clock_in_before_order);
-  setChecked(settingPosShowFinalBillPrint, settings.pos_show_final_bill_print === undefined ? true : settings.pos_show_final_bill_print);
+  const legacyFinalBillVisibility = settings.pos_show_final_bill_print === undefined ? true : settings.pos_show_final_bill_print;
+  setChecked(settingPosShowFinalBillPrintDineIn, settings.pos_show_final_bill_print_dine_in ?? legacyFinalBillVisibility);
+  setChecked(settingPosShowFinalBillPrintParcel, settings.pos_show_final_bill_print_parcel ?? legacyFinalBillVisibility);
+  setChecked(settingPosShowFinalBillPrintParty, settings.pos_show_final_bill_print_party ?? legacyFinalBillVisibility);
   settingInvoicePrefix.value = settings.invoice_prefix || "INV";
   settingInvoiceResetFrequency.value = settings.invoice_reset_frequency || "DAILY";
   setChecked(settingShowTaxOnBill, settings.show_tax_on_bill);
@@ -1143,7 +1159,9 @@ function collectSettings() {
     require_manager_pin_for_refund: checkedValue(settingRequireManagerPinForRefund),
     require_manager_pin_for_void: checkedValue(settingRequireManagerPinForVoid),
     require_clock_in_before_order: checkedValue(settingRequireClockInBeforeOrder),
-    pos_show_final_bill_print: checkedValue(settingPosShowFinalBillPrint),
+    pos_show_final_bill_print_dine_in: checkedValue(settingPosShowFinalBillPrintDineIn),
+    pos_show_final_bill_print_parcel: checkedValue(settingPosShowFinalBillPrintParcel),
+    pos_show_final_bill_print_party: checkedValue(settingPosShowFinalBillPrintParty),
     invoice_prefix: settingInvoicePrefix.value,
     invoice_reset_frequency: settingInvoiceResetFrequency.value,
     show_tax_on_bill: checkedValue(settingShowTaxOnBill),
@@ -1229,7 +1247,7 @@ function collectSettings() {
 
 const SETTINGS_KEYS_BY_SECTION = {
   profile: ["restaurant_display_name", "legal_name", "gstin", "fssai_license_no", "state_code", "address_line_1", "address_line_2", "city", "state", "country", "phone", "email", "currency", "timezone", "logo_path"],
-  pos: ["default_order_type", "allow_non_invoice_orders", "allow_discount", "allow_manual_price_override", "allow_refund", "allow_order_cancel", "require_manager_pin_for_discount", "require_manager_pin_for_refund", "require_manager_pin_for_void", "require_clock_in_before_order", "pos_show_final_bill_print"],
+  pos: ["default_order_type", "allow_non_invoice_orders", "allow_discount", "allow_manual_price_override", "allow_refund", "allow_order_cancel", "require_manager_pin_for_discount", "require_manager_pin_for_refund", "require_manager_pin_for_void", "require_clock_in_before_order", "pos_show_final_bill_print_dine_in", "pos_show_final_bill_print_parcel", "pos_show_final_bill_print_party"],
   billing: ["invoice_prefix", "invoice_reset_frequency", "show_tax_on_bill", "tax_name", "tax_rate", "sac_code", "show_qr_on_bill", "qr_require_table_pin", "qr_session_minutes", "qr_ordering_enabled", "qr_pending_order_limit", "upi_id", "service_charge_enabled", "service_charge_percent", "round_off_enabled", "billing_show_promocode", "billing_show_reward_points", "billing_show_cash_discount", "billing_show_percentage_discount", "billing_show_settle_print", "billing_show_settle_invoice", "billing_show_settle_only"],
   "bill-print": ["bill_template", "bill_print_contact", "bill_print_kot_references", "bill_compact_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text", "bill_tax_display_dine_in", "bill_tax_display_parcel", "bill_tax_display_party", ...BILL_LINE_OPTIONS.map(([key])=>`bill_line_${key}`), "bill_invoice_number_format", "bill_left_margin_dots", "bill_trailing_feed_lines", "bill_cut_mode", "bill_print_width_58", "bill_print_width_80", "bill_font_type", "bill_font_size", "bill_line_spacing_dots", "bill_details_layout", ...Object.keys(flatPrintStyles('bill'))],
   kot: ["auto_print_kot", "print_kot_on_save", "print_kot_on_submit", "allow_kot_reprint", "kot_header_text", "kot_footer_text", "kot_template", "kot_print_table", "kot_print_customer", "kot_print_kitchen", "kot_compact_spacing", "kot_left_margin_dots", "kot_trailing_feed_lines", "kot_cut_mode", "kot_print_width_58", "kot_print_width_80", "kot_font_type", "kot_font_size", "kot_line_spacing_dots", ...Object.keys(flatPrintStyles('kot'))],
@@ -1341,6 +1359,12 @@ document.querySelectorAll("[data-modifier-tab]").forEach((btn) => btn.addEventLi
 
 refreshBtn.addEventListener("click", loadAll);
 itemSearch.addEventListener("input", renderAdmin);
+document.querySelectorAll('[data-item-filter]').forEach((control) => control.addEventListener(control.tagName === 'SELECT' ? 'change' : 'input', renderAdmin));
+clearItemFilters.addEventListener('click', () => {
+  itemSearch.value = '';
+  document.querySelectorAll('[data-item-filter]').forEach((control) => { control.value = ''; });
+  renderAdmin();
+});
 loadCommercialTools.addEventListener("click", () => loadCommercial().catch((err) => {
   commercialStatus.textContent = err.message;
   alert(err.message);

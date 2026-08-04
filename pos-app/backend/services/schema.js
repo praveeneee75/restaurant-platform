@@ -119,6 +119,9 @@ const DEFAULT_SYSTEM_SETTINGS = {
   last_sync_at: '',
   require_clock_in_before_order: '0',
   pos_show_final_bill_print: '1',
+  pos_show_final_bill_print_dine_in: '1',
+  pos_show_final_bill_print_parcel: '1',
+  pos_show_final_bill_print_party: '1',
   require_open_register_for_cash_payment: '1',
   allow_cashier_register_close: '0',
   cash_discrepancy_threshold: '0',
@@ -164,12 +167,17 @@ function seedDefaultSettings(db) {
     );
   `);
   addColumn(db, 'system_config', 'updated_at DATETIME');
+  const finalBillModeKeys = ['pos_show_final_bill_print_dine_in', 'pos_show_final_bill_print_parcel', 'pos_show_final_bill_print_party'];
+  const existingFinalBillModeKeys = new Set(db.prepare(`SELECT key FROM system_config WHERE key IN (${finalBillModeKeys.map(() => '?').join(',')})`).all(...finalBillModeKeys).map((row) => row.key));
+  const legacyFinalBillSetting = db.prepare("SELECT value FROM system_config WHERE key = 'pos_show_final_bill_print'").get()?.value ?? '1';
   const insert = db.prepare(`
     INSERT INTO system_config (key, value, updated_at)
     VALUES (?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(key) DO NOTHING
   `);
   Object.entries(DEFAULT_SYSTEM_SETTINGS).forEach(([key, value]) => insert.run(key, value));
+  const migrateFinalBillSetting = db.prepare('UPDATE system_config SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?');
+  finalBillModeKeys.filter((key) => !existingFinalBillModeKeys.has(key)).forEach((key) => migrateFinalBillSetting.run(legacyFinalBillSetting, key));
   if (!db.prepare("SELECT 1 FROM system_config WHERE key = 'thermal_width_defaults_v2'").get()) {
     db.prepare("UPDATE system_config SET value = '32', updated_at = CURRENT_TIMESTAMP WHERE key IN ('bill_print_width_58', 'kot_print_width_58') AND value = '28'").run();
     db.prepare("UPDATE system_config SET value = '48', updated_at = CURRENT_TIMESTAMP WHERE key IN ('bill_print_width_80', 'kot_print_width_80') AND value = '38'").run();

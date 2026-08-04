@@ -25,8 +25,9 @@ if (!sessionUser || !allowedPosRoles.has(role)) {
 const actor = { id: sessionUser.id, role };
 const modeParam = String(new URLSearchParams(window.location.search).get("mode") || "DINE_IN").toUpperCase();
 const posMode = ["DINE_IN", "PARCEL", "PARTY"].includes(modeParam) ? modeParam : "DINE_IN";
+const mobileDineLayout = posMode === "DINE_IN" && new URLSearchParams(window.location.search).get("layout") === "mobile";
 const cashierDineLayout = posMode === "DINE_IN" && new URLSearchParams(window.location.search).get("layout") === "cashier";
-const directDineLayout = posMode === "DINE_IN" && !cashierDineLayout;
+const directDineLayout = posMode === "DINE_IN" && !cashierDineLayout && !mobileDineLayout;
 const usesStructuredItemEntry = posMode === "PARCEL" || cashierDineLayout;
 const requestedTableId = Number(new URLSearchParams(window.location.search).get("tableId") || 0);
 const restaurantId = new URLSearchParams(window.location.search).get("restaurantId") || localStorage.getItem("restaurantId");
@@ -174,6 +175,20 @@ function applyRoleAndModeUI() {
   if (settlementType) settlementType.hidden = role !== "MANAGER_1";
   if (posMode !== "DINE_IN") document.body.classList.add("pos-non-dine-in");
   else document.body.classList.add("pos-mode-dine-in");
+  if (mobileDineLayout) {
+    document.body.classList.add("pos-mode-mobile-dine");
+    document.querySelector('.app-home-nav')?.setAttribute('hidden', '');
+    const navigation = document.createElement('nav');
+    navigation.className = 'mobile-dine-nav';
+    navigation.setAttribute('aria-label', 'POS Dine In steps');
+    navigation.innerHTML = '<button type="button" class="active" data-mobile-dine-step="tables">1. Tables</button><button type="button" data-mobile-dine-step="menu">2. Menu</button><button type="button" data-mobile-dine-step="order">3. Order <span id="mobileDineCartCount">0</span></button>';
+    document.body.prepend(navigation);
+    navigation.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-mobile-dine-step]');
+      if (button) setMobileDineStep(button.dataset.mobileDineStep);
+    });
+    setMobileDineStep('tables');
+  }
   if (directDineLayout) {
     document.body.classList.add("pos-mode-direct-dine");
     const tablePanel = document.querySelector(".pos-tables");
@@ -243,6 +258,14 @@ function applyRoleAndModeUI() {
     parcelBillHeader.innerHTML = "<strong>Item</strong><strong>Special Note</strong><strong>Qty.</strong><strong>Price</strong><strong>Amount</strong>";
     cartItems.before(parcelBillHeader);
   }
+}
+
+function setMobileDineStep(step) {
+  if (!mobileDineLayout) return;
+  const panels = { tables: document.querySelector('.pos-tables'), menu: document.querySelector('.pos-menu'), order: document.querySelector('.pos-cart') };
+  Object.entries(panels).forEach(([name, panel]) => panel?.classList.toggle('mobile-active', name === step));
+  document.querySelectorAll('[data-mobile-dine-step]').forEach((button) => button.classList.toggle('active', button.dataset.mobileDineStep === step));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 document.querySelectorAll("[data-logout]").forEach((button) => button.addEventListener("click", () => { localStorage.clear(); window.location.href = "/login.html"; }));
@@ -330,6 +353,14 @@ function applyBootstrap(data) {
     enabledModules: data.enabledModules || [],
     settings: data.settings || state.settings
   });
+  if (finalBillPrintOrder) {
+    const visibilitySetting = posMode === 'PARCEL'
+      ? state.settings.showFinalBillPrintParcel
+      : posMode === 'PARTY'
+        ? state.settings.showFinalBillPrintParty
+        : state.settings.showFinalBillPrintDineIn;
+    finalBillPrintOrder.hidden = !['DINE_IN', 'PARCEL', 'PARTY'].includes(posMode) || visibilitySetting === false;
+  }
   if (selectedTableId) {
     state.selectedTable = state.tables.find((table) => table.id === selectedTableId) || state.selectedTable;
   }
@@ -382,9 +413,6 @@ async function boot() {
     await loadOpenOrdersForCurrentContext(null, { autoSelect: false });
     renderCart();
     return;
-  }
-  if (finalBillPrintOrder) {
-    finalBillPrintOrder.hidden = !["DINE_IN", "PARCEL", "PARTY"].includes(posMode) || state.settings.showFinalBillPrint === false;
   }
   const rememberedTableId = requestedTableId || Number(localStorage.getItem("posActiveTableId") || 0);
   const remembered = state.tables.find((table) => Number(table.id) === rememberedTableId && table.status === "OCCUPIED");
@@ -786,6 +814,8 @@ function renderCart() {
   `).join("");
   renderItemNoteEditor();
   total.textContent = `Total: ${money(cartTotal())}`;
+  const mobileCount = document.getElementById('mobileDineCartCount');
+  if (mobileCount) mobileCount.textContent = String(state.cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0));
   customerSummary.textContent = state.customer ? `${state.customer.name} - ${state.customer.phone} - ${state.customer.loyaltyBalance || 0} pts` : "No customer attached";
   redeemPoints.max = state.customer?.loyaltyBalance || 0;
   payableTotal.textContent = `Payable: ${money(payableAmount())}`;
@@ -896,6 +926,7 @@ async function selectTable(tableId, options = {}) {
   updateOrderTypeView();
   renderOrderSelector();
   renderCart();
+  if (mobileDineLayout) setMobileDineStep("menu");
 }
 
 function itemGroups(itemId) {
