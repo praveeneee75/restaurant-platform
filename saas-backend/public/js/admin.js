@@ -14,6 +14,15 @@ function escapeAttr(value) {
     .replaceAll(">", "&gt;");
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function showSaasView(viewName = "overview", updateHistory = true) {
   const viewId = `view-${viewName}`;
   const target = document.getElementById(viewId) || document.getElementById("view-overview");
