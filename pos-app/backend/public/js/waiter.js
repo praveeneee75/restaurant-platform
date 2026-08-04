@@ -38,6 +38,17 @@ const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&":
 const money = (value) => Number(value || 0).toFixed(2);
 const can = (permission) => state.permissions.includes(permission) || actor.role === "OWNER";
 let bootstrapInFlight = false;
+let activeMobileStep = "tables";
+
+function showMobileStep(step) {
+  activeMobileStep = step;
+  document.querySelectorAll("[data-waiter-step]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.waiterStep === step);
+  });
+  document.querySelectorAll("[data-waiter-panel]").forEach((panel) => {
+    panel.classList.toggle("mobile-active", panel.dataset.waiterPanel === step);
+  });
+}
 
 async function postJson(url, body) {
   const controller = new AbortController();
@@ -139,6 +150,7 @@ function renderCart() {
     </div>
   `).join("") || "<p>No items selected.</p>";
   waiterTotal.textContent = `Total: ${money(state.cart.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0))}`;
+  mobileCartCount.textContent = String(state.cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0));
   lockStatus.textContent = state.lock ? `Locked until ${state.lock.expires_at}` : "No table locked";
   transferTableButton.disabled = !state.orderId || !state.selectedTable || !state.lock;
 }
@@ -163,6 +175,7 @@ async function selectTable(tableId) {
   state.latestUpdatedAt = open.order?.updated_at || null;
   state.cart = (open.items || []).map((item) => ({ id: item.id, orderItemId: item.order_item_id || null, name: item.name, price: item.price, quantity: item.quantity, notes: item.notes || '', sentToKitchen: Boolean(item.kot_id), modifiers: [] }));
   renderAll();
+  showMobileStep("menu");
 }
 
 function addItem(itemId) {
@@ -235,6 +248,10 @@ document.addEventListener("click", async (event) => {
   const target = event.target.closest("button");
   if (!target) return;
   try {
+    if (target.dataset.waiterStep) {
+      showMobileStep(target.dataset.waiterStep);
+      return;
+    }
     if (target.dataset.tableId) await selectTable(target.dataset.tableId);
     if (target.dataset.categoryId) {
       state.selectedCategoryId = Number(target.dataset.categoryId);
@@ -298,6 +315,7 @@ refreshWaiter.addEventListener("click", () => loadBootstrap().catch((err) => ale
 loadBootstrap().then(touchDevice).catch((err) => {
   waiterStatus.textContent = err.message;
 });
+showMobileStep(activeMobileStep);
 setInterval(() => loadBootstrap().catch(() => {}), 15000);
 setInterval(() => renewLock().catch(() => {}), 30000);
 setInterval(() => touchDevice().catch(() => {}), 30000);

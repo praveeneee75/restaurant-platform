@@ -4,32 +4,38 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#0f766e">
-  <title>Captain Ordering</title>
+  <title>POS Dine In</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/css/waiter.css">
 </head>
 <body>
   <header class="waiter-top">
     <div>
-      <h1>Captain Ordering</h1>
+      <h1>POS Dine In</h1>
       <p id="waiterStatus">Loading...</p>
     </div>
     <button id="refreshWaiter" type="button">Refresh</button>
   </header>
 
+  <nav class="mobile-order-nav" aria-label="Dine In steps">
+    <button type="button" class="active" data-waiter-step="tables">1. Tables</button>
+    <button type="button" data-waiter-step="menu">2. Menu</button>
+    <button type="button" data-waiter-step="order">3. Order <span id="mobileCartCount">0</span></button>
+  </nav>
+
   <main class="waiter-layout">
-    <section class="panel">
+    <section class="panel" data-waiter-panel="tables">
       <h2>Tables</h2>
       <div id="waiterTables" class="table-grid"></div>
     </section>
 
-    <section class="panel">
+    <section class="panel" data-waiter-panel="menu">
       <h2 id="selectedTableTitle">Select a table</h2>
       <div id="waiterCategories" class="category-strip"></div>
       <div id="waiterItems" class="item-list"></div>
     </section>
 
-    <section class="panel cart-panel">
+    <section class="panel cart-panel" data-waiter-panel="order">
       <h2>Order</h2>
       <p id="lockStatus">No table locked</p>
       <div id="waiterCart" class="cart-list"></div>

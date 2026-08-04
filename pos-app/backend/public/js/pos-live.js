@@ -1,4 +1,12 @@
-const sessionUser = JSON.parse(localStorage.getItem("user") || "null");
+const mobileSessionParams = new URLSearchParams(window.location.search);
+const mobileSessionUser = mobileSessionParams.get("mobileRole") ? {
+  id: Number(mobileSessionParams.get("mobileUserId") || 0),
+  name: mobileSessionParams.get("mobileUserName") || "Mobile user",
+  username: mobileSessionParams.get("mobileUserName") || "Mobile user",
+  role: mobileSessionParams.get("mobileRole")
+} : null;
+const sessionUser = JSON.parse(localStorage.getItem("user") || "null") || mobileSessionUser;
+if (mobileSessionUser) localStorage.setItem("user", JSON.stringify(mobileSessionUser));
 const POS_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 let posLastActivityAt = Date.now();
 const markPosActivity = () => { posLastActivityAt = Date.now(); };

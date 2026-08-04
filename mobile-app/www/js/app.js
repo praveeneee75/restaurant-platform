@@ -324,7 +324,7 @@ function reportMobileAttempt(details) {
       posReachable: Boolean(details.posReachable),
       loginSucceeded: Boolean(details.loginSucceeded),
       error: String(details.error || "").slice(0, 300),
-      appVersion: "1.0.18",
+      appVersion: "1.0.20",
       platform: navigator.userAgent || "Mobile app"
     })
   }).catch(() => undefined);
@@ -475,8 +475,8 @@ async function loadRestaurants() {
 function showRoleGrid(role) {
   const roleRules = {
     owner: ["OWNER", "MANAGER", "MANAGER_2"],
-    captain: ["OWNER", "MANAGER", "MANAGER_1", "MANAGER_2", "CAPTAIN", "WAITER"],
-    waiter: ["OWNER", "MANAGER", "MANAGER_1", "MANAGER_2", "CAPTAIN", "WAITER"],
+    captain: ["OWNER", "MANAGER", "MANAGER_1", "MANAGER_2", "CAPTAIN"],
+    waiter: ["OWNER", "MANAGER", "MANAGER_1", "MANAGER_2", "WAITER"],
     cashier: ["OWNER", "MANAGER", "MANAGER_1", "MANAGER_2", "CASHIER"],
     kitchen: ["OWNER", "MANAGER", "MANAGER_1", "MANAGER_2", "KITCHEN"]
   };
@@ -528,7 +528,16 @@ async function login() {
     if (ownerStyleLogin) showDashboardView(`Signed in as ${data.user.role}.`);
     else {
       showDashboardView(`Signed in as ${data.user.role}. Opening workspace...`);
-      await openRoleWorkspace(String(data.user.role).toUpperCase() === "KITCHEN" ? "kitchen" : "pos", loginButton);
+      const landingByRole = {
+        CAPTAIN: "captain",
+        WAITER: "waiter",
+        KITCHEN: "kitchen",
+        CASHIER: "cashier",
+        MANAGER: "cashier",
+        MANAGER_1: "cashier",
+        MANAGER_2: "cashier"
+      };
+      await openRoleWorkspace(landingByRole[String(data.user.role).toUpperCase()] || "cashier", loginButton);
     }
     await offerBiometric({
       restaurantId: state.restaurant.restaurantId,
