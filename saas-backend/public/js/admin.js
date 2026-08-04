@@ -715,6 +715,8 @@ async function loadMonitoring() {
         <td>${row.name} (${row.restaurant_code})</td>
         <td>${row.online_status}</td>
         <td>${row.pos_version || ""}</td>
+        <td>${row.mobile_login ? `${row.mobile_login.username || ""} (${row.mobile_login.role || ""})` : "No login recorded"}</td>
+        <td>${row.mobile_login ? (row.mobile_login.sameWifi ? "Yes" : "No / unknown") : "Unknown"}</td>
         <td>${row.backup_status || ""}</td>
         <td>${row.printer_status || ""}</td>
         <td>${row.license_status || ""}</td>

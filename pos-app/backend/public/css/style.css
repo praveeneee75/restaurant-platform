@@ -700,14 +700,14 @@ button:hover,
 }
 .pos-mode-direct-dine .pos-tables .category-strip button { width:100%; text-align:left; }
 .pos-mode-direct-dine .pos-menu > .table-list {
-  display:flex;
-  flex-wrap:nowrap;
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(96px, 1fr));
   gap:8px;
-  min-height:72px;
-  max-height:112px;
+  min-height:64px;
+  max-height:144px;
   overflow:auto;
 }
-.pos-mode-direct-dine .pos-menu > .table-list button { min-width:112px; }
+.pos-mode-direct-dine .pos-menu > .table-list button { min-width:0; padding:10px 8px; overflow-wrap:anywhere; }
 .billing-table-card[data-cashier-table-id] { cursor:pointer; }
 .pos-mode-parcel .parcel-intake {
   grid-column: 1 / -1;

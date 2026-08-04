@@ -412,9 +412,6 @@
         <button id="exportOperationalReport" type="button">Export CSV</button>
         <p id="reportStatus" class="form-hint" role="status" aria-live="polite"></p>
       </div>
-      <div class="report-type-tabs" role="tablist" aria-label="Report type">
-        <button type="button" data-report-tab="sales">Sales</button><button type="button" data-report-tab="orders">Orders</button><button type="button" data-report-tab="categories">Categories</button><button type="button" data-report-tab="items">Items</button><button type="button" data-report-tab="employees">Employees</button><button type="button" data-report-tab="captains">Captains</button>
-      </div>
       <div class="table-panel sales-report-table" id="operationalReportPanel"><table><thead id="operationalReportHead"></thead><tbody id="salesReportRows"></tbody></table></div>
       <div class="report-grid">
         <article><h3>Daily Sales</h3><div id="dailySales"></div></article>
@@ -585,6 +582,12 @@
             <label class="check-row"><input id="settingBillPrintPayment" type="checkbox"> Print payment method</label>
             <label class="check-row"><input id="settingBillPrintAuthorisedSignatory" type="checkbox"> Print authorised-signatory line</label>
             <label>Bill footer text<input id="settingBillFooterText" maxlength="120" placeholder="THANK YOU. VISIT AGAIN."></label>
+            <fieldset><legend>Tax display by POS flow</legend>
+              <p class="settings-help">Choose whether printed item rates include tax. The grand total always remains the amount payable.</p>
+              <label>Dine In<select id="settingBillTaxDisplayDineIn"><option value="INCLUSIVE">Tax inclusive</option><option value="EXCLUSIVE">Tax exclusive</option></select></label>
+              <label>Parcel<select id="settingBillTaxDisplayParcel"><option value="INCLUSIVE">Tax inclusive</option><option value="EXCLUSIVE">Tax exclusive</option></select></label>
+              <label>Party Order<select id="settingBillTaxDisplayParty"><option value="INCLUSIVE">Tax inclusive</option><option value="EXCLUSIVE">Tax exclusive</option></select></label>
+            </fieldset>
             <fieldset><legend>Bill line visibility</legend>
               <p class="settings-help">Select every line that should appear on printed bills, previews and PDFs.</p>
               <div class="table-panel"><table class="print-style-table"><thead><tr><th>Bill line</th><th>Print</th><th>Format</th></tr></thead><tbody id="billLineVisibilityRows"></tbody></table></div>

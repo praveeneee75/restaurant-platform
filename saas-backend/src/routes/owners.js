@@ -92,6 +92,21 @@ router.post('/login', async (req, res) => {
   }
 });
 
+router.get('/restaurants', authenticateOwner, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT t.name, t.restaurant_code, t.contact_email
+      FROM restaurant_owners ro
+      JOIN tenants t ON t.id = ro.tenant_id
+      WHERE ro.owner_user_id = $1 AND ro.active = true
+      ORDER BY t.name
+    `, [req.ownerUser.id]);
+    res.json({ success: true, restaurants: publicRestaurantRows(result.rows) });
+  } catch (err) {
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
 router.post('/recovery/password/lookup', async (req, res) => {
   const { username } = req.body || {};
   if (!username) return res.status(400).json({ success: false, message: 'Username is required' });

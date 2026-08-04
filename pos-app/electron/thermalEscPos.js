@@ -81,8 +81,9 @@ function calculateBill(payload) {
   const taxRate = profile.gstin && profile.showTaxOnBill !== false ? Number(payload.taxRate || 5) : 0;
   const totalTax = taxRate > 0 ? grandTotal * taxRate / (100 + taxRate) : 0;
   const serviceCharge = Number(payload.serviceCharge || 0);
+  const discountAmount = Math.max(0, Number(payload.discountAmount || 0) + Number(payload.loyaltyDiscount || 0));
   const taxableValue = Math.max(grandTotal - totalTax - serviceCharge, 0);
-  return { profile, items, grandTotal, taxRate, totalTax, serviceCharge, taxableValue };
+  return { profile, items, grandTotal, taxRate, totalTax, serviceCharge, discountAmount, taxableValue };
 }
 
 function buildThermalEscPos(job, groupedItems) {
@@ -195,7 +196,7 @@ function buildThermalDocument(job, groupedItems = (items) => items) {
     }
     if (payload.footerText) { line('-'.repeat(width)); applyStyle('footer', { alignment: 'CENTER' }); lines(wrap(payload.footerText, width)); }
   } else {
-    const { profile, grandTotal, taxRate, totalTax, serviceCharge, taxableValue } = calculateBill(payload);
+    const { profile, grandTotal, taxRate, totalTax, serviceCharge, discountAmount, taxableValue } = calculateBill(payload);
     const show = (key) => profile.lineVisibility?.[key] !== false;
     const invoiceNumber = profile.invoiceNumberFormat === 'LAST4' ? String(payload.invoiceNo || '').slice(-4) : (payload.invoiceNo || '');
     const items = groupedItems(payload.items || []);
@@ -242,12 +243,13 @@ function buildThermalDocument(job, groupedItems = (items) => items) {
     const itemsWidth = currentLineWidth;
     if (show('items') && ruleCharacter.trim()) line(ruleCharacter.repeat(itemsWidth));
     const qtyWidth = 4; const amountWidth = itemsWidth >= 40 ? 11 : 9; const itemWidth = itemsWidth - qtyWidth - amountWidth;
-    if (show('items')) { lines(columns(['Item', 'Qty', 'Amount'], [itemWidth, qtyWidth, amountWidth], ['left', 'right', 'right'])); if (ruleCharacter.trim()) line(ruleCharacter.repeat(itemsWidth)); items.forEach((item) => lines(columns([item.name, item.quantity, (Number(item.quantity || 0) * Number(item.price || 0)).toFixed(2)], [itemWidth, qtyWidth, amountWidth], ['left', 'right', 'right']))); if (ruleCharacter.trim()) line(ruleCharacter.repeat(itemsWidth)); }
+    if (show('items')) { lines(columns(['Item', 'Qty', 'Amount'], [itemWidth, qtyWidth, amountWidth], ['left', 'right', 'right'])); if (ruleCharacter.trim()) line(ruleCharacter.repeat(itemsWidth)); items.forEach((item) => { const gross = Number(item.quantity || 0) * Number(item.price || 0); const amount = String(payload.taxDisplayMode || 'INCLUSIVE').toUpperCase() === 'EXCLUSIVE' && taxRate > 0 ? gross / (1 + taxRate / 100) : gross; lines(columns([item.name, item.quantity, amount.toFixed(2)], [itemWidth, qtyWidth, amountWidth], ['left', 'right', 'right'])); }); if (ruleCharacter.trim()) line(ruleCharacter.repeat(itemsWidth)); }
     applyStyle('totals', { alignment: 'LEFT' });
     const totalsWidth = currentLineWidth;
     const totalsAmountWidth = totalsWidth >= 40 ? 15 : 13;
     const money = (label, value) => lines(columns([label, `INR ${Number(value).toFixed(2)}`], [totalsWidth - totalsAmountWidth, totalsAmountWidth], ['left', 'right']));
     if (show('service_charge') && serviceCharge > 0) money('Service charge', serviceCharge);
+    if (show('discount') && discountAmount > 0) money('Discount', -discountAmount);
     if (show('tax_breakup') && taxRate > 0) {
       money('Taxable value', taxableValue);
       money(`CGST @ ${(taxRate / 2).toFixed(2)}%`, totalTax / 2);

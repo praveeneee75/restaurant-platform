@@ -339,6 +339,29 @@ function renderRestaurantOptions() {
     : `<option value="">No mobile-enabled restaurants</option>`;
 }
 
+async function findLocalStaffLogin(usernameValue, pinValue) {
+  const candidates = [...state.restaurants];
+  const saved = savedRestaurant();
+  if (saved && !candidates.some((item) => item.restaurantId === saved.restaurantId)) candidates.unshift(saved);
+  let lastError = null;
+  for (const restaurant of candidates) {
+    const base = restaurantPosUrl(restaurant);
+    if (!base) continue;
+    try {
+      const data = await fetchJson(`${base}/mobile-app/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ restaurantId: restaurant.restaurantId, username: usernameValue, pin: pinValue }) });
+      return { data, restaurant, base };
+    } catch (error) { lastError = error; }
+  }
+  throw lastError || new Error("No local POS was reachable. Connect this device to the same Wi-Fi as the POS and try again.");
+}
+
+async function loadOwnerRestaurant(token) {
+  const result = await fetchJson(`${MOBILE_DIRECTORY_URL}/owners/restaurants`, { headers: { Authorization: `Bearer ${token}` } });
+  const first = result.restaurants?.[0];
+  if (!first) throw new Error("No restaurant is assigned to this owner account.");
+  return state.restaurants.find((item) => item.restaurantId === first.restaurant_code) || { restaurantId: first.restaurant_code, name: first.name || first.restaurant_code, posUrl: "", currency: "INR" };
+}
+
 async function useRestaurant(restaurant) {
   if (!restaurant) return;
   state.restaurant = restaurant;
@@ -418,7 +441,8 @@ function showRoleGrid(role) {
     owner: ["OWNER", "MANAGER", "MANAGER_2"],
     captain: ["OWNER", "MANAGER", "MANAGER_1", "MANAGER_2", "CAPTAIN", "WAITER"],
     waiter: ["OWNER", "MANAGER", "MANAGER_1", "MANAGER_2", "CAPTAIN", "WAITER"],
-    cashier: ["OWNER", "MANAGER", "MANAGER_1", "MANAGER_2", "CASHIER"]
+    cashier: ["OWNER", "MANAGER", "MANAGER_1", "MANAGER_2", "CASHIER"],
+    kitchen: ["OWNER", "MANAGER", "MANAGER_1", "MANAGER_2", "KITCHEN"]
   };
   document.querySelectorAll("[data-role]").forEach((button) => {
     button.hidden = !roleRules[button.dataset.role]?.includes(role);
@@ -426,11 +450,6 @@ function showRoleGrid(role) {
 }
 
 async function login() {
-  state.restaurant = selectedRestaurant();
-  if (!state.restaurant) {
-    loginStatus.textContent = "Select a restaurant.";
-    return;
-  }
   if (!username.value.trim() || !pin.value.trim()) {
     loginStatus.textContent = "Enter username and PIN.";
     return;
@@ -444,30 +463,22 @@ async function login() {
   loginButton.textContent = "Signing in...";
   loginStatus.textContent = "Connecting to the restaurant POS...";
   try {
-    const base = restaurantPosUrl(state.restaurant);
+    let base = "";
     let data;
     if (ownerStyleLogin) {
       loginStatus.textContent = "Signing in securely through K'Master cloud...";
-      data = await fetchJson(`${MOBILE_DIRECTORY_URL}/license/owner-pos-login`, {
+      const ownerLogin = await fetchJson(`${MOBILE_DIRECTORY_URL}/owners/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          restaurantId: state.restaurant.restaurantId,
-          email: username.value.trim(),
-          password: pin.value
-        })
+        body: JSON.stringify({ email: username.value.trim(), password: pin.value })
       });
+      state.restaurant = await loadOwnerRestaurant(ownerLogin.token);
+      data = { token: ownerLogin.token, user: { ...ownerLogin.owner, username: ownerLogin.owner.email, role: "OWNER", cloudOwner: true } };
     } else {
-      await checkPremiumAccess(state.restaurant);
-      data = await fetchJson(`${base}/mobile-app/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          restaurantId: state.restaurant.restaurantId,
-          username: username.value.trim(),
-          pin: pin.value.trim()
-        })
-      });
+      const localLogin = await findLocalStaffLogin(username.value.trim(), pin.value.trim());
+      data = localLogin.data;
+      state.restaurant = localLogin.restaurant;
+      base = localLogin.base;
     }
     state.user = data.user;
     if (data.token) localStorage.setItem("ownerCloudToken", data.token);
@@ -478,7 +489,11 @@ async function login() {
     localStorage.setItem("user", JSON.stringify(data.user));
     activeRestaurantName.textContent = `${state.restaurant.name} active`;
     showRoleGrid(data.user.role);
-    showDashboardView(`Signed in as ${data.user.role}.`);
+    if (ownerStyleLogin) showDashboardView(`Signed in as ${data.user.role}.`);
+    else {
+      showDashboardView(`Signed in as ${data.user.role}. Opening workspace...`);
+      await openRoleWorkspace(String(data.user.role).toUpperCase() === "KITCHEN" ? "kitchen" : "pos", loginButton);
+    }
     await offerBiometric({
       restaurantId: state.restaurant.restaurantId,
       restaurantName: state.restaurant.name,
@@ -590,7 +605,9 @@ async function openRoleWorkspace(role, button) {
     owner: `${posBase}/admin.html?${mobileParams.toString()}`,
     captain: `${posBase}/waiter.html?${mobileParams.toString()}`,
     waiter: `${posBase}/waiter.html?${mobileParams.toString()}`,
-    cashier: `${posBase}/pos-live.html?${mobileParams.toString()}`
+    cashier: `${posBase}/pos-live.html?${mobileParams.toString()}`,
+    pos: `${posBase}/pos-live.html?${mobileParams.toString()}`,
+    kitchen: `${posBase}/kds.html?${mobileParams.toString()}`
   };
   if (!restId || !posBase || !state.user) {
     showLoginView("Login first.");

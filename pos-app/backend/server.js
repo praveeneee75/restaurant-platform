@@ -58,6 +58,7 @@ const {
 
 const app = express();
 const restaurantDbCache = new Map();
+let lastMobileLoginDiagnostic = null;
 let desktopLicenseState = {
   status: process.env.POS_DESKTOP === '1' ? 'PENDING' : 'ACTIVE',
   restaurantId: null,
@@ -1758,6 +1759,10 @@ app.post('/mobile-app/login', (req, res) => {
     }
     const auth = authenticateUserWithPin(db, restaurantId, username, pin, req);
     if (!auth.ok) return res.status(auth.status || 401).json({ success: false, message: auth.message, locked: auth.locked, remainingAttempts: auth.remainingAttempts });
+    const sourceIp = String(req.ip || req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
+    const posIp = (() => { try { return new URL(mobilePosBaseUrl()).hostname; } catch (_) { return ''; } })();
+    const prefix = (value) => /^\d+\.\d+\.\d+\.\d+$/.test(value) ? value.split('.').slice(0, 3).join('.') : '';
+    lastMobileLoginDiagnostic = { at: new Date().toISOString(), username: auth.user.username, role: auth.user.role, sourceIp, posIp, sameWifi: Boolean(prefix(sourceIp) && prefix(sourceIp) === prefix(posIp)) };
     res.json({
       success: true,
       forcePasswordChange: auth.forcePasswordChange,
@@ -4666,7 +4671,9 @@ app.get('/mobile-app/config', (req, res) => {
         owner: '/owner-mobile.html',
         captain: '/waiter.html',
         waiter: '/waiter.html',
-        cashier: '/pos-live.html'
+        cashier: '/pos-live.html',
+        manager: '/pos-live.html',
+        kitchen: '/kds.html'
       },
       modules: enabledModules(db)
     });
@@ -6984,7 +6991,7 @@ app.post('/orders/final-bill', (req, res) => {
         orderId, orderReference: order.order_reference || String(orderId), invoiceNo: `FINAL-${order.order_reference || orderId}`, finalBill: true, items,
         printer: { name: billPrinter.name, connection: billPrinter.connection, address: billPrinter.address },
         restaurantProfile: { displayName:getConfigValue(db,'restaurant_display_name',''), legalName:getConfigValue(db,'legal_name',''), gstin:getConfigValue(db,'gstin',''), fssaiLicenseNo:getConfigValue(db,'fssai_license_no',''), stateCode:getConfigValue(db,'state_code','33'), sacCode:getConfigValue(db,'sac_code','996331'), addressLine1:getConfigValue(db,'address_line_1',''), addressLine2:getConfigValue(db,'address_line_2',''), city:getConfigValue(db,'city',''), state:getConfigValue(db,'state',''), country:getConfigValue(db,'country',''), phone:getConfigValue(db,'phone',''), email:getConfigValue(db,'email',''), currency:getConfigValue(db,'currency','INR'), showTaxOnBill:getBooleanConfig(db,'show_tax_on_bill',true), printContact:getBooleanConfig(db,'bill_print_contact',true), printKotReferences:getBooleanConfig(db,'bill_print_kot_references',true), compactKotReferences:getBooleanConfig(db,'bill_compact_kot_references',true), printCustomer:getBooleanConfig(db,'bill_print_customer',true), printPayment:false, printAuthorisedSignatory:getBooleanConfig(db,'bill_print_authorised_signatory',true), footerText:getConfigValue(db,'bill_footer_text','THANK YOU. VISIT AGAIN.'), billTemplate:getConfigValue(db,'bill_template','BORDERED'), ...getBillLineOptions(db) },
-        customerId:order.customer_id || null, customerName:customer?.name || '', customerPhone:customer?.phone || '', tableNumber:order.table_no || '', orderType:order.order_type || 'DINE_IN', settledAt:new Date().toISOString(), serviceCharge, roundOff, payable, taxName:getConfigValue(db,'tax_name','GST'), taxRate:getNumberConfig(db,'tax_rate',getConfigValue(db,'gstin','') ? 5 : 0), paymentMode:'Pending settlement', kotReferences
+        customerId:order.customer_id || null, customerName:customer?.name || '', customerPhone:customer?.phone || '', tableNumber:order.table_no || '', orderType:order.order_type || 'DINE_IN', taxDisplayMode:getConfigValue(db, order.order_type === 'DINE_IN' ? 'bill_tax_display_dine_in' : (String(order.order_type).includes('PARTY') || String(order.order_type).includes('PHONE') ? 'bill_tax_display_party' : 'bill_tax_display_parcel'), 'INCLUSIVE'), settledAt:new Date().toISOString(), discountAmount, serviceCharge, roundOff, payable, taxName:getConfigValue(db,'tax_name','GST'), taxRate:getNumberConfig(db,'tax_rate',getConfigValue(db,'gstin','') ? 5 : 0), paymentMode:'Pending settlement', kotReferences
       }));
       printQueued = true;
     }
@@ -7312,9 +7319,11 @@ app.post('/orders/settle', async (req, res) => {
         customerPhone: linkedCustomerId ? db.prepare('SELECT phone FROM customers WHERE id = ?').get(linkedCustomerId)?.phone || '' : '',
         tableNumber: order.table_no || '',
         orderType: order.order_type || 'DINE_IN',
+        taxDisplayMode: getConfigValue(db, order.order_type === 'DINE_IN' ? 'bill_tax_display_dine_in' : (String(order.order_type).includes('PARTY') || String(order.order_type).includes('PHONE') ? 'bill_tax_display_party' : 'bill_tax_display_parcel'), 'INCLUSIVE'),
         settledAt: new Date().toISOString(),
         redeemedPoints: redeem,
         loyaltyDiscount,
+        discountAmount,
         serviceCharge,
         roundOff,
         payable,
@@ -8218,7 +8227,8 @@ app.get('/reports/operational-summary', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     if (role) requirePermission(db, role, canRole(db, role, 'reports.view_all') ? 'reports.view_all' : 'reports.view_invoice_only', 'Reports permission required');
-    const dateFilter = `DATE(COALESCE(o.settled_at,o.updated_at,o.created_at)) BETWEEN DATE(?) AND DATE(?)`;
+    const invoiceOnly = role && !['OWNER', 'ADMIN', 'MANAGER_2'].includes(String(role).toUpperCase());
+    const dateFilter = `DATE(COALESCE(o.settled_at,o.updated_at,o.created_at)) BETWEEN DATE(?) AND DATE(?)${invoiceOnly ? ' AND COALESCE(o.is_invoice,0)=1' : ''}`;
     let columns = [];
     let rows = [];
     if (type === 'categories' || type === 'items') {
@@ -10429,7 +10439,8 @@ async function sendPosHeartbeat() {
       backupStatus: backup.last_backup_at ? `Last backup ${backup.last_backup_at}` : 'No backup yet',
       printerStatus: pendingPrintJobs > 0 ? `PENDING:${pendingPrintJobs}` : 'OK',
       licenseStatus: license.status || 'UNKNOWN',
-      appStatus: 'OK'
+      appStatus: 'OK',
+      mobileLogin: lastMobileLoginDiagnostic
     }, { timeout: 5000 });
   } catch (err) {
     console.warn('POS heartbeat skipped:', err.message);

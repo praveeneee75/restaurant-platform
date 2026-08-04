@@ -647,7 +647,7 @@ const BILL_LINE_OPTIONS = [
   ['restaurant_header','Restaurant name / legal name'], ['address','Address'], ['contact','Phone and email'], ['gstin','GSTIN'], ['fssai','FSSAI'],
   ['document_title','Document title'], ['invoice_number','Invoice number'], ['datetime','Date / time'], ['order_table','Order / table'],
   ['kot_references','KOT references'], ['customer','Customer'], ['payment','Payment method'], ['tax_details','SAC / place of supply / reverse charge'],
-  ['items','Item headings and rows'], ['service_charge','Service charge'], ['tax_breakup','Tax breakup'], ['grand_total','Grand total'], ['footer','Footer text'], ['signatory','Authorised signatory']
+  ['items','Item headings and rows'], ['service_charge','Service charge'], ['discount','Discount'], ['tax_breakup','Tax breakup'], ['grand_total','Grand total'], ['footer','Footer text'], ['signatory','Authorised signatory']
 ];
 function renderBillLineVisibilityRows() {
   const body = document.getElementById('billLineVisibilityRows'); if (!body) return;
@@ -1047,6 +1047,9 @@ function renderSettings() {
   settingBillFontType.value = settings.bill_font_type || 'FONT_A';
   settingBillFontSize.value = settings.bill_font_size || 'NORMAL';
   settingBillLineSpacingDots.value = settings.bill_line_spacing_dots ?? '24';
+  settingBillTaxDisplayDineIn.value = settings.bill_tax_display_dine_in || 'INCLUSIVE';
+  settingBillTaxDisplayParcel.value = settings.bill_tax_display_parcel || 'INCLUSIVE';
+  settingBillTaxDisplayParty.value = settings.bill_tax_display_party || 'INCLUSIVE';
   settingBillDetailsLayout.value = settings.bill_details_layout || 'TWO_COLUMN';
   loadPrintStyles('bill', settings);
   renderBillTemplatePreview();
@@ -1163,6 +1166,9 @@ function collectSettings() {
     bill_font_type: settingBillFontType.value,
     bill_font_size: settingBillFontSize.value,
     bill_line_spacing_dots: settingBillLineSpacingDots.value || '24',
+    bill_tax_display_dine_in: settingBillTaxDisplayDineIn.value,
+    bill_tax_display_parcel: settingBillTaxDisplayParcel.value,
+    bill_tax_display_party: settingBillTaxDisplayParty.value,
     bill_details_layout: settingBillDetailsLayout.value,
     ...flatPrintStyles('bill'),
     qr_require_table_pin: checkedValue(settingQrRequireTablePin),
@@ -1223,7 +1229,7 @@ const SETTINGS_KEYS_BY_SECTION = {
   profile: ["restaurant_display_name", "legal_name", "gstin", "fssai_license_no", "state_code", "address_line_1", "address_line_2", "city", "state", "country", "phone", "email", "currency", "timezone", "logo_path"],
   pos: ["default_order_type", "allow_non_invoice_orders", "allow_discount", "allow_manual_price_override", "allow_refund", "allow_order_cancel", "require_manager_pin_for_discount", "require_manager_pin_for_refund", "require_manager_pin_for_void", "require_clock_in_before_order"],
   billing: ["invoice_prefix", "invoice_reset_frequency", "show_tax_on_bill", "tax_name", "tax_rate", "sac_code", "show_qr_on_bill", "qr_require_table_pin", "qr_session_minutes", "qr_ordering_enabled", "qr_pending_order_limit", "upi_id", "service_charge_enabled", "service_charge_percent", "round_off_enabled", "billing_show_promocode", "billing_show_reward_points", "billing_show_cash_discount", "billing_show_percentage_discount", "billing_show_settle_print", "billing_show_settle_invoice", "billing_show_settle_only"],
-  "bill-print": ["bill_template", "bill_print_contact", "bill_print_kot_references", "bill_compact_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text", ...BILL_LINE_OPTIONS.map(([key])=>`bill_line_${key}`), "bill_invoice_number_format", "bill_left_margin_dots", "bill_trailing_feed_lines", "bill_cut_mode", "bill_print_width_58", "bill_print_width_80", "bill_font_type", "bill_font_size", "bill_line_spacing_dots", "bill_details_layout", ...Object.keys(flatPrintStyles('bill'))],
+  "bill-print": ["bill_template", "bill_print_contact", "bill_print_kot_references", "bill_compact_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text", "bill_tax_display_dine_in", "bill_tax_display_parcel", "bill_tax_display_party", ...BILL_LINE_OPTIONS.map(([key])=>`bill_line_${key}`), "bill_invoice_number_format", "bill_left_margin_dots", "bill_trailing_feed_lines", "bill_cut_mode", "bill_print_width_58", "bill_print_width_80", "bill_font_type", "bill_font_size", "bill_line_spacing_dots", "bill_details_layout", ...Object.keys(flatPrintStyles('bill'))],
   kot: ["auto_print_kot", "print_kot_on_save", "print_kot_on_submit", "allow_kot_reprint", "kot_header_text", "kot_footer_text", "kot_template", "kot_print_table", "kot_print_customer", "kot_print_kitchen", "kot_compact_spacing", "kot_left_margin_dots", "kot_trailing_feed_lines", "kot_cut_mode", "kot_print_width_58", "kot_print_width_80", "kot_font_type", "kot_font_size", "kot_line_spacing_dots", ...Object.keys(flatPrintStyles('kot'))],
   online: ["mobile_app_enabled", "online_order_enabled", "online_storefront_slug", "online_theme", "online_primary_color", "online_accent_color", "online_logo_path", "online_payment_methods", "online_require_otp", "online_allow_loyalty_credit", "online_delivery_enabled", "online_takeaway_enabled", "online_min_order_amount"]
 };

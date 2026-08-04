@@ -7,10 +7,14 @@
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body class="admin-shell customer-shell">
+  <header class="app-home-nav">
+    <div class="app-home-brand"><strong>K'MASTER</strong> <span>POS</span><small>Administration · Customers</small></div>
+    <nav aria-label="POS home sections"><a href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a href="/billing.html">Billing</a><a class="active" href="/admin.html">Admin</a><a href="/admin.html?view=reports">Reports</a><button data-logout type="button">Logout</button></nav>
+  </header>
   <aside class="admin-sidebar">
-    <div class="brand-block"><span class="brand-mark">CRM</span><strong>Customers</strong></div>
-    <a class="nav-link" href="/admin.html">Admin</a>
-    <a class="nav-link" href="/pos-live.html">POS</a>
+    <div class="brand-block"><span class="brand-mark">POS</span><strong>Admin</strong></div>
+    <a class="nav-link" href="/admin.html">Admin overview</a>
+    <a class="nav-link active" href="/customer.html">Customer Management</a>
   </aside>
   <main class="admin-main">
     <header class="topbar">

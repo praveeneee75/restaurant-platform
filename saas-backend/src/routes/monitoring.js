@@ -78,7 +78,7 @@ router.get('/status', authenticate, async (_req, res) => {
     const result = await pool.query(`
       SELECT t.name, t.restaurant_code, l.status AS license_status,
              hb.pos_version, hb.backup_status, hb.printer_status, hb.app_status,
-             hb.last_heartbeat_at,
+             hb.last_heartbeat_at, hb.payload->'mobileLogin' AS mobile_login,
              CASE WHEN hb.last_heartbeat_at > NOW() - INTERVAL '2 minutes' THEN 'ONLINE' ELSE 'OFFLINE' END AS online_status
       FROM tenants t
       JOIN licenses l ON l.tenant_id = t.id

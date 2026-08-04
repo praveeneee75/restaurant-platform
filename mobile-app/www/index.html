@@ -26,9 +26,7 @@
     </section>
 
     <section class="login-panel" id="loginView">
-      <label>Restaurant
-        <select id="restaurantSelect"></select>
-      </label>
+      <select id="restaurantSelect" hidden aria-hidden="true"></select>
       <label>Username or owner email
         <input id="username" autocomplete="username" placeholder="admin or owner@example.com">
       </label>
@@ -87,6 +85,7 @@
               <button data-role="captain" type="button">Captain Ordering</button>
               <button data-role="waiter" type="button">Waiter Ordering</button>
               <button data-role="cashier" type="button">Cashier POS</button>
+              <button data-role="kitchen" type="button">Kitchen KDS</button>
             </div>
           </article>
           <article class="insight-card settings-actions"><button id="settingsButton" type="button" class="secondary-button">App settings</button><button id="logoutButton" type="button" class="danger-button">Logout</button></article>
