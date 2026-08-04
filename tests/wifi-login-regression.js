@@ -29,20 +29,26 @@ const { PREFERRED_POS_PORT, findAvailablePort } = require(path.join(root, 'pos-a
   const refreshStart = mobile.indexOf('await fetchRestaurantDirectory()', loginStart);
   assert.ok(refreshStart > loginStart && refreshStart < attemptsStart, 'mobile login should refresh POS discovery before connecting');
   assert.match(mobile, /CAPTAIN:\s*"captain"/, 'captains should land in the dedicated Dine In workspace');
-  assert.match(mobile, /captain:\s*`\$\{posBase\}\/pos-live\.html\?mode=DINE_IN&layout=mobile/, 'captains should use the full POS Dine In engine in mobile layout');
+  assert.match(mobile, /captain:\s*`\$\{posBase\}\/waiter\.html/, 'captains should use the dedicated mobile Dine In interface');
+  assert.match(mobile, /webviewPanel\.classList\.toggle\("staff-workspace"/, 'staff should not see the duplicate outer workspace header');
+  assert.doesNotMatch(mobile, /if \(state\.user && !state\.user\.cloudOwner\) logoutButton\.click/, 'closing a workspace must not log staff out');
   assert.doesNotMatch(mobile, /CAPTAIN[^\n]+WAITER[^\n]+\]\s*,\s*\n\s*waiter:/, 'captains should not be offered the separate waiter role');
 
   const posLive = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/pos-live.js'), 'utf8');
   assert.match(posLive, /mobileSessionParams\.get\("mobileRole"\)/, 'generic mobile POS links should restore the authenticated mobile session');
-  assert.match(posLive, /mobileDineLayout/, 'POS Dine In should expose its shared mobile presentation mode');
+  assert.match(posLive, /mobileDineLayout/, 'POS Dine In may expose a mobile presentation mode for cashier fallback');
   for (const control of ['newCheckBtn', 'parcelCheckBtn', 'customerPhone', 'customerName', 'submitKot', 'finalBillPrintOrder']) {
     assert.ok(posLive.includes(control), `mobile POS engine should retain desktop control: ${control}`);
   }
 
   const waiter = fs.readFileSync(path.join(root, 'pos-app/backend/public/waiter.html'), 'utf8');
+  const waiterJs = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/waiter.js'), 'utf8');
   for (const step of ['tables', 'menu', 'order']) {
     assert.match(waiter, new RegExp(`data-waiter-step="${step}"`), `mobile Dine In should provide the ${step} step`);
   }
+  assert.match(waiterJs, /postJson\("\/orders\/lock", \{ tableId: state\.selectedTable\.id, orderId \}\)/, 'switching customer checks must rebind the table lock to the selected order');
+  assert.match(waiterJs, /fulfillment_type[\s\S]*=== fulfillmentType/, 'dine-in and linked parcel carts must remain visually separated');
+  assert.match(waiterJs, /Number\(row\.id\) === Number\(itemId\) && !row\.sentToKitchen/, 'adding an already-KOT item must create a new KOT line instead of changing the submitted line');
 
   console.log('Wi-Fi login regression checks passed');
 })().catch((error) => {

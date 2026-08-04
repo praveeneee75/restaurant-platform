@@ -35,7 +35,7 @@ assert.doesNotMatch(adminHtml, /class="report-type-tabs"/, 'Duplicate report tab
 assert.match(mobileHtml, /restaurantSelect" hidden/, 'Mobile restaurant dropdown must be hidden');
 assert.match(mobile, /findLocalStaffLogin[\s\S]*\/mobile-app\/login/, 'Mobile staff login must discover the local POS');
 assert.match(mobile, /kitchen:\s*`\$\{posBase\}\/kds\.html/, 'Kitchen must route to KDS');
-assert.match(mobile, /captain:\s*`\$\{posBase\}\/pos-live\.html\?mode=DINE_IN&layout=mobile/, 'Captain must route to the mobile Dine In POS');
+assert.match(mobile, /captain:\s*`\$\{posBase\}\/waiter\.html/, 'Captain must route to the dedicated mobile Dine In POS');
 assert.match(server, /lastMobileLoginDiagnostic[\s\S]*sameWifi/, 'POS must capture mobile Wi-Fi diagnostics');
 assert.match(monitoring, /mobile_login/, 'SaaS monitoring must expose mobile diagnostics');
 assert.match(customerHtml, /admin-nav-layout[\s\S]*admin-category-nav[\s\S]*Customer Management/, 'Customer CRM must use the shared Admin navigation structure');

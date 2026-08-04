@@ -375,6 +375,8 @@ iframe {
     grid-template-columns: repeat(4, 1fr);
   }
 }
+.webview-panel.staff-workspace { grid-template-rows: 1fr; }
+.webview-panel.staff-workspace > header { display: none; }
 @media (min-width: 980px) and (orientation: landscape) {
   .app-shell {
     grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.2fr);

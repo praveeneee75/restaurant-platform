@@ -35,7 +35,8 @@ const state = {
   billingReady: false,
   latestUpdatedAt: null,
   lock: null,
-  permissions: []
+  permissions: [],
+  settings: {}
 };
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
@@ -90,6 +91,7 @@ async function loadBootstrap() {
     state.categories = pos.categories || [];
     state.items = pos.items || [];
     state.permissions = permissions.currentPermissions || [];
+    state.settings = pos.settings || {};
     if (!can("orders.create")) {
       waiterStatus.textContent = "Your role cannot create waiter orders.";
       saveWaiterOrder.disabled = true;
@@ -129,8 +131,9 @@ function renderOrderControls() {
   waiterCustomerStatus.textContent = state.customer ? `${state.customer.name} - ${state.customer.phone || "No phone"}` : "No customer attached";
   fulfilmentStatus.textContent = state.fulfillmentType === "TAKEAWAY" ? "Parcel check linked to this table" : "Dine In check";
   const hasUnsentItems = state.cart.some((item) => !item.sentToKitchen);
-  submitWaiterKot.disabled = state.billingReady || !state.orderId || !hasUnsentItems;
-  finalWaiterCheck.disabled = state.billingReady || !state.orderId || state.cart.length === 0;
+  submitWaiterKot.disabled = state.billingReady || !state.selectedTable || !state.lock || !hasUnsentItems;
+  finalWaiterCheck.hidden = state.settings.showFinalBillPrintDineIn === false;
+  finalWaiterCheck.disabled = state.billingReady || !state.selectedTable || !state.lock || state.cart.length === 0;
   saveWaiterOrder.disabled = state.billingReady || state.cart.length === 0;
 }
 
@@ -201,12 +204,13 @@ async function selectTable(tableId) {
   showMobileStep("menu");
 }
 
-async function loadWaiterOrder(orderId) {
+async function loadWaiterOrder(orderId, options = {}) {
+  const fulfillmentType = options.fulfillmentType || "DINE_IN";
   state.orderId = Number(orderId) || null;
   state.customer = null;
   state.cart = [];
   state.billingReady = false;
-  state.fulfillmentType = "DINE_IN";
+  state.fulfillmentType = fulfillmentType;
   if (!state.orderId) {
     state.latestUpdatedAt = null;
     return;
@@ -215,13 +219,15 @@ async function loadWaiterOrder(orderId) {
   state.latestUpdatedAt = open.order?.updated_at || null;
   state.billingReady = Number(open.order?.billing_ready) === 1;
   state.customer = open.customer || null;
-  state.cart = (open.items || []).map((item) => ({ id: item.id, orderItemId: item.order_item_id || null, name: item.name, price: item.price, quantity: item.quantity, notes: item.notes || '', sentToKitchen: Boolean(item.kot_id), fulfillmentType: item.fulfillment_type || "DINE_IN", modifiers: [] }));
+  state.cart = (open.items || [])
+    .filter((item) => String(item.fulfillment_type || "DINE_IN").toUpperCase() === fulfillmentType)
+    .map((item) => ({ id: item.id, orderItemId: item.order_item_id || null, name: item.name, price: item.price, quantity: item.quantity, notes: item.notes || '', sentToKitchen: Boolean(item.kot_id), fulfillmentType: item.fulfillment_type || "DINE_IN", modifiers: [] }));
 }
 
 function addItem(itemId) {
   const item = state.items.find((row) => Number(row.id) === Number(itemId));
   if (!item) return;
-  const existing = state.cart.find((row) => Number(row.id) === Number(itemId));
+  const existing = state.cart.find((row) => Number(row.id) === Number(itemId) && !row.sentToKitchen);
   if (existing) existing.quantity += 1;
   else state.cart.push({ id: item.id, name: item.name, price: item.price, quantity: 1, notes: '', sentToKitchen: false, modifiers: [] });
   state.selectedCartKey = Number(item.id);
@@ -269,13 +275,14 @@ async function submitKot() {
   submitWaiterKot.disabled = true;
   await saveOrder();
   const result = await postJson("/orders/submit-kot", { orderId: state.orderId, fulfillmentType: state.fulfillmentType });
-  await loadWaiterOrder(state.orderId);
+  await loadWaiterOrder(state.orderId, { fulfillmentType: state.fulfillmentType });
   renderAll();
+  showMobileStep("order");
   waiterStatus.textContent = result.message || `KOT submitted for order #${state.orderId}`;
 }
 
 async function requestFinalCheck() {
-  if (!state.orderId) throw new Error("Save the order first");
+  if (!state.orderId || state.cart.some((item) => !item.sentToKitchen)) await saveOrder();
   finalWaiterCheck.disabled = true;
   const result = await postJson("/orders/final-bill", { orderId: state.orderId });
   state.billingReady = true;
@@ -409,11 +416,25 @@ waiterCart.addEventListener("keydown", (event) => {
 });
 
 saveWaiterOrder.addEventListener("click", () => saveOrder().catch((err) => alert(err.message)));
-submitWaiterKot.addEventListener("click", () => submitKot().catch((err) => alert(err.message)));
+submitWaiterKot.addEventListener("click", () => submitKot().catch((err) => { renderOrderControls(); waiterStatus.textContent = err.message; alert(err.message); }));
 finalWaiterCheck.addEventListener("click", () => requestFinalCheck().catch((err) => { finalWaiterCheck.disabled = false; alert(err.message); }));
 newWaiterCheck.addEventListener("click", startNewWaiterCheck);
 parcelWaiterCheck.addEventListener("click", () => startParcelWaiterCheck().catch((err) => alert(err.message)));
-waiterOrderSelector.addEventListener("change", () => loadWaiterOrder(waiterOrderSelector.value).then(() => { renderAll(); showMobileStep("order"); }).catch((err) => alert(err.message)));
+waiterOrderSelector.addEventListener("change", async () => {
+  try {
+    const orderId = Number(waiterOrderSelector.value || 0);
+    if (orderId && state.selectedTable) {
+      const locked = await postJson("/orders/lock", { tableId: state.selectedTable.id, orderId });
+      state.lock = locked.lock;
+    }
+    await loadWaiterOrder(orderId);
+    renderAll();
+    showMobileStep("order");
+  } catch (err) {
+    waiterStatus.textContent = err.message;
+    alert(err.message);
+  }
+});
 searchWaiterCustomer.addEventListener("click", () => searchWaiterCustomerByPhone().catch((err) => alert(err.message)));
 createWaiterCustomer.addEventListener("click", () => createWaiterCustomerFromForm().catch((err) => alert(err.message)));
 transferTableButton.addEventListener("click", () => transferSelectedTable().catch((err) => alert(err.message)));
@@ -425,6 +446,7 @@ unlockWaiterTable.addEventListener("click", async () => {
   renderAll();
 });
 refreshWaiter.addEventListener("click", () => loadBootstrap().catch((err) => alert(err.message)));
+logoutWaiter.addEventListener("click", () => window.parent.postMessage({ type: "KMASTER_MOBILE_LOGOUT" }, "*"));
 
 loadBootstrap().then(touchDevice).catch((err) => {
   waiterStatus.textContent = err.message;
