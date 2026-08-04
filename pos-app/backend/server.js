@@ -5314,6 +5314,7 @@ app.get('/pos/bootstrap', (req, res) => {
         allowDiscount: getBooleanConfig(db, 'allow_discount', true),
         allowRefund: getBooleanConfig(db, 'allow_refund', true),
         allowOrderCancel: getBooleanConfig(db, 'allow_order_cancel', true),
+        showFinalBillPrint: getBooleanConfig(db, 'pos_show_final_bill_print', true),
         serviceChargeEnabled: getBooleanConfig(db, 'service_charge_enabled', false),
         serviceChargePercent: getNumberConfig(db, 'service_charge_percent', 0),
         taxRate: getNumberConfig(db, 'tax_rate', getConfigValue(db, 'gstin', '') ? 5 : 0),

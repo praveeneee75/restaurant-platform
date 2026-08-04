@@ -375,6 +375,9 @@ async function boot() {
     renderCart();
     return;
   }
+  if (finalBillPrintOrder) {
+    finalBillPrintOrder.hidden = !["DINE_IN", "PARCEL", "PARTY"].includes(posMode) || state.settings.showFinalBillPrint === false;
+  }
   const rememberedTableId = requestedTableId || Number(localStorage.getItem("posActiveTableId") || 0);
   const remembered = state.tables.find((table) => Number(table.id) === rememberedTableId && table.status === "OCCUPIED");
   const requested = state.tables.find((table) => Number(table.id) === requestedTableId);
@@ -1161,7 +1164,7 @@ async function submitCurrentKot() {
     await reloadCurrentOrderCart();
     refreshCartAndMenu();
     if (cashierDineLayout && new URLSearchParams(location.search).get("returnTo") === "billing") {
-      location.href = `/billing.html?restaurantId=${encodeURIComponent(restaurantId)}`;
+      location.href = `/billing.html?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(state.orderId)}`;
       return;
     }
     if (state.linkedParcelMode) {
@@ -1169,8 +1172,8 @@ async function submitCurrentKot() {
       orderType.value = "DINE_IN";
       await reloadCurrentOrderCart();
       updateOrderTypeView();
-    } else if (["PARCEL", "PARTY"].includes(posMode)) {
-      location.href = `/billing.html?restaurantId=${encodeURIComponent(restaurantId)}`;
+    } else if (["DINE_IN", "PARCEL", "PARTY"].includes(posMode)) {
+      location.href = `/billing.html?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(state.orderId)}`;
       return;
     }
   }
@@ -1237,12 +1240,13 @@ async function requestFinalBillAndPrint() {
     window.dispatchEvent(new Event('pos:notifications-changed'));
     alert(data.message);
     if (cashierDineLayout && new URLSearchParams(location.search).get("returnTo") === "billing") {
-      location.href = `/billing.html?restaurantId=${encodeURIComponent(restaurantId)}`;
+      location.href = `/billing.html?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(state.orderId)}`;
       return;
     }
     if (["PARCEL", "PARTY"].includes(posMode)) {
+      const completedOrderId = state.orderId;
       await startNewCheck();
-      location.href = `/billing.html?restaurantId=${encodeURIComponent(restaurantId)}`;
+      location.href = `/billing.html?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(completedOrderId)}`;
       return;
     }
   } finally { finalBillPrintOrder.disabled = state.billingReady; }

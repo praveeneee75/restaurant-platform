@@ -290,7 +290,7 @@ button:hover,
 
 .admin-shell {
   display: grid;
-  grid-template-columns: 340px 1fr;
+  grid-template-columns: 272px 1fr;
   grid-template-rows: auto minmax(0, 1fr);
 }
 .admin-shell > .app-home-nav { grid-column: 1 / -1; }
@@ -335,7 +335,7 @@ button:hover,
 
 .admin-nav-layout {
   display: grid;
-  grid-template-columns: 132px minmax(0, 1fr);
+  grid-template-columns: 106px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
 }
@@ -799,7 +799,7 @@ button:hover,
 .pos-mode-parcel .parcel-payment-customer-panel .pos-discount-tools input:nth-of-type(2) { grid-column:1; }
 .pos-mode-parcel .payment-panel .cart-actions { display:flex; justify-content:flex-end; gap:8px; }
 .pos-mode-parcel .payment-panel .cart-actions button { width:auto; min-width:120px; }
-.pos-mode-parcel .payment-panel > .pos-primary-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:stretch; gap:10px; }
+.pos-mode-parcel .payment-panel > .pos-primary-actions { display:grid; grid-template-columns:1fr; align-items:stretch; gap:10px; }
 .pos-mode-parcel .payment-panel > .pos-primary-actions button { width:100%; min-width:0; min-height:48px; }
 .pos-mode-dine-in .payment-panel > .order-type-panel,
 .pos-mode-dine-in .payment-panel > #paymentMode,
@@ -813,7 +813,7 @@ button:hover,
 .pos-mode-dine-in .customer-panel > #payableTotal { display:none!important; }
 .pos-mode-dine-in .payment-panel > .pos-primary-actions { display:grid; grid-template-columns:1fr; gap:8px; }
 .pos-mode-dine-in .payment-panel > .pos-primary-actions button { display:inline-flex; align-items:center; justify-content:center; gap:6px; width:100%; min-width:0; min-height:52px; margin:0; padding:10px 12px; line-height:1.15; text-align:center; }
-.pos-mode-party .payment-panel > .pos-primary-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:stretch; gap:10px; }
+.pos-mode-party .payment-panel > .pos-primary-actions { display:grid; grid-template-columns:1fr; align-items:stretch; gap:10px; }
 .pos-mode-party .payment-panel > .pos-primary-actions button { display:inline-flex; align-items:center; justify-content:center; gap:6px; width:100%; min-width:0; min-height:48px; margin:0; padding:10px 12px; line-height:1.15; text-align:center; }
 .pos-non-dine-in .payment-panel > #paymentMode,
 .pos-non-dine-in .payment-panel > #settlementType,

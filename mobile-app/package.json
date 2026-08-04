@@ -1,6 +1,6 @@
 {
   "name": "restaurant-platform-mobile-app",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "private": true,
   "description": "White-label mobile shell for restaurant owner, captain and waiter users",
   "scripts": {

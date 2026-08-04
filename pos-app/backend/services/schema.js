@@ -118,6 +118,7 @@ const DEFAULT_SYSTEM_SETTINGS = {
   last_backup_at: '',
   last_sync_at: '',
   require_clock_in_before_order: '0',
+  pos_show_final_bill_print: '1',
   require_open_register_for_cash_payment: '1',
   allow_cashier_register_close: '0',
   cash_discrepancy_threshold: '0',

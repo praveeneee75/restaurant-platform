@@ -1023,6 +1023,7 @@ function renderSettings() {
   setChecked(settingRequireManagerPinForRefund, settings.require_manager_pin_for_refund);
   setChecked(settingRequireManagerPinForVoid, settings.require_manager_pin_for_void);
   setChecked(settingRequireClockInBeforeOrder, settings.require_clock_in_before_order);
+  setChecked(settingPosShowFinalBillPrint, settings.pos_show_final_bill_print === undefined ? true : settings.pos_show_final_bill_print);
   settingInvoicePrefix.value = settings.invoice_prefix || "INV";
   settingInvoiceResetFrequency.value = settings.invoice_reset_frequency || "DAILY";
   setChecked(settingShowTaxOnBill, settings.show_tax_on_bill);
@@ -1142,6 +1143,7 @@ function collectSettings() {
     require_manager_pin_for_refund: checkedValue(settingRequireManagerPinForRefund),
     require_manager_pin_for_void: checkedValue(settingRequireManagerPinForVoid),
     require_clock_in_before_order: checkedValue(settingRequireClockInBeforeOrder),
+    pos_show_final_bill_print: checkedValue(settingPosShowFinalBillPrint),
     invoice_prefix: settingInvoicePrefix.value,
     invoice_reset_frequency: settingInvoiceResetFrequency.value,
     show_tax_on_bill: checkedValue(settingShowTaxOnBill),
@@ -1227,7 +1229,7 @@ function collectSettings() {
 
 const SETTINGS_KEYS_BY_SECTION = {
   profile: ["restaurant_display_name", "legal_name", "gstin", "fssai_license_no", "state_code", "address_line_1", "address_line_2", "city", "state", "country", "phone", "email", "currency", "timezone", "logo_path"],
-  pos: ["default_order_type", "allow_non_invoice_orders", "allow_discount", "allow_manual_price_override", "allow_refund", "allow_order_cancel", "require_manager_pin_for_discount", "require_manager_pin_for_refund", "require_manager_pin_for_void", "require_clock_in_before_order"],
+  pos: ["default_order_type", "allow_non_invoice_orders", "allow_discount", "allow_manual_price_override", "allow_refund", "allow_order_cancel", "require_manager_pin_for_discount", "require_manager_pin_for_refund", "require_manager_pin_for_void", "require_clock_in_before_order", "pos_show_final_bill_print"],
   billing: ["invoice_prefix", "invoice_reset_frequency", "show_tax_on_bill", "tax_name", "tax_rate", "sac_code", "show_qr_on_bill", "qr_require_table_pin", "qr_session_minutes", "qr_ordering_enabled", "qr_pending_order_limit", "upi_id", "service_charge_enabled", "service_charge_percent", "round_off_enabled", "billing_show_promocode", "billing_show_reward_points", "billing_show_cash_discount", "billing_show_percentage_discount", "billing_show_settle_print", "billing_show_settle_invoice", "billing_show_settle_only"],
   "bill-print": ["bill_template", "bill_print_contact", "bill_print_kot_references", "bill_compact_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text", "bill_tax_display_dine_in", "bill_tax_display_parcel", "bill_tax_display_party", ...BILL_LINE_OPTIONS.map(([key])=>`bill_line_${key}`), "bill_invoice_number_format", "bill_left_margin_dots", "bill_trailing_feed_lines", "bill_cut_mode", "bill_print_width_58", "bill_print_width_80", "bill_font_type", "bill_font_size", "bill_line_spacing_dots", "bill_details_layout", ...Object.keys(flatPrintStyles('bill'))],
   kot: ["auto_print_kot", "print_kot_on_save", "print_kot_on_submit", "allow_kot_reprint", "kot_header_text", "kot_footer_text", "kot_template", "kot_print_table", "kot_print_customer", "kot_print_kitchen", "kot_compact_spacing", "kot_left_margin_dots", "kot_trailing_feed_lines", "kot_cut_mode", "kot_print_width_58", "kot_print_width_80", "kot_font_type", "kot_font_size", "kot_line_spacing_dots", ...Object.keys(flatPrintStyles('kot'))],
@@ -1317,7 +1319,10 @@ document.querySelectorAll(".nav-btn").forEach((btn) => {
     btn.classList.add("active");
     document.getElementById(`view-${btn.dataset.view}`).classList.add("active");
     if (btn.dataset.view === "settings") showSettingsSection(btn.dataset.settingsSection || "profile");
-    if (btn.dataset.reportType) selectReportType(btn.dataset.reportType);
+    if (btn.dataset.reportType) {
+      selectReportType(btn.dataset.reportType);
+      loadReports.click();
+    }
   });
 });
 showAdminNavCategory(document.querySelector(".nav-btn.active")?.closest("[data-nav-group]")?.dataset.navGroup || "menu");

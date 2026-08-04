@@ -13,7 +13,9 @@ const server = read('pos-app/backend/server.js');
 const thermal = read('pos-app/electron/thermalEscPos.js');
 const mobileHtml = read('mobile-app/www/index.html');
 const mobile = read('mobile-app/www/js/app.js');
+const mobileManifest = read('mobile-app/android/app/src/main/AndroidManifest.xml');
 const monitoring = read('saas-backend/src/routes/monitoring.js');
+const customerHtml = read('pos-app/backend/public/customer.html');
 
 assert.match(pos, /directDineLayout[\s\S]*pos-mode-direct-dine[\s\S]*categorySlot\.replaceWith\(categoryPanel\)[\s\S]*tableSlot\.replaceWith\(tableList\)/, 'Direct Dine In must swap category and table panels only in its direct layout');
 assert.match(css, /\.pos-non-dine-in \.payment-panel > #paymentMode[\s\S]*\.pos-non-dine-in \.customer-panel > #payableTotal \{ display:none!important; \}/, 'Parcel and Party must hide payment, rewards, discount and payable controls');
@@ -34,5 +36,17 @@ assert.match(mobile, /findLocalStaffLogin[\s\S]*\/mobile-app\/login/, 'Mobile st
 assert.match(mobile, /KITCHEN" \? "kitchen" : "pos"/, 'Kitchen must route to KDS and other staff to POS');
 assert.match(server, /lastMobileLoginDiagnostic[\s\S]*sameWifi/, 'POS must capture mobile Wi-Fi diagnostics');
 assert.match(monitoring, /mobile_login/, 'SaaS monitoring must expose mobile diagnostics');
+assert.match(customerHtml, /admin-nav-layout[\s\S]*admin-category-nav[\s\S]*Customer Management/, 'Customer CRM must use the shared Admin navigation structure');
+assert.match(css, /\.admin-shell \{[\s\S]*grid-template-columns:\s*272px 1fr/, 'Admin left panel must be reduced by 20 percent');
+assert.match(adminHtml, /settingPosShowFinalBillPrint/, 'POS Behaviour must configure Final Bill & Print visibility');
+assert.match(admin, /pos_show_final_bill_print/, 'Final Bill & Print visibility must be persisted');
+assert.match(pos, /showFinalBillPrint === false/, 'Every POS flow must obey the Final Bill & Print visibility setting');
+assert.match(css, /\.pos-mode-parcel \.payment-panel > \.pos-primary-actions \{[^}]*grid-template-columns:1fr/, 'Parcel actions must render one button per row');
+assert.match(css, /\.pos-mode-party \.payment-panel > \.pos-primary-actions \{[^}]*grid-template-columns:1fr/, 'Party actions must render one button per row');
+assert.match(pos, /billing\.html\?restaurantId=.*&orderId=/, 'KOT navigation must carry the submitted order into Billing');
+assert.match(billing, /requestedOrderId[\s\S]*showSubmittedOrder\(requestedOrderId\)/, 'Billing must automatically open the submitted order');
+assert.match(admin, /btn\.dataset\.reportType[\s\S]*loadReports\.click\(\)/, 'Report sidebar navigation must load the selected daily report');
+assert.match(mobileManifest, /android:usesCleartextTraffic="true"/, 'Android must permit same-WiFi HTTP access to the local POS');
+assert.doesNotMatch(`${mobileHtml}\n${mobile}`, /No restaurant selected|Select your restaurant|Select a restaurant|Select restaurant/, 'Mobile login must not ask users to select a restaurant');
 
 console.log('Historical request audit regression passed.');

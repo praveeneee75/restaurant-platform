@@ -5,6 +5,7 @@ if (!sessionUser || !allowedRoles.has(String(sessionUser.role || '').toUpperCase
   throw new Error('Authentication required');
 }
 const restaurantId = new URLSearchParams(location.search).get('restaurantId') || localStorage.getItem('restaurantId');
+const requestedOrderId = Number(new URLSearchParams(location.search).get('orderId') || 0);
 document.querySelectorAll('[data-role-nav="invoices"]').forEach((el) => { el.hidden = !['OWNER', 'MANAGER_1', 'MANAGER_2', 'CASHIER'].includes(String(sessionUser.role || '').toUpperCase()); });
 document.querySelectorAll('[data-role-nav="admin"]').forEach((el) => { el.hidden = !['OWNER', 'MANAGER_1', 'MANAGER_2'].includes(String(sessionUser.role || '').toUpperCase()); });
 document.querySelectorAll('[data-role-nav="availability"]').forEach((el) => { el.hidden = !['OWNER', 'MANAGER_1', 'MANAGER_2', 'CASHIER', 'CAPTAIN'].includes(String(sessionUser.role || '').toUpperCase()); });
@@ -104,7 +105,9 @@ saveBillingQrSettings.addEventListener('click', async () => {
   finally { saveBillingQrSettings.disabled = false; }
 });
 document.addEventListener('click', async (event) => { const button=event.target.closest('[data-approve-qr],[data-reject-qr]'); if(!button)return; const rejecting=Boolean(button.dataset.rejectQr); const orderId=Number(button.dataset.rejectQr||button.dataset.approveQr); button.disabled=true; try { const response=await fetch(rejecting?'/qr/orders/reject':'/qr/orders/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({restaurantId,actor:{id:sessionUser.id,role:sessionUser.role},orderId,reason:rejecting?'Rejected from billing':undefined})}); const data=await response.json(); if(!response.ok||data.success===false)throw Error(data.message||'QR order action failed'); billingStatus.textContent=data.message; window.dispatchEvent(new Event('pos:notifications-changed')); await load(); } catch(error){billingStatus.textContent=error.message;button.disabled=false;} });
-Promise.all([load(), loadBillingQrSettings()]).catch(e => billingStatus.textContent = e.message);
+Promise.all([load(), loadBillingQrSettings()]).then(() => {
+  if (requestedOrderId > 0) return showSubmittedOrder(requestedOrderId);
+}).catch(e => billingStatus.textContent = e.message);
 setInterval(() => load().catch(e => { billingStatus.textContent = e.message; }), 10000);
 
 // Billing must show only kitchen-submitted lines; saved draft lines stay in POS.

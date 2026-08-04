@@ -247,7 +247,7 @@ function setBrand(app) {
   if (!app) return;
   const selectedName = state.restaurant?.name || app.name || localStorage.getItem("restaurantName") || "Restaurant";
   brandName.textContent = app.name || selectedName || "K'Master POS";
-  activeRestaurantName.textContent = selectedName ? `${selectedName} active` : "No restaurant selected";
+  activeRestaurantName.textContent = selectedName ? `${selectedName} active` : "Ready to sign in";
   brandStatus.textContent = app.enabled ? "Premium mobile app enabled" : "Mobile app access disabled";
   document.documentElement.style.setProperty("--primary", app.primaryColor || "#2563eb");
   document.documentElement.style.setProperty("--accent", app.accentColor || "#f59e0b");
@@ -333,7 +333,7 @@ async function fetchRestaurantDirectory() {
 
 function renderRestaurantOptions() {
   restaurantSelect.innerHTML = state.restaurants.length
-    ? `<option value="">Select restaurant</option>` + state.restaurants.map((restaurant) => (
+    ? `<option value="">Automatic discovery</option>` + state.restaurants.map((restaurant) => (
       `<option value="${esc(restaurant.restaurantId)}">${esc(restaurant.name)} (${esc(restaurant.restaurantId)})</option>`
     )).join("")
     : `<option value="">No mobile-enabled restaurants</option>`;
@@ -343,16 +343,15 @@ async function findLocalStaffLogin(usernameValue, pinValue) {
   const candidates = [...state.restaurants];
   const saved = savedRestaurant();
   if (saved && !candidates.some((item) => item.restaurantId === saved.restaurantId)) candidates.unshift(saved);
-  let lastError = null;
-  for (const restaurant of candidates) {
+  const attempts = candidates.map(async (restaurant) => {
     const base = restaurantPosUrl(restaurant);
-    if (!base) continue;
-    try {
-      const data = await fetchJson(`${base}/mobile-app/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ restaurantId: restaurant.restaurantId, username: usernameValue, pin: pinValue }) });
-      return { data, restaurant, base };
-    } catch (error) { lastError = error; }
-  }
-  throw lastError || new Error("No local POS was reachable. Connect this device to the same Wi-Fi as the POS and try again.");
+    if (!base) throw new Error("POS address unavailable");
+    const data = await fetchJson(`${base}/mobile-app/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ restaurantId: restaurant.restaurantId, username: usernameValue, pin: pinValue }) });
+    return { data, restaurant, base };
+  });
+  if (!attempts.length) throw new Error("No local POS was advertised. Keep the desktop POS open and try again.");
+  try { return await Promise.any(attempts); }
+  catch (_) { throw new Error("Cannot sign in to the local POS. Confirm this phone and the desktop POS are on the same Wi-Fi, keep the POS open, and try again."); }
 }
 
 async function loadOwnerRestaurant(token) {
@@ -376,7 +375,7 @@ async function useRestaurant(restaurant) {
 }
 
 async function checkPremiumAccess(restaurant) {
-  if (!restaurant?.restaurantId) throw new Error("Select a restaurant.");
+  if (!restaurant?.restaurantId) throw new Error("Restaurant access is unavailable.");
   let base = restaurantPosUrl(restaurant);
   if (!base) {
     const refreshed = await refreshSelectedRestaurant();
@@ -415,8 +414,8 @@ async function loadRestaurants() {
     } else {
       state.restaurant = null;
       restaurantSelect.value = "";
-      activeRestaurantName.textContent = "No restaurant selected";
-      brandStatus.textContent = "Select your restaurant and sign in.";
+      activeRestaurantName.textContent = "Ready to sign in";
+      brandStatus.textContent = "Staff connect on the POS Wi-Fi; owners sign in online.";
       loginStatus.textContent = state.restaurants.length ? "Login with your POS username and PIN." : "No restaurant has active mobile access.";
     }
   } catch (err) {
@@ -430,9 +429,9 @@ async function loadRestaurants() {
     renderRestaurantOptions();
     state.restaurant = null;
     restaurantSelect.value = "";
-    activeRestaurantName.textContent = "No restaurant selected";
-    brandStatus.textContent = "Select your restaurant and sign in.";
-    loginStatus.textContent = "Directory unavailable. Select the saved restaurant to continue.";
+    activeRestaurantName.textContent = "Ready to sign in";
+    brandStatus.textContent = "Staff connect on the POS Wi-Fi; owners sign in online.";
+    loginStatus.textContent = "Cloud directory unavailable. Staff can retry when the POS is online.";
   }
 }
 
@@ -512,8 +511,8 @@ async function login() {
 restaurantSelect.addEventListener("change", async () => {
   state.restaurant = selectedRestaurant();
   if (!state.restaurant) {
-    activeRestaurantName.textContent = "No restaurant selected";
-    brandStatus.textContent = "Select your restaurant and sign in.";
+    activeRestaurantName.textContent = "Ready to sign in";
+    brandStatus.textContent = "Staff connect on the POS Wi-Fi; owners sign in online.";
     return;
   }
   await useRestaurant(state.restaurant);

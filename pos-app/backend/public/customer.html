@@ -9,12 +9,31 @@
 <body class="admin-shell customer-shell">
   <header class="app-home-nav">
     <div class="app-home-brand"><strong>K'MASTER</strong> <span>POS</span><small>Administration · Customers</small></div>
-    <nav aria-label="POS home sections"><a href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a href="/billing.html">Billing</a><a class="active" href="/admin.html">Admin</a><a href="/admin.html?view=reports">Reports</a><button data-logout type="button">Logout</button></nav>
+    <nav aria-label="POS home sections">
+      <a data-pos-shortcut="F1" href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a data-pos-shortcut="F2" href="/pos-live.html?mode=PARCEL">POS Parcel</a><a data-pos-shortcut="F3" href="/pos-live.html?mode=PARTY">POS Party Order</a><a data-pos-shortcut="F4" href="/billing.html">Billing</a><a data-pos-shortcut="F5" href="/admin.html?view=invoices&amp;standalone=1#invoices">Invoices</a><a data-pos-shortcut="F6" href="/kds.html">KDS</a><a data-pos-shortcut="F8" href="/admin.html?view=items&amp;standalone=1">Availability</a><a data-pos-shortcut="F9" href="/orders.html">Live Orders</a><a class="active" href="/admin.html">Admin</a><button data-logout type="button">Logout</button>
+    </nav>
   </header>
   <aside class="admin-sidebar">
     <div class="brand-block"><span class="brand-mark">POS</span><strong>Admin</strong></div>
-    <a class="nav-link" href="/admin.html">Admin overview</a>
-    <a class="nav-link active" href="/customer.html">Customer Management</a>
+    <div class="admin-nav-layout">
+      <nav class="admin-category-nav" aria-label="Admin categories">
+        <a class="admin-category-btn" href="/admin.html">Menu Setup</a>
+        <a class="admin-category-btn" href="/admin.html?view=tables">Table Management</a>
+        <a class="admin-category-btn" href="/admin.html?view=users">User Management</a>
+        <a class="admin-category-btn active" href="/customer.html">Customers</a>
+        <a class="admin-category-btn" href="/admin.html?view=inventory">Business</a>
+        <a class="admin-category-btn" href="/admin.html?view=printers">Printer Configuration</a>
+        <a class="admin-category-btn" href="/admin.html?view=settings">Settings</a>
+        <a class="admin-category-btn" href="/admin.html?view=reports">Reports</a>
+        <a class="admin-category-btn" href="/admin.html">Quick Links</a>
+      </nav>
+      <nav class="admin-nav" aria-label="Customer administration">
+        <div class="nav-group">
+          <p class="nav-group-title">Customers</p>
+          <a class="nav-link active" href="/customer.html">Customer Management</a>
+        </div>
+      </nav>
+    </div>
   </aside>
   <main class="admin-main">
     <header class="topbar">
