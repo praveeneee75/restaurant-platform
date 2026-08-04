@@ -97,6 +97,7 @@ function buildThermalDocument(job, groupedItems = (items) => items) {
     ? Math.max(32, Math.min(48, Number(layout.printWidth80) || 38))
     : Math.max(24, Math.min(32, Number(layout.printWidth58) || 28));
   const isKot = String(job.type).toUpperCase() === 'KOT';
+  const isReport = String(job.type).toUpperCase() === 'REPORT';
   const template = String(payload.restaurantProfile?.billTemplate || payload.template || 'BORDERED').toUpperCase();
   const ruleCharacter = template === 'MODERN' ? '=' : template === 'MINIMAL' ? ' ' : '-';
   // Bill rows carry more columns than KOT rows. Some Windows thermal drivers
@@ -167,7 +168,56 @@ function buildThermalDocument(job, groupedItems = (items) => items) {
   // GS L changes the printable origin without introducing a page-sized canvas.
   bytes(GS, 0x4c, leftMarginDots & 0xff, (leftMarginDots >> 8) & 0xff);
 
-  if (isKot) {
+  if (isReport) {
+    const profile = payload.restaurantProfile || {};
+    const reportWidth = billPhysicalWidth;
+    const rule = () => line('-'.repeat(reportWidth));
+    const amount = (value) => Number(value || 0).toFixed(2);
+    const labelAmount = (label, value) => lines(columns([label, amount(value)], [Math.max(12, reportWidth - 13), Math.min(13, reportWidth - 12)], ['left', 'right']));
+    const section = (title) => { line(''); applyStyle('title', { alignment:'LEFT', bold:true }); line(title); applyStyle('items', { alignment:'LEFT' }); };
+    applyStyle('header', { alignment:'LEFT', bold:true });
+    if (profile.gstin) lines(wrap(`GSTIN:${profile.gstin}`, reportWidth));
+    lines(wrap(`${payload.reportType === 'items' ? 'Item Report' : 'Executive Sales Report'} : From ${payload.fromDate || ''}`, reportWidth));
+    if (payload.toDate && payload.toDate !== payload.fromDate) lines(wrap(`To ${payload.toDate}`, reportWidth));
+    rule();
+    if (payload.reportType === 'items') {
+      const rows = Array.isArray(payload.rows) ? payload.rows : [];
+      const qtyWidth = reportWidth >= 40 ? 8 : 6;
+      const totalWidth = reportWidth >= 40 ? 13 : 10;
+      const itemWidth = reportWidth - qtyWidth - totalWidth;
+      lines(columns(['Category / Item', 'Qty', 'Total'], [itemWidth, qtyWidth, totalWidth], ['left','right','right']));
+      rule();
+      let grandQty = 0; let grandTotal = 0; let currentCategory = null; let categoryQty = 0; let categoryTotal = 0;
+      const finishCategory = () => {
+        if (currentCategory === null) return;
+        bold(true); lines(columns(['Sub Total', categoryQty.toFixed(2), categoryTotal.toFixed(2)], [itemWidth, qtyWidth, totalWidth], ['left','right','right'])); bold(false);
+      };
+      rows.forEach((row) => {
+        const category = String(row.category || 'Uncategorised');
+        if (category !== currentCategory) { finishCategory(); currentCategory = category; categoryQty = 0; categoryTotal = 0; line(category); }
+        const quantity = Number(row.quantity || 0); const total = Number(row.total_sales || 0);
+        categoryQty += quantity; categoryTotal += total; grandQty += quantity; grandTotal += total;
+        lines(columns([`  ${row.item || '-'}`, quantity.toFixed(2), total.toFixed(2)], [itemWidth, qtyWidth, totalWidth], ['left','right','right']));
+      });
+      finishCategory(); rule(); bold(true); lines(columns(['Total', grandQty.toFixed(2), grandTotal.toFixed(2)], [itemWidth, qtyWidth, totalWidth], ['left','right','right'])); bold(false);
+    } else {
+      const sales = payload.sales || {}; const paid = sales.paid || {}; const cancelled = sales.cancelled || {};
+      section('Billing (Success)');
+      lines(columns(['Order', 'Total (INR)'], [reportWidth - 14, 14], ['left','right']));
+      labelAmount('Count', paid.count); lines(wrap(`Invoice Nos.: ${paid.invoice_from || '-'} - ${paid.invoice_to || '-'}`, reportWidth));
+      const grand = Number(paid.grand_total || 0); const tax = Number(paid.tax || 0); const discount = Number(paid.discount || 0); const service = Number(paid.service_charge || 0); const delivery = Number(paid.delivery_charge || 0); const round = Number(paid.round_off || 0);
+      labelAmount('Sub Total', grand + discount - service - delivery - round); labelAmount('Discount', discount); labelAmount('Delivery Charge', delivery); labelAmount('Container Charge', 0); labelAmount('Service Charge', service); labelAmount('Additional Charge', 0); labelAmount('Other Deduction', 0); labelAmount('C.G.S.T', tax / 2); labelAmount('S.G.S.T', tax / 2); labelAmount('Round Off', round); labelAmount('Waived off', 0); bold(true); labelAmount('Grand Total', grand); labelAmount('Net Sales', grand - tax); bold(false);
+      section('Billing (Cancel)'); labelAmount('Count', cancelled.count); labelAmount('Amount', cancelled.amount);
+      section('Order Type'); lines(columns(['Order', 'Count', 'Total'], [reportWidth - 20, 7, 13], ['left','right','right'])); (sales.orderTypes || []).forEach((row) => lines(columns([row.label, row.count, amount(row.total)], [reportWidth - 20, 7, 13], ['left','right','right']))); if (!(sales.orderTypes || []).length) line('Records not available');
+      section('Payment Mode'); lines(columns(['Payment Type', 'Total'], [reportWidth - 13, 13], ['left','right'])); (sales.payments || []).forEach((row) => lines(columns([row.label, amount(row.total)], [reportWidth - 13, 13], ['left','right']))); if (!(sales.payments || []).length) line('Records not available');
+      section('Complimentary Orders'); labelAmount('Count', sales.complimentary?.count); labelAmount('Amount', sales.complimentary?.amount);
+      section('Sales Return Orders'); labelAmount('Count', sales.returns?.count); labelAmount('Amount', sales.returns?.amount);
+      section('Virtual Wallet Summary'); line('Records not available');
+      const datedRows = (title, rows) => { section(title); lines(columns(['Date', 'Total'], [reportWidth - 13, 13], ['left','right'])); (rows || []).forEach((row) => lines(columns([row.date, amount(row.total)], [reportWidth - 13, 13], ['left','right']))); if (!(rows || []).length) line('Records not available'); };
+      datedRows('Expenses Summary', sales.expenses); datedRows('Withdrawal Summary', sales.withdrawals); datedRows('Cash Top-Up Summary', sales.cashTopups);
+      section('Online Orders'); lines(columns(['Payment Type', 'Total', 'Orders'], [reportWidth - 21, 13, 8], ['left','right','right'])); (sales.onlineOrders || []).forEach((row) => lines(columns([row.payment_type, amount(row.total), row.orders], [reportWidth - 21, 13, 8], ['left','right','right']))); if (!(sales.onlineOrders || []).length) line('Records not available');
+    }
+  } else if (isKot) {
     const orderType = String(payload.orderType || 'DINE_IN').toUpperCase();
     const baseOrderLabel = orderType === 'DINE_IN' ? 'Dine In' : ['PARCEL', 'TAKEAWAY'].includes(orderType) ? 'Parcel' : orderType.replaceAll('_', ' ');
     const orderLabel = orderType !== 'DINE_IN' && payload.tableName
@@ -274,7 +324,7 @@ function buildThermalDocument(job, groupedItems = (items) => items) {
     data: Buffer.concat(chunks),
     preview: {
       text: previewLines.join('\n'), rows: previewRows, width, physicalWidth: isKot ? width : billPhysicalWidth,
-      type: isKot ? 'KOT' : 'BILL', fontType, fontSize, lineSpacingDots,
+      type: isKot ? 'KOT' : isReport ? 'REPORT' : 'BILL', fontType, fontSize, lineSpacingDots,
       cutMode, paperWidthMm: Number(job.paper_width_mm) === 80 ? 80 : 58
     }
   };

@@ -95,4 +95,13 @@ const exclusiveMixed = buildThermalPreview({ ...mixedBase, payload: { ...mixedBa
 assert(inclusiveMixed.text.includes('105.00'), 'Inclusive print mode must gross-up tax-exclusive item prices');
 assert(exclusiveMixed.text.includes('100.00'), 'Exclusive print mode must remove tax from tax-inclusive item prices');
 
+const itemReport = buildThermalPreview({ type:'REPORT', paper_width_mm:80, payload:{ reportType:'items', fromDate:'2026-08-04', restaurantProfile:{gstin:'33ABCDE1234F1Z5'}, rows:[{category:'Biryani',item:'Chicken Biryani',quantity:5,total_sales:1095.25},{category:'Biryani',item:'Mutton Biryani',quantity:2,total_sales:520},{category:'Breads',item:'Chapati',quantity:6,total_sales:210}] } }, (items)=>items);
+for (const marker of ['GSTIN:33ABCDE1234F1Z5','Item Report','Category / Item','Biryani','Chicken Biryani','Mutton Biryani','Breads','Chapati','Sub Total','Total']) assert(itemReport.text.includes(marker), `item report missing ${marker}`);
+assert.strictEqual(itemReport.type, 'REPORT');
+assertRowsFit(itemReport, 80);
+
+const salesReport = buildThermalPreview({ type:'REPORT', paper_width_mm:80, payload:{ reportType:'sales', fromDate:'2026-08-04', restaurantProfile:{gstin:'33ABCDE1234F1Z5'}, sales:{ paid:{count:3,invoice_from:'INV-1',invoice_to:'INV-3',grand_total:1000,tax:50,discount:20}, cancelled:{count:1,amount:10}, orderTypes:[{label:'DINE IN',count:2,total:700}], payments:[{label:'CASH',total:1000}], complimentary:{count:0,amount:0}, returns:{count:0,amount:0}, expenses:[], withdrawals:[], cashTopups:[], onlineOrders:[] } } }, (items)=>items);
+for (const marker of ['Executive Sales Report','Billing (Success)','Invoice Nos.','Sub Total','Discount','C.G.S.T','S.G.S.T','Grand Total','Net Sales','Billing (Cancel)','Order Type','Payment Mode','Complimentary Orders','Sales Return Orders','Virtual Wallet Summary','Expenses Summary','Withdrawal Summary','Cash Top-Up Summary','Online Orders']) assert(salesReport.text.includes(marker), `sales report missing ${marker}`);
+assertRowsFit(salesReport, 80);
+
 console.log('Thermal ESC/POS regression passed (continuous 58/80 mm KOT and bill output)');

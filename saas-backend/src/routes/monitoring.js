@@ -6,6 +6,7 @@ const { publicError } = require('../config');
 const router = express.Router();
 const heartbeatCredentialCache = new Map();
 const HEARTBEAT_CACHE_MS = 5 * 60 * 1000;
+const mobileAttemptRate = new Map();
 
 function credentialCacheKey(restaurantId, licenseKey, syncToken) {
   return `${restaurantId}|${licenseKey || ''}|${syncToken || ''}`;
@@ -73,12 +74,28 @@ router.post('/heartbeat', async (req, res) => {
   }
 });
 
+router.post('/mobile-attempt', async (req, res) => {
+  const source = String(req.ip || req.socket?.remoteAddress || 'unknown');
+  const now = Date.now();
+  const active = (mobileAttemptRate.get(source) || []).filter((value) => now - value < 60_000);
+  if (active.length >= 30) return res.status(429).json({ success: false, message: 'Too many diagnostic events' });
+  active.push(now); mobileAttemptRate.set(source, active);
+  const { restaurantId, posUrl, posReachable, loginSucceeded, error, appVersion, platform } = req.body || {};
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  try {
+    const attempt = { at: new Date().toISOString(), posUrl: String(posUrl || '').slice(0, 300), posReachable: Boolean(posReachable), loginSucceeded: Boolean(loginSucceeded), error: String(error || '').slice(0, 300), appVersion: String(appVersion || '').slice(0, 30), platform: String(platform || '').slice(0, 500), sourceIp: source };
+    const updated = await pool.query(`UPDATE pos_heartbeats SET payload = COALESCE(payload,'{}'::jsonb) || jsonb_build_object('mobileAttempt',$1::jsonb) WHERE restaurant_code=$2 RETURNING restaurant_code`, [JSON.stringify(attempt), restaurantId]);
+    if (!updated.rowCount) return res.status(404).json({ success: false, message: 'Restaurant heartbeat not found' });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ success: false, message: publicError(err) }); }
+});
+
 router.get('/status', authenticate, async (_req, res) => {
   try {
     const result = await pool.query(`
       SELECT t.name, t.restaurant_code, l.status AS license_status,
              hb.pos_version, hb.backup_status, hb.printer_status, hb.app_status,
-             hb.last_heartbeat_at, hb.payload->'mobileLogin' AS mobile_login,
+             hb.last_heartbeat_at, hb.payload->'mobileLogin' AS mobile_login, hb.payload->'mobileAttempt' AS mobile_attempt,
              CASE WHEN hb.last_heartbeat_at > NOW() - INTERVAL '2 minutes' THEN 'ONLINE' ELSE 'OFFLINE' END AS online_status
       FROM tenants t
       JOIN licenses l ON l.tenant_id = t.id

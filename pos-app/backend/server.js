@@ -8297,6 +8297,45 @@ app.get('/reports/operational-summary', (req, res) => {
   } catch (err) { sendError(res, err); } finally { db.close(); }
 });
 
+app.post('/reports/print', (req, res) => {
+  const { restaurantId, actor, type, fromDate, toDate, report } = req.body || {};
+  if (!restaurantId || !['sales', 'items'].includes(type)) return res.status(400).json({ success:false, message:'Sales Summary or Item Summary is required' });
+  const from = fromDate || localIsoDateOnly();
+  const to = toDate || from;
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, canRole(db, actor?.role, 'reports.view_all') ? 'reports.view_all' : 'reports.view_invoice_only', 'Reports permission required');
+    const printer = db.prepare("SELECT id,name,connection,address,COALESCE(paper_width_mm,58) paper_width_mm FROM printers WHERE type='BILL' AND active=1 ORDER BY id LIMIT 1").get();
+    if (!printer) throw new Error('Configure an active BILL printer before printing reports');
+    const invoiceOnly = !['OWNER', 'ADMIN', 'MANAGER_2'].includes(String(actor?.role || '').toUpperCase());
+    const invoiceClause = invoiceOnly ? ' AND COALESCE(o.is_invoice,0)=1' : '';
+    const paid = safeGet(db, `SELECT COUNT(*) count, MIN(NULLIF(o.invoice_no,'')) invoice_from, MAX(NULLIF(o.invoice_no,'')) invoice_to,
+      COALESCE(SUM(o.total_amount),0) grand_total, COALESCE(SUM(o.tax_amount),0) tax,
+      COALESCE(SUM(o.delivery_fee),0) delivery_charge, COALESCE(SUM(o.service_charge_amount),0) service_charge,
+      0 round_off,
+      COALESCE(SUM((SELECT SUM(CASE WHEN UPPER(d.value_type)='PERCENT' THEN COALESCE(o.total_amount,0)*d.value/100.0 ELSE d.value END) FROM discounts d WHERE d.order_id=o.id)),0) discount
+      FROM orders o WHERE o.payment_status='PAID' AND DATE(COALESCE(o.settled_at,o.updated_at,o.created_at)) BETWEEN DATE(?) AND DATE(?)${invoiceClause}`, [from, to]);
+    const cancelled = safeGet(db, `SELECT COUNT(*) count, COALESCE(SUM(total_amount),0) amount FROM orders o WHERE UPPER(status)='CANCELLED' AND DATE(COALESCE(cancelled_at,updated_at,created_at)) BETWEEN DATE(?) AND DATE(?)${invoiceClause}`, [from, to]);
+    const orderTypes = safeAll(db, `SELECT REPLACE(UPPER(order_type),'_',' ') label, COUNT(*) count, COALESCE(SUM(total_amount),0) total FROM orders o WHERE payment_status='PAID' AND DATE(COALESCE(settled_at,updated_at,created_at)) BETWEEN DATE(?) AND DATE(?)${invoiceClause} GROUP BY order_type ORDER BY total DESC`, [from, to]);
+    const payments = safeAll(db, `SELECT UPPER(COALESCE(p.payment_mode,'OTHER')) label, COUNT(DISTINCT p.order_id) count, COALESCE(SUM(p.amount),0) total FROM payments p JOIN orders o ON o.id=p.order_id WHERE DATE(COALESCE(o.settled_at,o.updated_at,o.created_at)) BETWEEN DATE(?) AND DATE(?)${invoiceClause} GROUP BY p.payment_mode ORDER BY total DESC`, [from, to]);
+    const complimentary = safeGet(db, `SELECT COUNT(*) count, COALESCE(SUM(total_amount),0) amount FROM orders o WHERE UPPER(status)='COMPLIMENTARY' AND DATE(COALESCE(settled_at,updated_at,created_at)) BETWEEN DATE(?) AND DATE(?)${invoiceClause}`, [from, to]);
+    const returns = safeGet(db, `SELECT COUNT(*) count, COALESCE(SUM(r.amount),0) amount FROM refunds r JOIN orders o ON o.id=r.order_id WHERE DATE(r.created_at) BETWEEN DATE(?) AND DATE(?)${invoiceClause}`, [from, to]);
+    const expenses = safeAll(db, `SELECT expense_date date, COALESCE(SUM(amount),0) total FROM expenses WHERE DATE(expense_date) BETWEEN DATE(?) AND DATE(?) GROUP BY expense_date ORDER BY expense_date`, [from, to]);
+    const withdrawals = safeAll(db, `SELECT DATE(created_at) date, COALESCE(SUM(amount),0) total FROM cash_drawer_movements WHERE UPPER(type) IN ('CASH_OUT','PAYOUT') AND DATE(created_at) BETWEEN DATE(?) AND DATE(?) GROUP BY DATE(created_at)`, [from, to]);
+    const cashTopups = safeAll(db, `SELECT DATE(created_at) date, COALESCE(SUM(amount),0) total FROM cash_drawer_movements WHERE UPPER(type)='CASH_IN' AND DATE(created_at) BETWEEN DATE(?) AND DATE(?) GROUP BY DATE(created_at)`, [from, to]);
+    const onlineOrders = safeAll(db, `SELECT UPPER(COALESCE(p.payment_mode,'OTHER')) payment_type, COUNT(DISTINCT o.id) orders, COALESCE(SUM(p.amount),0) total FROM orders o LEFT JOIN payments p ON p.order_id=o.id WHERE UPPER(o.order_type)='ONLINE_ORDER' AND DATE(COALESCE(o.settled_at,o.updated_at,o.created_at)) BETWEEN DATE(?) AND DATE(?)${invoiceClause} GROUP BY p.payment_mode`, [from, to]);
+    const payload = {
+      reportType:type, fromDate:from, toDate:to,
+      restaurantProfile:{ displayName:getConfigValue(db,'restaurant_display_name','Restaurant'), gstin:getConfigValue(db,'gstin',''), currency:getConfigValue(db,'currency','INR') },
+      rows:Array.isArray(report?.rows) ? report.rows.slice(0,5000) : [],
+      sales:{ paid, cancelled, orderTypes, payments, complimentary, returns, expenses, withdrawals, cashTopups, onlineOrders }
+    };
+    const result = db.prepare("INSERT INTO print_jobs(type,ref_id,kitchen_id,printer_id,payload,status) VALUES('REPORT',?,NULL,?,?,'PENDING')").run(Math.floor(Date.now()/1000), printer.id, JSON.stringify(payload));
+    writeAudit(db, actor, 'PRINT', 'REPORT', result.lastInsertRowid, null, { type, fromDate:from, toDate:to, printerId:printer.id });
+    res.json({ success:true, printJobId:result.lastInsertRowid, message:`${type === 'items' ? 'Item' : 'Sales'} Summary queued to BILL printer ${printer.name}` });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
+});
+
 const CLOUD_SHARED_SETTING_KEYS = new Set([
   'qr_ordering_enabled', 'qr_require_table_pin', 'qr_session_minutes', 'qr_pending_order_limit',
   'mobile_app_enabled', 'online_order_enabled', 'online_storefront_slug', 'online_theme',

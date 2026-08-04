@@ -14,6 +14,7 @@ const thermal = read('pos-app/electron/thermalEscPos.js');
 const mobileHtml = read('mobile-app/www/index.html');
 const mobile = read('mobile-app/www/js/app.js');
 const mobileManifest = read('mobile-app/android/app/src/main/AndroidManifest.xml');
+const mobileActivity = read('mobile-app/android/app/src/main/java/com/restaurantplatform/whitelabel/MainActivity.java');
 const monitoring = read('saas-backend/src/routes/monitoring.js');
 const customerHtml = read('pos-app/backend/public/customer.html');
 
@@ -48,5 +49,12 @@ assert.match(billing, /requestedOrderId[\s\S]*showSubmittedOrder\(requestedOrder
 assert.match(admin, /btn\.dataset\.reportType[\s\S]*loadReports\.click\(\)/, 'Report sidebar navigation must load the selected daily report');
 assert.match(mobileManifest, /android:usesCleartextTraffic="true"/, 'Android must permit same-WiFi HTTP access to the local POS');
 assert.doesNotMatch(`${mobileHtml}\n${mobile}`, /No restaurant selected|Select your restaurant|Select a restaurant|Select restaurant/, 'Mobile login must not ask users to select a restaurant');
+assert.match(admin, /postJson\('\/reports\/print'[\s\S]*currentOperationalReport/, 'Report Print must queue the loaded report instead of opening an A4 browser dialog');
+assert.match(server, /INSERT INTO print_jobs\(type,ref_id,kitchen_id,printer_id,payload,status\) VALUES\('REPORT'/, 'Reports must queue through the configured BILL printer');
+assert.match(thermal, /Billing \(Success\)[\s\S]*Virtual Wallet Summary[\s\S]*Online Orders/, 'Sales thermal report must contain every requested section');
+assert.match(thermal, /Category \/ Item[\s\S]*Sub Total/, 'Item thermal report must group items by category with subtotals');
+assert.match(mobileActivity, /MIXED_CONTENT_ALWAYS_ALLOW/, 'Android WebView must allow the HTTPS app shell to reach the local HTTP POS');
+assert.match(mobile, /reportMobileAttempt[\s\S]*posReachable[\s\S]*loginSucceeded/, 'Mobile login must publish support diagnostics without exposing the PIN');
+assert.match(monitoring, /mobile-attempt[\s\S]*mobileAttempt/, 'SaaS monitoring must record pre-login mobile connectivity attempts');
 
 console.log('Historical request audit regression passed.');

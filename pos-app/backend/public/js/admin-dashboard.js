@@ -1709,7 +1709,27 @@ loadReports.addEventListener("click", async () => {
   }
 });
 
-printOperationalReport.addEventListener("click", () => window.print());
+printOperationalReport.addEventListener("click", async () => {
+  if (!['sales', 'items'].includes(activeReportType)) {
+    reportStatus.textContent = 'Thermal printing is available for Sales Summary and Item Summary.';
+    return;
+  }
+  try {
+    printOperationalReport.disabled = true;
+    reportStatus.textContent = 'Queuing report to the configured BILL printer...';
+    const queued = await postJson('/reports/print', {
+      type: activeReportType,
+      fromDate: reportFrom.value,
+      toDate: reportTo.value,
+      report: currentOperationalReport
+    });
+    reportStatus.textContent = queued.message;
+  } catch (error) {
+    reportStatus.textContent = error.message;
+  } finally {
+    printOperationalReport.disabled = false;
+  }
+});
 exportOperationalReport.addEventListener("click", () => {
   const { columns = [], rows = [] } = currentOperationalReport;
   const quote = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;

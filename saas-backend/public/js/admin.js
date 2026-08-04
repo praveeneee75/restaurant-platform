@@ -290,11 +290,27 @@ async function loadOrganizationReport() {
 async function loadSupportDiagnostics() {
   try {
     const data = await api(`/monitoring/diagnostics?restaurantId=${supportRestaurant.value}`);
-    supportDiagnostics.textContent = JSON.stringify(data, null, 2);
+    const diagnostics = data.diagnostics || {};
+    const attempt = diagnostics.payload?.mobileAttempt || null;
+    const advertisedUrl = attempt?.posUrl || diagnostics.payload?.mobilePosUrl || 'Not reported';
+    const recommendation = !attempt
+      ? 'No attempt has reached SaaS. Install the latest mobile build, open it with internet available, and try staff login once.'
+      : !attempt.posReachable
+        ? 'The phone could not reach the advertised POS. Confirm both devices use the same non-guest Wi-Fi and disable access-point/client isolation.'
+        : !attempt.loginSucceeded
+          ? 'The phone reached the POS. Check the staff username, active role and PIN in POS Admin > User Management.'
+          : 'Mobile connectivity and login succeeded.';
+    supportDiagnostics.innerHTML = `Restaurant: ${escapeAttr(diagnostics.name || diagnostics.restaurant_code || '')}\nPOS status: ${escapeAttr(diagnostics.app_status || 'Unknown')}\nPOS version: ${escapeAttr(diagnostics.pos_version || 'Unknown')}\nLast heartbeat: ${escapeAttr(diagnostics.last_heartbeat_at ? new Date(diagnostics.last_heartbeat_at).toLocaleString() : 'Never')}\nAdvertised POS URL: ${escapeAttr(advertisedUrl)}\nMobile attempt: ${escapeAttr(attempt?.at ? new Date(attempt.at).toLocaleString() : 'None')}\nPOS reachable from phone: ${attempt ? (attempt.posReachable ? 'Yes' : 'No') : 'Unknown'}\nLogin result: ${attempt ? (attempt.loginSucceeded ? 'Succeeded' : 'Failed') : 'Unknown'}\nMobile app version: ${escapeAttr(attempt?.appVersion || 'Unknown')}\nError: ${escapeAttr(attempt?.error || 'None')}\n\nRecommended action:\n${escapeAttr(recommendation)}`;
     supportMsg.innerText = "Diagnostics loaded";
   } catch (err) {
     supportMsg.innerText = err.message;
   }
+}
+
+function troubleshootMobile(restaurantCode) {
+  supportRestaurant.value = restaurantCode;
+  showSaasView('support');
+  loadSupportDiagnostics();
 }
 
 async function saveSupportNote() {
@@ -715,12 +731,16 @@ async function loadMonitoring() {
         <td>${row.name} (${row.restaurant_code})</td>
         <td>${row.online_status}</td>
         <td>${row.pos_version || ""}</td>
-        <td>${row.mobile_login ? `${row.mobile_login.username || ""} (${row.mobile_login.role || ""})` : "No login recorded"}</td>
+        <td>${row.mobile_attempt?.at ? new Date(row.mobile_attempt.at).toLocaleString() : "No attempt recorded"}${row.mobile_attempt?.error ? `<br><small>${escapeHtml(row.mobile_attempt.error)}</small>` : ""}</td>
+        <td>${row.mobile_attempt ? (row.mobile_attempt.posReachable ? "Yes" : "No") : "Unknown"}</td>
+        <td>${row.mobile_attempt ? (row.mobile_attempt.loginSucceeded ? "Succeeded" : "Failed") : "Unknown"}</td>
+        <td>${row.mobile_attempt?.posUrl || "Not reported"}</td>
         <td>${row.mobile_login ? (row.mobile_login.sameWifi ? "Yes" : "No / unknown") : "Unknown"}</td>
         <td>${row.backup_status || ""}</td>
         <td>${row.printer_status || ""}</td>
         <td>${row.license_status || ""}</td>
         <td>${row.last_heartbeat_at ? new Date(row.last_heartbeat_at).toLocaleString() : "Never"}</td>
+        <td><button type="button" onclick="troubleshootMobile('${escapeAttr(row.restaurant_code)}')">Troubleshoot</button></td>
       </tr>
     `).join("");
   } catch (err) {

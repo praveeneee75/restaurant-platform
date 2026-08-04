@@ -314,6 +314,22 @@ function friendlyConnectionMessage(url) {
   return "Cannot reach K'Master cloud. Check internet connection and try again.";
 }
 
+function reportMobileAttempt(details) {
+  fetch(`${MOBILE_DIRECTORY_URL}/monitoring/mobile-attempt`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      restaurantId: details.restaurantId,
+      posUrl: details.posUrl || "",
+      posReachable: Boolean(details.posReachable),
+      loginSucceeded: Boolean(details.loginSucceeded),
+      error: String(details.error || "").slice(0, 300),
+      appVersion: "1.0.18",
+      platform: navigator.userAgent || "Mobile app"
+    })
+  }).catch(() => undefined);
+}
+
 async function fetchRestaurantDirectory() {
   const bases = [MOBILE_DIRECTORY_URL, ...(isLocalDevServer ? ["http://localhost:4000"] : [])]
     .map(cleanBase)
@@ -346,8 +362,17 @@ async function findLocalStaffLogin(usernameValue, pinValue) {
   const attempts = candidates.map(async (restaurant) => {
     const base = restaurantPosUrl(restaurant);
     if (!base) throw new Error("POS address unavailable");
-    const data = await fetchJson(`${base}/mobile-app/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ restaurantId: restaurant.restaurantId, username: usernameValue, pin: pinValue }) });
-    return { data, restaurant, base };
+    let posReachable = false;
+    try {
+      await fetchJson(`${base}/health`);
+      posReachable = true;
+      const data = await fetchJson(`${base}/mobile-app/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ restaurantId: restaurant.restaurantId, username: usernameValue, pin: pinValue }) });
+      reportMobileAttempt({ restaurantId: restaurant.restaurantId, posUrl: base, posReachable, loginSucceeded: true });
+      return { data, restaurant, base };
+    } catch (error) {
+      reportMobileAttempt({ restaurantId: restaurant.restaurantId, posUrl: base, posReachable, loginSucceeded: false, error: error.message });
+      throw error;
+    }
   });
   if (!attempts.length) throw new Error("No local POS was advertised. Keep the desktop POS open and try again.");
   try { return await Promise.any(attempts); }
