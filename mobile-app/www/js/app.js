@@ -356,6 +356,18 @@ function renderRestaurantOptions() {
 }
 
 async function findLocalStaffLogin(usernameValue, pinValue) {
+  try {
+    const latest = await fetchRestaurantDirectory();
+    const refreshed = (latest.restaurants || []).map((restaurant) => ({
+      restaurantId: restaurant.restaurantId || restaurant.restaurant_id || restaurant.restaurant_code,
+      name: restaurant.name || restaurant.restaurantName || restaurant.restaurant_name || restaurant.displayName || restaurant.display_name || "Restaurant",
+      posUrl: restaurant.posUrl || restaurant.pos_url || "",
+      currency: restaurant.currency || "INR"
+    })).filter((restaurant) => restaurant.restaurantId);
+    if (refreshed.length) state.restaurants = refreshed;
+  } catch (_) {
+    // A cached restaurant can still be reachable when the cloud directory is unavailable.
+  }
   const candidates = [...state.restaurants];
   const saved = savedRestaurant();
   if (saved && !candidates.some((item) => item.restaurantId === saved.restaurantId)) candidates.unshift(saved);

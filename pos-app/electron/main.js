@@ -8,6 +8,7 @@ const os = require('os');
 const path = require('path');
 const { groupPrintableItems } = require('../backend/services/printItemGrouping');
 const { buildThermalEscPos, compactKotReferences } = require('./thermalEscPos');
+const { findAvailablePort } = require('./posPort');
 const {
   checkedToday,
   isExpired,
@@ -87,21 +88,6 @@ ipcMain.handle('pos:save-pdf', async (_event, request = {}) => {
     if (!win.isDestroyed()) win.destroy();
   }
 });
-
-function findAvailablePort() {
-  return new Promise((resolve, reject) => {
-    const probe = net.createServer();
-    probe.unref();
-    probe.once('error', reject);
-    probe.listen(0, '127.0.0.1', () => {
-      const address = probe.address();
-      probe.close((error) => {
-        if (error) reject(error);
-        else resolve(address.port);
-      });
-    });
-  });
-}
 
 function validateDesktopRuntime() {
   const appPath = app.getAppPath();
