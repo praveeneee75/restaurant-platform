@@ -56,6 +56,7 @@ button {
   padding: 12px;
 }
 .mobile-order-nav { display:none; }
+.workflow-help { margin:0 0 8px; color:#536071; font-size:13px; }
 .panel {
   width: 100%;
   min-width: 0;
@@ -108,6 +109,9 @@ button {
   min-width: 0;
 }
 .item-row > div:first-child, .cart-row > div:first-child { min-width:0; overflow-wrap:anywhere; }
+.menu-item-note { grid-column:1/-1; display:grid; gap:5px; color:#536071; font-size:12px; font-weight:700; }
+.menu-item-note textarea { width:100%; resize:vertical; min-height:48px; padding:9px 10px; border:1px solid var(--border); border-radius:10px; background:white; font:inherit; }
+.review-order-button { width:100%; margin-top:12px; background:#1d4ed8; }
 .qty-controls {
   display: flex;
   gap: 6px;
@@ -185,14 +189,14 @@ button {
     top:0;
     z-index:6;
     display:grid;
-    grid-template-columns:repeat(3,minmax(0,1fr));
+    grid-template-columns:repeat(4,minmax(0,1fr));
     gap:6px;
     padding:8px;
     background:var(--surface);
     border-bottom:1px solid var(--border);
     box-shadow:0 5px 14px rgba(15,23,42,.08);
   }
-  .mobile-order-nav button { padding:10px 5px; background:#e8f3f1; color:#134e4a; font-size:13px; }
+  .mobile-order-nav button { padding:10px 3px; background:#e8f3f1; color:#134e4a; font-size:12px; }
   .mobile-order-nav button.active { background:var(--primary); color:white; }
   .mobile-order-nav span { display:inline-grid; place-items:center; min-width:20px; min-height:20px; padding:0 5px; border-radius:999px; background:#f59e0b; color:#111827; }
   .waiter-layout { padding:8px; }

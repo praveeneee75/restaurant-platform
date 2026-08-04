@@ -375,7 +375,11 @@ iframe {
     grid-template-columns: repeat(4, 1fr);
   }
 }
-.webview-panel.staff-workspace { grid-template-rows: 1fr; }
+.webview-panel.staff-workspace {
+  grid-template-rows: 1fr;
+  top: max(28px, env(safe-area-inset-top));
+  min-height: calc(100dvh - max(28px, env(safe-area-inset-top)));
+}
 .webview-panel.staff-workspace > header { display: none; }
 @media (min-width: 980px) and (orientation: landscape) {
   .app-shell {

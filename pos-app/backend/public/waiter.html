@@ -19,8 +19,9 @@
 
   <nav class="mobile-order-nav" aria-label="Dine In steps">
     <button type="button" class="active" data-waiter-step="tables">1. Tables</button>
-    <button type="button" data-waiter-step="menu">2. Menu</button>
-    <button type="button" data-waiter-step="order">3. Order <span id="mobileCartCount">0</span></button>
+    <button type="button" data-waiter-step="check">2. Check</button>
+    <button type="button" data-waiter-step="menu">3. Items</button>
+    <button type="button" data-waiter-step="order">4. Review <span id="mobileCartCount">0</span></button>
   </nav>
 
   <main class="waiter-layout">
@@ -29,19 +30,27 @@
       <div id="waiterTables" class="table-grid"></div>
     </section>
 
+    <section class="panel check-panel" data-waiter-panel="check">
+      <h2 id="selectedCheckTableTitle">Select a check</h2>
+      <p class="workflow-help">Choose the customer check before adding or modifying items.</p>
+      <div class="check-controls">
+        <label>Existing customer check<select id="waiterOrderSelector"><option value="">Choose a check</option></select></label>
+        <div class="check-actions"><button id="newWaiterCheck" type="button">New customer check</button><button id="parcelWaiterCheck" type="button">Parcel check</button></div>
+      </div>
+      <p id="selectedCheckStatus" class="fulfilment-status">Choose an existing check or start a new one.</p>
+      <button id="continueWaiterMenu" type="button">Continue to items</button>
+    </section>
+
     <section class="panel" data-waiter-panel="menu">
       <h2 id="selectedTableTitle">Select a table</h2>
       <div id="waiterCategories" class="category-strip"></div>
       <div id="waiterItems" class="item-list"></div>
+      <button id="reviewWaiterOrder" class="review-order-button" type="button">Review customer &amp; order</button>
     </section>
 
     <section class="panel cart-panel" data-waiter-panel="order">
       <h2>Order</h2>
       <p id="lockStatus">No table locked</p>
-      <div class="check-controls">
-        <label>Customer check<select id="waiterOrderSelector"><option value="">New customer check</option></select></label>
-        <div class="check-actions"><button id="newWaiterCheck" type="button">New customer check</button><button id="parcelWaiterCheck" type="button">Parcel check</button></div>
-      </div>
       <div class="customer-controls">
         <label>Customer phone<input id="waiterCustomerPhone" inputmode="tel" placeholder="Customer phone"></label>
         <button id="searchWaiterCustomer" type="button">Search</button>
@@ -61,7 +70,7 @@
       <div class="actions">
         <button id="saveWaiterOrder" type="button">Save Order</button>
         <button id="submitWaiterKot" type="button">Submit KOT</button>
-        <button id="finalWaiterCheck" type="button">Final Bill &amp; Print</button>
+        <button id="finalWaiterCheck" type="button">Final Check, Bill &amp; Print</button>
         <button id="unlockWaiterTable" type="button">Unlock</button>
       </div>
     </section>

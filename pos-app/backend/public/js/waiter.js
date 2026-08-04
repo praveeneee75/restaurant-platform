@@ -12,7 +12,7 @@ function userFromMobileParams() {
   };
 }
 
-const user = JSON.parse(localStorage.getItem("user") || "null") || userFromMobileParams();
+const user = userFromMobileParams() || JSON.parse(localStorage.getItem("user") || "null");
 if (user) localStorage.setItem("user", JSON.stringify(user));
 if (!restaurantId || !user) {
   waiterStatus.textContent = "Login from the mobile app first.";
@@ -47,6 +47,10 @@ let activeMobileStep = "tables";
 
 function showMobileStep(step) {
   activeMobileStep = step;
+  if (step === "order") {
+    renderCart();
+    renderOrderControls();
+  }
   document.querySelectorAll("[data-waiter-step]").forEach((button) => {
     button.classList.toggle("active", button.dataset.waiterStep === step);
   });
@@ -122,7 +126,7 @@ function renderAll() {
 }
 
 function renderOrderControls() {
-  waiterOrderSelector.innerHTML = `<option value="">New customer check</option>` + state.openOrders.map((order) => (
+  waiterOrderSelector.innerHTML = `<option value="">Choose a check</option>` + state.openOrders.map((order) => (
     `<option value="${order.id}">${esc(order.order_reference || `Order ${order.id}`)}${order.customer_name ? ` - ${esc(order.customer_name)}` : ""}</option>`
   )).join("");
   waiterOrderSelector.value = state.orderId ? String(state.orderId) : "";
@@ -130,6 +134,11 @@ function renderOrderControls() {
   waiterCustomerName.value = state.customer?.name || "";
   waiterCustomerStatus.textContent = state.customer ? `${state.customer.name} - ${state.customer.phone || "No phone"}` : "No customer attached";
   fulfilmentStatus.textContent = state.fulfillmentType === "TAKEAWAY" ? "Parcel check linked to this table" : "Dine In check";
+  selectedCheckStatus.textContent = state.orderId
+    ? `${state.fulfillmentType === "TAKEAWAY" ? "Parcel" : "Dine In"} check selected${state.customer?.name ? ` for ${state.customer.name}` : ""}`
+    : `${state.fulfillmentType === "TAKEAWAY" ? "New parcel" : "New customer"} check selected`;
+  continueWaiterMenu.disabled = !state.selectedTable || !state.lock;
+  parcelWaiterCheck.disabled = !state.orderId || state.fulfillmentType !== "DINE_IN";
   const hasUnsentItems = state.cart.some((item) => !item.sentToKitchen);
   submitWaiterKot.disabled = state.billingReady || !state.selectedTable || !state.lock || !hasUnsentItems;
   finalWaiterCheck.hidden = state.settings.showFinalBillPrintDineIn === false;
@@ -152,7 +161,9 @@ function renderCategories() {
 
 function renderItems() {
   const items = state.items.filter((item) => item.category_id === state.selectedCategoryId);
-  waiterItems.innerHTML = items.map((item) => `
+  waiterItems.innerHTML = items.map((item) => {
+    const pending = [...state.cart].reverse().find((line) => Number(line.id) === Number(item.id) && !line.sentToKitchen);
+    return `
     <div class="item-row">
       <div><strong>${esc(item.name)}</strong><br><small>${money(item.price)}</small></div>
       <div class="menu-qty-controls">
@@ -160,8 +171,9 @@ function renderItems() {
         <strong>${state.cart.filter((line) => Number(line.id) === Number(item.id) && !line.sentToKitchen).reduce((sum, line) => sum + Number(line.quantity || 0), 0)}</strong>
         <button data-add-item="${item.id}" aria-label="Add one ${esc(item.name)}">+</button>
       </div>
+      ${pending ? `<label class="menu-item-note">Special note for ${esc(item.name)}<textarea data-menu-note="${item.id}" rows="2" placeholder="No onion, less spicy, allergy information">${esc(pending.notes || "")}</textarea></label>` : ""}
     </div>
-  `).join("") || "<p>No items.</p>";
+  `; }).join("") || "<p>No items.</p>";
 }
 
 function renderCart() {
@@ -199,9 +211,10 @@ async function selectTable(tableId) {
   selectedTableTitle.textContent = table.table_name;
   const list = await fetchJson(`/orders/open-list?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${encodeURIComponent(table.id)}`);
   state.openOrders = list.orders || [];
-  await loadWaiterOrder(state.openOrders[0]?.id || null);
+  await loadWaiterOrder(null);
   renderAll();
-  showMobileStep("menu");
+  selectedCheckTableTitle.textContent = table.table_name;
+  showMobileStep(state.openOrders.length ? "check" : "menu");
 }
 
 async function loadWaiterOrder(orderId, options = {}) {
@@ -290,7 +303,10 @@ async function requestFinalCheck() {
   waiterStatus.textContent = result.message;
 }
 
-function startNewWaiterCheck() {
+async function startNewWaiterCheck() {
+  if (!state.selectedTable) throw new Error("Select a table first");
+  const locked = await postJson("/orders/lock", { tableId: state.selectedTable.id });
+  state.lock = locked.lock;
   state.orderId = null;
   state.customer = null;
   state.cart = [];
@@ -303,7 +319,7 @@ function startNewWaiterCheck() {
 
 async function startParcelWaiterCheck() {
   if (!state.selectedTable) throw new Error("Select a table first");
-  if (!state.orderId) throw new Error("Save the Dine In check before adding a linked parcel check");
+  if (!state.orderId || state.fulfillmentType !== "DINE_IN") throw new Error("Select an existing Dine In customer check before adding its parcel check");
   state.fulfillmentType = "TAKEAWAY";
   state.cart = state.cart.filter((item) => item.fulfillmentType === "TAKEAWAY");
   renderAll();
@@ -343,7 +359,10 @@ async function transferSelectedTable() {
   state.lock = null;
   state.cart = [];
   state.orderId = null;
+  state.customer = null;
+  state.openOrders = [];
   await loadBootstrap();
+  showMobileStep("tables");
 }
 
 async function renewLock() {
@@ -398,6 +417,13 @@ document.addEventListener("click", async (event) => {
   }
 });
 
+waiterItems.addEventListener("input", (event) => {
+  const field = event.target.closest("[data-menu-note]");
+  if (!field) return;
+  const item = [...state.cart].reverse().find((row) => Number(row.id) === Number(field.dataset.menuNote) && !row.sentToKitchen);
+  if (item) item.notes = field.value;
+});
+
 waiterCart.addEventListener("click", (event) => {
   if (event.target.closest("button")) return;
   const line = event.target.closest("[data-cart-line]");
@@ -418,8 +444,10 @@ waiterCart.addEventListener("keydown", (event) => {
 saveWaiterOrder.addEventListener("click", () => saveOrder().catch((err) => alert(err.message)));
 submitWaiterKot.addEventListener("click", () => submitKot().catch((err) => { renderOrderControls(); waiterStatus.textContent = err.message; alert(err.message); }));
 finalWaiterCheck.addEventListener("click", () => requestFinalCheck().catch((err) => { finalWaiterCheck.disabled = false; alert(err.message); }));
-newWaiterCheck.addEventListener("click", startNewWaiterCheck);
+newWaiterCheck.addEventListener("click", () => startNewWaiterCheck().catch((err) => alert(err.message)));
 parcelWaiterCheck.addEventListener("click", () => startParcelWaiterCheck().catch((err) => alert(err.message)));
+continueWaiterMenu.addEventListener("click", () => showMobileStep("menu"));
+reviewWaiterOrder.addEventListener("click", () => showMobileStep("order"));
 waiterOrderSelector.addEventListener("change", async () => {
   try {
     const orderId = Number(waiterOrderSelector.value || 0);
@@ -429,7 +457,7 @@ waiterOrderSelector.addEventListener("change", async () => {
     }
     await loadWaiterOrder(orderId);
     renderAll();
-    showMobileStep("order");
+    showMobileStep("check");
   } catch (err) {
     waiterStatus.textContent = err.message;
     alert(err.message);
@@ -448,7 +476,7 @@ unlockWaiterTable.addEventListener("click", async () => {
 refreshWaiter.addEventListener("click", () => loadBootstrap().catch((err) => alert(err.message)));
 logoutWaiter.addEventListener("click", () => window.parent.postMessage({ type: "KMASTER_MOBILE_LOGOUT" }, "*"));
 
-loadBootstrap().then(touchDevice).catch((err) => {
+loadBootstrap().then(() => touchDevice().catch(() => undefined)).catch((err) => {
   waiterStatus.textContent = err.message;
 });
 showMobileStep(activeMobileStep);

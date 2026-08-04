@@ -43,12 +43,19 @@ const { PREFERRED_POS_PORT, findAvailablePort } = require(path.join(root, 'pos-a
 
   const waiter = fs.readFileSync(path.join(root, 'pos-app/backend/public/waiter.html'), 'utf8');
   const waiterJs = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/waiter.js'), 'utf8');
-  for (const step of ['tables', 'menu', 'order']) {
+  for (const step of ['tables', 'check', 'menu', 'order']) {
     assert.match(waiter, new RegExp(`data-waiter-step="${step}"`), `mobile Dine In should provide the ${step} step`);
   }
   assert.match(waiterJs, /postJson\("\/orders\/lock", \{ tableId: state\.selectedTable\.id, orderId \}\)/, 'switching customer checks must rebind the table lock to the selected order');
   assert.match(waiterJs, /fulfillment_type[\s\S]*=== fulfillmentType/, 'dine-in and linked parcel carts must remain visually separated');
   assert.match(waiterJs, /Number\(row\.id\) === Number\(itemId\) && !row\.sentToKitchen/, 'adding an already-KOT item must create a new KOT line instead of changing the submitted line');
+  assert.match(waiterJs, /showMobileStep\(state\.openOrders\.length \? "check" : "menu"\)/, 'occupied tables must require check selection before item entry');
+  assert.doesNotMatch(waiterJs, /loadWaiterOrder\(state\.openOrders\[0\]/, 'selecting an occupied table must not silently choose its first customer');
+  assert.match(waiterJs, /data-menu-note/, 'selected menu items must expose an inline mobile note field');
+  assert.match(waiterJs, /reviewWaiterOrder/, 'the item screen must provide a clear next step to customer validation and review');
+  assert.match(waiterJs, /finalWaiterCheck\.hidden = state\.settings\.showFinalBillPrintDineIn === false/, 'Final Check, Bill & Print must follow the Dine In admin setting');
+  assert.match(waiterJs, /parcelWaiterCheck\.disabled = !state\.orderId \|\| state\.fulfillmentType !== "DINE_IN"/, 'captain parcel must only be created from an existing Dine In customer check');
+  assert.match(waiterJs, /const user = userFromMobileParams\(\) \|\| JSON\.parse/, 'the current authenticated mobile session must override stale waiter-page storage');
 
   console.log('Wi-Fi login regression checks passed');
 })().catch((error) => {
