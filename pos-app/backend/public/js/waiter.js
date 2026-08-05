@@ -130,11 +130,14 @@ function renderOrderControls() {
     `<option value="${order.id}">${esc(order.order_reference || `Order ${order.id}`)}${order.customer_name ? ` - ${esc(order.customer_name)}` : ""}</option>`
   )).join("");
   waiterOrderSelector.value = state.orderId ? String(state.orderId) : "";
+  waiterOrderSelectorLabel.hidden = state.openOrders.length <= 1;
   waiterCustomerPhone.value = state.customer?.phone || "";
   waiterCustomerName.value = state.customer?.name || "";
   waiterCustomerStatus.textContent = state.customer ? `${state.customer.name} - ${state.customer.phone || "No phone"}` : "No customer attached";
   fulfilmentStatus.textContent = state.fulfillmentType === "TAKEAWAY" ? "Parcel check linked to this table" : "Dine In check";
-  selectedCheckStatus.textContent = state.orderId
+  selectedCheckStatus.textContent = state.billingReady
+    ? "Final Check, Bill & Print is completed. Start a new customer check or return to Tables."
+    : state.orderId
     ? `${state.fulfillmentType === "TAKEAWAY" ? "Parcel" : "Dine In"} check selected${state.customer?.name ? ` for ${state.customer.name}` : ""}`
     : `${state.fulfillmentType === "TAKEAWAY" ? "New parcel" : "New customer"} check selected`;
   continueWaiterMenu.disabled = !state.selectedTable || !state.lock;
@@ -211,10 +214,18 @@ async function selectTable(tableId) {
   selectedTableTitle.textContent = table.table_name;
   const list = await fetchJson(`/orders/open-list?restaurantId=${encodeURIComponent(restaurantId)}&tableId=${encodeURIComponent(table.id)}`);
   state.openOrders = list.orders || [];
-  await loadWaiterOrder(null);
+  if (state.openOrders.length === 1) {
+    const onlyOrderId = Number(state.openOrders[0].id);
+    const orderLock = await postJson("/orders/lock", { tableId: table.id, orderId: onlyOrderId });
+    state.lock = orderLock.lock;
+    await loadWaiterOrder(onlyOrderId);
+  } else {
+    await loadWaiterOrder(null);
+    if (state.openOrders.length === 0 && table.status === "OCCUPIED") state.billingReady = true;
+  }
   renderAll();
   selectedCheckTableTitle.textContent = table.table_name;
-  showMobileStep(state.openOrders.length ? "check" : "menu");
+  showMobileStep(state.openOrders.length || table.status === "OCCUPIED" ? "check" : "menu");
 }
 
 async function loadWaiterOrder(orderId, options = {}) {
@@ -290,8 +301,9 @@ async function submitKot() {
   const result = await postJson("/orders/submit-kot", { orderId: state.orderId, fulfillmentType: state.fulfillmentType });
   await loadWaiterOrder(state.orderId, { fulfillmentType: state.fulfillmentType });
   renderAll();
-  showMobileStep("order");
-  waiterStatus.textContent = result.message || `KOT submitted for order #${state.orderId}`;
+  const message = result.message || `KOT submitted for order #${state.orderId}`;
+  await returnToTables();
+  waiterStatus.textContent = message;
 }
 
 async function requestFinalCheck() {
@@ -300,7 +312,26 @@ async function requestFinalCheck() {
   const result = await postJson("/orders/final-bill", { orderId: state.orderId });
   state.billingReady = true;
   renderOrderControls();
-  waiterStatus.textContent = result.message;
+  const message = result.message;
+  await returnToTables();
+  waiterStatus.textContent = message;
+}
+
+async function returnToTables() {
+  const lock = state.lock;
+  const table = state.selectedTable;
+  if (lock) await postJson("/orders/unlock", { lockId: lock.id, tableId: table?.id }).catch(() => undefined);
+  state.selectedTable = null;
+  state.lock = null;
+  state.cart = [];
+  state.orderId = null;
+  state.customer = null;
+  state.openOrders = [];
+  state.latestUpdatedAt = null;
+  state.billingReady = false;
+  state.fulfillmentType = "DINE_IN";
+  await loadBootstrap();
+  showMobileStep("tables");
 }
 
 async function startNewWaiterCheck() {
@@ -446,7 +477,10 @@ submitWaiterKot.addEventListener("click", () => submitKot().catch((err) => { ren
 finalWaiterCheck.addEventListener("click", () => requestFinalCheck().catch((err) => { finalWaiterCheck.disabled = false; alert(err.message); }));
 newWaiterCheck.addEventListener("click", () => startNewWaiterCheck().catch((err) => alert(err.message)));
 parcelWaiterCheck.addEventListener("click", () => startParcelWaiterCheck().catch((err) => alert(err.message)));
-continueWaiterMenu.addEventListener("click", () => showMobileStep("menu"));
+continueWaiterMenu.addEventListener("click", () => {
+  if (state.billingReady) return alert("Final Check, Bill & Print is already completed for this customer check. Return to Tables and choose an open check.");
+  showMobileStep("menu");
+});
 reviewWaiterOrder.addEventListener("click", () => showMobileStep("order"));
 waiterOrderSelector.addEventListener("change", async () => {
   try {
@@ -466,13 +500,6 @@ waiterOrderSelector.addEventListener("change", async () => {
 searchWaiterCustomer.addEventListener("click", () => searchWaiterCustomerByPhone().catch((err) => alert(err.message)));
 createWaiterCustomer.addEventListener("click", () => createWaiterCustomerFromForm().catch((err) => alert(err.message)));
 transferTableButton.addEventListener("click", () => transferSelectedTable().catch((err) => alert(err.message)));
-unlockWaiterTable.addEventListener("click", async () => {
-  if (state.lock) await postJson("/orders/unlock", { lockId: state.lock.id, tableId: state.selectedTable?.id });
-  state.lock = null;
-  state.selectedTable = null;
-  state.cart = [];
-  renderAll();
-});
 refreshWaiter.addEventListener("click", () => loadBootstrap().catch((err) => alert(err.message)));
 logoutWaiter.addEventListener("click", () => window.parent.postMessage({ type: "KMASTER_MOBILE_LOGOUT" }, "*"));
 

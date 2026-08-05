@@ -43,6 +43,7 @@ assert.match(waiter, /data-cart-line/);
 assert.match(waiter, /data-note-item/);
 assert.match(waiter, /notes: item\.notes \|\| ''/);
 assert.match(waiter, /Special note for/);
+assert.match(live, /selectedOrderType\?\.text \|\| orderType\.value \|\| "Order"/);
 assert.match(packageJson.scripts['post-dist:win'], /npm rebuild better-sqlite3 bcrypt/);
 assert.match(server, /kotReference/);
 assert.match(server, /suborderNo/);

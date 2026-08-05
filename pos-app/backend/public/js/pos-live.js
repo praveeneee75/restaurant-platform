@@ -791,7 +791,10 @@ function addSingleSearchResult() {
 }
 
 function renderCart() {
-  cartTitle.textContent = isDineIn() ? (state.selectedTable ? state.selectedTable.table_name : "Select a table") : orderType.options[orderType.selectedIndex].text;
+  const selectedOrderType = orderType.options[orderType.selectedIndex];
+  cartTitle.textContent = isDineIn()
+    ? (state.selectedTable ? state.selectedTable.table_name : "Select a table")
+    : (selectedOrderType?.text || orderType.value || "Order");
   orderMeta.textContent = state.orderId ? `Order ${state.orderReference || state.orderId}` : "New order";
   cartItems.innerHTML = state.cart.map((item) => usesStructuredItemEntry ? `
     <div class="cart-line parcel-cart-row ${state.selectedCartKey === item.key ? "selected" : ""} ${item.sentToKitchen ? "saved" : item.savedLocally ? "pending-save" : "new-item"}" data-cart-line="${item.key}" role="button" tabindex="0" aria-label="Edit ${esc(item.name)}">

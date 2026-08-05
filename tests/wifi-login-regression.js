@@ -33,7 +33,7 @@ const { PREFERRED_POS_PORT, findAvailablePort } = require(path.join(root, 'pos-a
   assert.match(mobile, /webviewPanel\.classList\.toggle\("staff-workspace"/, 'staff should not see the duplicate outer workspace header');
   assert.doesNotMatch(mobile, /if \(state\.user && !state\.user\.cloudOwner\) logoutButton\.click/, 'closing a workspace must not log staff out');
   assert.doesNotMatch(mobile, /CAPTAIN[^\n]+WAITER[^\n]+\]\s*,\s*\n\s*waiter:/, 'captains should not be offered the separate waiter role');
-  assert.match(mobile, /Update POS Desktop to 1\.0\.146 or later/, 'mobile Dine In must reject an older POS instead of silently showing the old workflow');
+  assert.match(mobile, /Update POS Desktop to 1\.0\.147 or later/, 'mobile Dine In must reject an older POS instead of silently showing the old workflow');
 
   const posLive = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/pos-live.js'), 'utf8');
   assert.match(posLive, /mobileSessionParams\.get\("mobileRole"\)/, 'generic mobile POS links should restore the authenticated mobile session');
@@ -50,13 +50,18 @@ const { PREFERRED_POS_PORT, findAvailablePort } = require(path.join(root, 'pos-a
   assert.match(waiterJs, /postJson\("\/orders\/lock", \{ tableId: state\.selectedTable\.id, orderId \}\)/, 'switching customer checks must rebind the table lock to the selected order');
   assert.match(waiterJs, /fulfillment_type[\s\S]*=== fulfillmentType/, 'dine-in and linked parcel carts must remain visually separated');
   assert.match(waiterJs, /Number\(row\.id\) === Number\(itemId\) && !row\.sentToKitchen/, 'adding an already-KOT item must create a new KOT line instead of changing the submitted line');
-  assert.match(waiterJs, /showMobileStep\(state\.openOrders\.length \? "check" : "menu"\)/, 'occupied tables must require check selection before item entry');
+  assert.match(waiterJs, /showMobileStep\(state\.openOrders\.length \|\| table\.status === "OCCUPIED" \? "check" : "menu"\)/, 'occupied tables must require check selection before item entry');
   assert.doesNotMatch(waiterJs, /loadWaiterOrder\(state\.openOrders\[0\]/, 'selecting an occupied table must not silently choose its first customer');
   assert.match(waiterJs, /data-menu-note/, 'selected menu items must expose an inline mobile note field');
   assert.match(waiterJs, /reviewWaiterOrder/, 'the item screen must provide a clear next step to customer validation and review');
   assert.match(waiterJs, /finalWaiterCheck\.hidden = state\.settings\.showFinalBillPrintDineIn === false/, 'Final Check, Bill & Print must follow the Dine In admin setting');
   assert.match(waiterJs, /parcelWaiterCheck\.disabled = !state\.orderId \|\| state\.fulfillmentType !== "DINE_IN"/, 'captain parcel must only be created from an existing Dine In customer check');
   assert.match(waiterJs, /const user = userFromMobileParams\(\) \|\| JSON\.parse/, 'the current authenticated mobile session must override stale waiter-page storage');
+  assert.match(waiterJs, /waiterOrderSelectorLabel\.hidden = state\.openOrders\.length <= 1/, 'the customer-check dropdown must only appear when multiple checks require a choice');
+  assert.match(waiterJs, /state\.openOrders\.length === 1[\s\S]*loadWaiterOrder\(onlyOrderId\)/, 'a single existing customer check must be selected automatically');
+  assert.match(waiterJs, /await returnToTables\(\)/, 'successful KOT and final-check actions must return the Captain to Tables');
+  assert.doesNotMatch(waiter, /unlockWaiterTable/, 'manual table unlock must not be exposed in the Captain workflow');
+  assert.match(mobile, /showDashboardView\("Owner control loaded\."\)/, 'owner navigation must stay in the mobile owner dashboard');
 
   console.log('Wi-Fi login regression checks passed');
 })().catch((error) => {

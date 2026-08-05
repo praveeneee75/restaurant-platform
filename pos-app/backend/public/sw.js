@@ -1,4 +1,4 @@
-const CACHE_NAME = "restaurant-pos-waiter-v2";
+const CACHE_NAME = "restaurant-pos-waiter-v3";
 const SHELL_ASSETS = [
   "/waiter.html",
   "/css/waiter.css",
