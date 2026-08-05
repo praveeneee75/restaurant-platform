@@ -30,6 +30,7 @@ body {
 }
 .app-shell {
   display: grid;
+  align-content: start;
   gap: 14px;
   width: 100%;
   min-height: 100vh;
@@ -57,6 +58,9 @@ body {
   min-width: 0;
   padding: 18px;
 }
+.brand-copy { min-width: 0; }
+.brand-copy h1 { font-size: clamp(23px, 6vw, 31px); line-height: 1.12; letter-spacing: -.02em; }
+.brand-copy #brandStatus { color: var(--muted); font-size: 13px; line-height: 1.4; }
 .logo {
   display: grid;
   place-items: center;
@@ -152,9 +156,19 @@ select:focus-visible {
 }
 .login-panel {
   display: grid;
-  gap: 12px;
-  padding: 16px;
+  gap: 14px;
+  padding: 20px;
 }
+.login-heading { display:grid; gap:4px; padding-bottom:4px; }
+.login-heading h2 { margin:0; color:var(--text); font-size:24px; line-height:1.2; letter-spacing:-.02em; }
+.login-heading p { color:var(--muted); font-size:13px; line-height:1.45; }
+.login-kicker { color:var(--primary); font-size:11px; font-weight:900; letter-spacing:.12em; text-transform:uppercase; }
+.login-panel label { gap:7px; color:#475569; font-size:13px; }
+.login-panel input { min-height:52px; border-color:#d7dee8; border-radius:14px; padding:13px 14px; background:#f8fafc; }
+.login-panel input:focus { border-color:#60a5fa; background:#fff; box-shadow:0 0 0 4px rgba(37,99,235,.10); outline:0; }
+.login-panel #loginButton { min-height:54px; margin-top:2px; border-radius:14px; background:linear-gradient(135deg,#2563eb,#1d4ed8); box-shadow:0 10px 22px rgba(37,99,235,.22); }
+.login-panel .secondary-button { min-height:50px; background:#eff6ff; color:#1e3a8a; }
+.login-panel .status-line { padding:10px 12px; border-radius:12px; background:#f8fafc; color:#64748b; font-size:12px; line-height:1.4; }
 .login-panel[hidden] {
   display: none !important;
 }
@@ -405,13 +419,20 @@ iframe {
       max(12px, env(safe-area-inset-left));
   }
   .brand-panel {
-    align-items: flex-start;
-    padding: 16px;
+    align-items: center;
+    gap: 12px;
+    padding: 14px;
   }
   .logo {
-    width: 52px;
-    height: 52px;
+    width: 54px;
+    height: 54px;
+    border-radius: 15px;
   }
+  .brand-copy h1 { font-size:24px; }
+  .brand-copy .eyebrow { font-size:10px; }
+  .active-restaurant { margin:5px 0 3px; font-size:11px; }
+  .brand-copy #brandStatus { font-size:12px; }
+  .login-panel { padding:18px; border-radius:20px; }
   .dashboard-panel { min-height: calc(100dvh - 24px); }
   .secondary-button {
     width: 100%;

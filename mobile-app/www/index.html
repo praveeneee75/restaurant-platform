@@ -17,7 +17,7 @@
   <main class="app-shell">
     <section class="brand-panel">
       <div class="logo" id="brandLogo" aria-label="K'Master POS"></div>
-      <div>
+      <div class="brand-copy">
         <p class="eyebrow">K'Master restaurant app</p>
         <h1 id="brandName">K'Master POS</h1>
         <strong id="activeRestaurantName" class="active-restaurant">Ready to sign in</strong>
@@ -26,15 +26,20 @@
     </section>
 
     <section class="login-panel" id="loginView">
+      <div class="login-heading">
+        <span class="login-kicker">Welcome back</span>
+        <h2>Sign in to continue</h2>
+        <p>Use your staff PIN on the restaurant Wi-Fi, or your owner account online.</p>
+      </div>
       <select id="restaurantSelect" hidden aria-hidden="true"></select>
-      <label>Username or owner email
-        <input id="username" autocomplete="username" placeholder="admin or owner@example.com">
+      <label>Username or email
+        <input id="username" autocomplete="username" placeholder="Enter username or owner email">
       </label>
-      <label>PIN or owner password
-        <input id="pin" type="password" autocomplete="current-password" placeholder="PIN or owner password">
+      <label>PIN or password
+        <input id="pin" type="password" autocomplete="current-password" placeholder="Enter PIN or owner password">
       </label>
-      <button id="loginButton" type="button">Login</button>
-      <button id="biometricLoginButton" type="button" class="secondary-button" hidden>Use biometric login</button>
+      <button id="loginButton" type="button">Sign in</button>
+      <button id="biometricLoginButton" type="button" class="secondary-button" hidden>Sign in with biometrics</button>
       <p id="loginStatus" class="status-line">Preparing secure login...</p>
     </section>
 

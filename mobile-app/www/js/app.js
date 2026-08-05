@@ -324,7 +324,7 @@ function reportMobileAttempt(details) {
       posReachable: Boolean(details.posReachable),
       loginSucceeded: Boolean(details.loginSucceeded),
       error: String(details.error || "").slice(0, 300),
-      appVersion: "1.0.23",
+      appVersion: "1.0.24",
       platform: navigator.userAgent || "Mobile app"
     })
   }).catch(() => undefined);
@@ -661,6 +661,12 @@ async function openRoleWorkspace(role, button) {
   button.disabled = true;
   dashboardStatus.textContent = `Connecting to ${restaurant.name || "restaurant"} POS...`;
   try {
+    if (role === "captain" || role === "waiter") {
+      const health = await fetchJson(`${posBase}/health`);
+      const installed = String(health.version || "0.0.0").split(".").map((value) => Number(value) || 0);
+      const compatible = installed[0] > 1 || (installed[0] === 1 && (installed[1] > 0 || (installed[1] === 0 && installed[2] >= 146)));
+      if (!compatible) throw new Error(`Update POS Desktop to 1.0.146 or later. This POS is ${health.version || "an older version"} and cannot provide the new mobile Dine In workflow.`);
+    }
     await fetchJson(`${posBase}/mobile-app/config?restaurantId=${encodeURIComponent(restId)}`);
     const workspaceLabels = { captain: "POS Dine In", waiter: "POS Dine In", cashier: "Cashier POS", pos: "POS", kitchen: "Kitchen KDS", owner: "Full Admin" };
     activeRole.textContent = workspaceLabels[role] || "Mobile View";

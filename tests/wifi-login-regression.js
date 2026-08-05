@@ -33,6 +33,7 @@ const { PREFERRED_POS_PORT, findAvailablePort } = require(path.join(root, 'pos-a
   assert.match(mobile, /webviewPanel\.classList\.toggle\("staff-workspace"/, 'staff should not see the duplicate outer workspace header');
   assert.doesNotMatch(mobile, /if \(state\.user && !state\.user\.cloudOwner\) logoutButton\.click/, 'closing a workspace must not log staff out');
   assert.doesNotMatch(mobile, /CAPTAIN[^\n]+WAITER[^\n]+\]\s*,\s*\n\s*waiter:/, 'captains should not be offered the separate waiter role');
+  assert.match(mobile, /Update POS Desktop to 1\.0\.146 or later/, 'mobile Dine In must reject an older POS instead of silently showing the old workflow');
 
   const posLive = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/pos-live.js'), 'utf8');
   assert.match(posLive, /mobileSessionParams\.get\("mobileRole"\)/, 'generic mobile POS links should restore the authenticated mobile session');
