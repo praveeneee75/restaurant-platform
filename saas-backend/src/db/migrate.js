@@ -36,6 +36,7 @@ async function migrate() {
   await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS email TEXT');
   await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS timezone TEXT');
   await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS logo_path TEXT');
+  await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS licenses (

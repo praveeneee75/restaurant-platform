@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>K'Master POS Downloads</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/css/app.css?v=20260727-owner-nav-3">
+  <link rel="stylesheet" href="/css/app.css?v=20260806-owner-downloads-responsive-1">
 </head>
 <body class="owner-page download-page">
   <header class="owner-appbar">
@@ -28,10 +28,15 @@
     <p id="downloadStatus">Checking available installers...</p>
     <div id="installerPanel" class="installer-grid"></div>
     </section>
-    <section id="mobile-app">
+    <section id="mobile-app" class="download-mobile-panel">
     <h3>Mobile App</h3>
-    <p>Android and iOS download links will appear here when their store releases are published.</p>
-    <p>Restaurant owners can return to this page from the owner portal without needing a direct installer address.</p>
+    <p id="mobileDownloadStatus">Checking available mobile releases...</p>
+    <div class="mobile-download-actions">
+      <a id="androidDownloadLink" class="download-button" href="/mobile/download/android" hidden>Download Android APK</a>
+      <a id="iosDownloadLink" class="primary-download-link" href="#" hidden>Open iPhone/iPad download</a>
+      <a class="primary-download-link" href="/mobile-download.html">Open mobile download page</a>
+    </div>
+    <p id="mobileDownloadHelp">Use the mobile download page on the phone or tablet where K'Master POS will be installed.</p>
     </section>
     <section>
     <h3>Owner Steps</h3>
@@ -49,6 +54,6 @@
     </section>
   </main>
   <script src="/js/saas-session.js" data-session-scope="owner"></script>
-  <script src="/js/downloads.js?v=20260710-owner-downloads"></script>
+  <script src="/js/downloads.js?v=20260806-owner-downloads-mobile-1"></script>
 </body>
 </html>

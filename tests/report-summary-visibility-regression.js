@@ -1,0 +1,15 @@
+const fs = require('fs');
+const html = fs.readFileSync('pos-app/backend/public/admin.html', 'utf8');
+const js = fs.readFileSync('pos-app/backend/public/js/admin-dashboard.js', 'utf8');
+const server = fs.readFileSync('pos-app/backend/server.js', 'utf8');
+if (!html.includes('id="salesSummaryCards"')) throw new Error('Sales dashboard cards need an explicit visibility container');
+if (!js.includes('salesSummaryCards.hidden = activeReportType !== "sales"')) throw new Error('Sales cards are not restricted to Sales Summary');
+if (!js.includes('const data = activeReportType === "sales"')) throw new Error('Non-sales summaries still fetch the Sales dashboard payload');
+if (!js.includes('if (activeReportType === "sales") {')) throw new Error('Sales dashboard rendering is not guarded by report type');
+if (!js.includes('function renderOperationalReportRows') || !js.includes('report-category-row') || !js.includes('report-category-subtotal')) throw new Error('Item Summary is not grouped by category with subtotals on desktop');
+for (const section of ['Billing (Success)','Billing (Cancel)','Order Type','Payment Mode','Complimentary Orders','Sales Return Orders','Virtual Wallet Summary','Expenses Summary','Withdrawal Summary','Cash Top-Up Summary','Online Orders']) if (!html.includes(section)) throw new Error(`Sales Summary is missing ${section}`);
+if (!js.includes('function renderExecutiveSalesSummary') || !js.includes('operationalReportPanel.hidden = activeReportType === "sales"')) throw new Error('Sales Summary does not use the executive print-style desktop view');
+if (!server.includes('function buildExecutiveSalesSummary') || (server.match(/buildExecutiveSalesSummary\(db, from, to, invoiceOnly\)/g) || []).length < 2) throw new Error('Display and print do not share one authoritative Sales Summary calculation');
+if (!server.includes("String(discount.value_type || '').toUpperCase() === 'PERCENT'\n        ? gross * Number(discount.value || 0) / 100")) throw new Error('Percentage discount is not calculated from order gross');
+if (!server.includes("!['OWNER', 'ADMIN', 'MANAGER_2'].includes")) throw new Error('Invoice-only report visibility rule is missing');
+console.log('Report summary visibility regression passed.');

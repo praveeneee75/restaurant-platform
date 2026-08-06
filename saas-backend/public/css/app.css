@@ -644,6 +644,36 @@ th {
   grid-column: 1 / -1;
 }
 
+.download-content > .owner-page-intro,
+.download-mobile-panel {
+  grid-column: 1 / -1;
+}
+
+.mobile-download-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+@media (max-width: 1100px) {
+  .owner-appbar {
+    align-items: stretch;
+  }
+
+  .owner-appbar .owner-actions {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .owner-appbar .owner-actions > * {
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
+  }
+}
+
 @media (max-width: 760px) {
   .download-nav {
     width: 100%;
@@ -658,8 +688,12 @@ th {
 
   .download-content {
     grid-template-columns: 1fr;
-    width: min(100% - 24px, 1180px);
-    padding: 16px 0 28px;
+    width: 100%;
+    padding: 0 0 28px;
+  }
+
+  .owner-appbar .owner-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1022,9 +1056,16 @@ th {
 }
 
 .owner-profile-layout {
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
 }
+
+.owner-profile-layout > * { min-width: 0; }
+.owner-profile-tabs { display:flex; flex-wrap:wrap; gap:10px; padding:12px; border:1px solid var(--border); border-radius:14px; background:#fff; box-shadow:0 8px 24px rgba(20,32,51,.05); }
+.owner-profile-tabs button { margin:0; min-width:180px; background:#eef3f8; color:#27405f; }
+.owner-profile-tabs button.active { background:var(--primary); color:#fff; }
+.owner-profile-panel[hidden] { display:none !important; }
+.owner-contact-section,.owner-password-section { width:min(720px,100%); }
 
 .profile-form {
   display: grid;
@@ -1946,3 +1987,36 @@ body.saas-shell {
 .qr-order-fields input, .qr-order-fields textarea { width:100%; margin:0; box-sizing:border-box; }
 .qr-order-fields button { justify-self:start; }
 .qr-order-fields .field-error { min-height:18px; margin:0; color:#b91c1c; text-align:left; }
+
+/* Executive-ready visual refinement: additive and workflow-neutral. */
+html,body,button,input,select,textarea{font-family:"Aptos","Segoe UI Variable","Segoe UI",Arial,sans-serif;}
+.owner-page,.saas-page{background:#f3f6fa;color:#142033;}
+.owner-appbar{box-shadow:0 8px 24px rgba(20,32,51,.07);}
+.owner-section,.owner-page-intro,.mobile-download-page{border-color:#d9e3ec;box-shadow:0 12px 30px rgba(20,32,51,.06);}
+.branch-profile-list{display:grid;gap:18px;}
+.branch-profile-card{border:1px solid #d9e3ec;border-radius:14px;background:#fbfdff;overflow:hidden;}
+.branch-profile-card summary{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 20px;cursor:pointer;list-style:none;background:#fbfdff;}
+.branch-profile-card summary::-webkit-details-marker{display:none}.branch-profile-card summary::after{content:'Edit';padding:7px 12px;border-radius:999px;background:#e8eef5;color:#27405f;font-size:12px;font-weight:800}.branch-profile-card[open] summary::after{content:'Close'}
+.branch-profile-card-body{padding:20px;border-top:1px solid #e4ebf2;}
+.branch-profile-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px;}
+.branch-profile-card h3{margin:3px 0 0;}.sync-badge{padding:7px 10px;border-radius:999px;background:#e6f5ef;color:#166247;font-size:12px;font-weight:800;}
+.branch-profile-grid{display:grid;grid-template-columns:repeat(3,minmax(190px,1fr));gap:14px;margin-bottom:16px;}
+.branch-profile-grid label{display:grid;gap:6px;font-weight:700;color:#42536a;}.branch-profile-grid input,.branch-profile-grid select{width:100%;}
+@media(max-width:900px){.branch-profile-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.branch-profile-card header{display:block}.sync-badge{display:inline-block;margin-top:8px}}
+@media(max-width:600px){.branch-profile-grid{grid-template-columns:1fr}.owner-actions{overflow-x:auto}.owner-appbar{align-items:flex-start}.owner-profile-tabs{display:grid;grid-template-columns:1fr}.owner-profile-tabs button{width:100%;min-width:0}.branch-profile-card summary{align-items:flex-start}.sync-badge{display:none}}
+
+.customer-structure { grid-column: 1 / -1; display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+.customer-structure label { display:flex; align-items:flex-start; gap:10px; padding:14px; border:1px solid var(--border); border-radius:12px; background:var(--surface-soft); }
+.customer-structure input { width:auto !important; margin-top:3px !important; }
+.customer-structure span { display:grid; gap:3px; }
+.customer-structure small { color:var(--muted); font-weight:600; }
+.customer-structure-fields { grid-column:1 / -1; display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; }
+.customer-structure-fields[hidden], .single-customer-fields[hidden], #multiBranchProfiles[hidden] { display:none !important; }
+.single-customer-fields { display:contents; }
+.multi-branch-profiles { grid-column:1 / -1; display:grid; gap:16px; }
+.multi-branch-card { padding:16px; border:1px solid var(--border); border-radius:14px; background:var(--surface-soft); }
+.multi-branch-card h3 { margin:0 0 12px; }
+.multi-branch-grid { display:grid; grid-template-columns:repeat(4,minmax(180px,1fr)); gap:10px; align-items:end; }
+.multi-branch-grid label { display:grid; gap:5px; }
+@media(max-width:1100px){.multi-branch-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:650px){.customer-structure,.multi-branch-grid{grid-template-columns:1fr;}}

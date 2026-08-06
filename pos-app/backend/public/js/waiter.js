@@ -41,6 +41,11 @@ const state = {
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 const money = (value) => Number(value || 0).toFixed(2);
+function taxInclusiveUnitPrice(item) {
+  const listed = Number(item?.price || 0);
+  const rate = Number(state.settings?.taxRate || 0);
+  return String(item?.tax_mode || "INCLUSIVE").toUpperCase() === "EXCLUSIVE" ? listed * (1 + rate / 100) : listed;
+}
 const can = (permission) => state.permissions.includes(permission) || actor.role === "OWNER";
 let bootstrapInFlight = false;
 let activeMobileStep = "tables";
@@ -105,7 +110,7 @@ async function loadBootstrap() {
       saveWaiterOrder.disabled = false;
       submitWaiterKot.disabled = false;
     }
-    if (!state.selectedCategoryId) state.selectedCategoryId = state.categories[0]?.id || null;
+    if (!state.selectedCategoryId) state.selectedCategoryId = "ALL";
     renderAll();
   } finally {
     bootstrapInFlight = false;
@@ -141,12 +146,13 @@ function renderOrderControls() {
     ? `${state.fulfillmentType === "TAKEAWAY" ? "Parcel" : "Dine In"} check selected${state.customer?.name ? ` for ${state.customer.name}` : ""}`
     : `${state.fulfillmentType === "TAKEAWAY" ? "New parcel" : "New customer"} check selected`;
   continueWaiterMenu.disabled = !state.selectedTable || !state.lock;
-  parcelWaiterCheck.disabled = !state.orderId || state.fulfillmentType !== "DINE_IN";
+  parcelWaiterCheck.hidden = !state.orderId || state.fulfillmentType !== "DINE_IN";
   const hasUnsentItems = state.cart.some((item) => !item.sentToKitchen);
   submitWaiterKot.disabled = state.billingReady || !state.selectedTable || !state.lock || !hasUnsentItems;
   finalWaiterCheck.hidden = state.settings.showFinalBillPrintDineIn === false;
   finalWaiterCheck.disabled = state.billingReady || !state.selectedTable || !state.lock || state.cart.length === 0;
   saveWaiterOrder.disabled = state.billingReady || state.cart.length === 0;
+  cancelWaiterOrder.disabled = !state.orderId || state.billingReady;
 }
 
 function renderTables() {
@@ -159,16 +165,17 @@ function renderTables() {
 }
 
 function renderCategories() {
-  waiterCategories.innerHTML = state.categories.map((category) => `<button data-category-id="${category.id}">${esc(category.name)}</button>`).join("");
+  waiterCategories.innerHTML = `<button class="${state.selectedCategoryId === "ALL" ? "active" : ""}" data-category-id="ALL">All items</button>` + state.categories.map((category) => `<button class="${Number(state.selectedCategoryId) === Number(category.id) ? "active" : ""}" data-category-id="${category.id}">${esc(category.name)}</button>`).join("");
 }
 
 function renderItems() {
-  const items = state.items.filter((item) => item.category_id === state.selectedCategoryId);
+  const query = waiterItemSearch.value.trim().toLowerCase();
+  const items = state.items.filter((item) => (state.selectedCategoryId === "ALL" || Number(item.category_id) === Number(state.selectedCategoryId)) && (!query || `${item.item_code || ""} ${item.alpha_short_code || ""} ${item.numeric_short_code || ""} ${item.name}`.toLowerCase().includes(query)));
   waiterItems.innerHTML = items.map((item) => {
     const pending = [...state.cart].reverse().find((line) => Number(line.id) === Number(item.id) && !line.sentToKitchen);
     return `
     <div class="item-row">
-      <div><strong>${esc(item.name)}</strong><br><small>${money(item.price)}</small></div>
+      <div><strong>${esc(item.name)}</strong><br><small>INR ${money(taxInclusiveUnitPrice(item))} · tax included</small></div>
       <div class="menu-qty-controls">
         <button data-menu-dec="${item.id}" aria-label="Remove one ${esc(item.name)}">−</button>
         <strong>${state.cart.filter((line) => Number(line.id) === Number(item.id) && !line.sentToKitchen).reduce((sum, line) => sum + Number(line.quantity || 0), 0)}</strong>
@@ -182,7 +189,7 @@ function renderItems() {
 function renderCart() {
   waiterCart.innerHTML = state.cart.map((item) => `
     <div class="cart-row ${state.selectedCartKey === item.id ? "selected" : ""}" data-cart-line="${item.id}" role="button" tabindex="0" aria-label="Edit ${esc(item.name)}">
-      <div><strong>${esc(item.name)}</strong><br><small>${money(item.price)} x ${item.quantity}</small>${item.notes ? `<br><small class="item-note">Special note: ${esc(item.notes)}</small>` : ''}${item.sentToKitchen ? '<br><small>Sent to kitchen</small>' : ''}</div>
+      <div><strong>${esc(item.name)}</strong><br><small>INR ${money(taxInclusiveUnitPrice(item))} × ${item.quantity}</small>${item.notes ? `<br><small class="item-note">Special note: ${esc(item.notes)}</small>` : ''}${item.sentToKitchen ? '<br><small>Sent to kitchen</small>' : ''}</div>
       <div class="qty-controls">
         <button data-dec="${item.id}" ${item.sentToKitchen ? 'disabled' : ''}>-</button>
         <span>${item.quantity}</span>
@@ -191,7 +198,7 @@ function renderCart() {
       </div>
     </div>
   `).join("") || "<p>No items selected.</p>";
-  waiterTotal.textContent = `Total: ${money(state.cart.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0))}`;
+  waiterTotal.textContent = `Total (tax included): INR ${money(state.cart.reduce((sum, item) => sum + taxInclusiveUnitPrice(item) * Number(item.quantity || 0), 0))}`;
   mobileCartCount.textContent = String(state.cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0));
   lockStatus.textContent = state.lock ? `Locked until ${state.lock.expires_at}` : "No table locked";
   transferTableButton.disabled = !state.orderId || !state.selectedTable || !state.lock;
@@ -245,7 +252,7 @@ async function loadWaiterOrder(orderId, options = {}) {
   state.customer = open.customer || null;
   state.cart = (open.items || [])
     .filter((item) => String(item.fulfillment_type || "DINE_IN").toUpperCase() === fulfillmentType)
-    .map((item) => ({ id: item.id, orderItemId: item.order_item_id || null, name: item.name, price: item.price, quantity: item.quantity, notes: item.notes || '', sentToKitchen: Boolean(item.kot_id), fulfillmentType: item.fulfillment_type || "DINE_IN", modifiers: [] }));
+    .map((item) => ({ id: item.id, orderItemId: item.order_item_id || null, name: item.name, price: item.price, tax_mode: item.tax_mode || "INCLUSIVE", quantity: item.quantity, notes: item.notes || '', sentToKitchen: Boolean(item.kot_id), fulfillmentType: item.fulfillment_type || "DINE_IN", modifiers: [] }));
 }
 
 function addItem(itemId) {
@@ -253,7 +260,7 @@ function addItem(itemId) {
   if (!item) return;
   const existing = state.cart.find((row) => Number(row.id) === Number(itemId) && !row.sentToKitchen);
   if (existing) existing.quantity += 1;
-  else state.cart.push({ id: item.id, name: item.name, price: item.price, quantity: 1, notes: '', sentToKitchen: false, modifiers: [] });
+  else state.cart.push({ id: item.id, name: item.name, price: item.price, tax_mode: item.tax_mode || "INCLUSIVE", quantity: 1, notes: '', sentToKitchen: false, modifiers: [] });
   state.selectedCartKey = Number(item.id);
   renderCart();
   renderItems();
@@ -396,6 +403,17 @@ async function transferSelectedTable() {
   showMobileStep("tables");
 }
 
+async function cancelSelectedOrder() {
+  if (!state.orderId) throw new Error("Choose an open order first");
+  if (!confirm("Cancel this order? The cancellation is recorded in the audit log.")) return;
+  const pin = prompt("Enter the six-digit cancellation approval PIN");
+  if (pin === null) return;
+  if (!/^\d{6}$/.test(pin.trim())) throw new Error("Enter the six-digit cancellation approval PIN");
+  await postJson("/orders/cancel", { orderId: state.orderId, pin: pin.trim(), forcePin: true });
+  waiterStatus.textContent = "Order cancelled";
+  await returnToTables();
+}
+
 async function renewLock() {
   if (!state.lock) return;
   try {
@@ -418,7 +436,8 @@ document.addEventListener("click", async (event) => {
     }
     if (target.dataset.tableId) await selectTable(target.dataset.tableId);
     if (target.dataset.categoryId) {
-      state.selectedCategoryId = Number(target.dataset.categoryId);
+      state.selectedCategoryId = target.dataset.categoryId === "ALL" ? "ALL" : Number(target.dataset.categoryId);
+      renderCategories();
       renderItems();
     }
     if (target.dataset.addItem) addItem(target.dataset.addItem);
@@ -454,6 +473,7 @@ waiterItems.addEventListener("input", (event) => {
   const item = [...state.cart].reverse().find((row) => Number(row.id) === Number(field.dataset.menuNote) && !row.sentToKitchen);
   if (item) item.notes = field.value;
 });
+waiterItemSearch.addEventListener("input", renderItems);
 
 waiterCart.addEventListener("click", (event) => {
   if (event.target.closest("button")) return;
@@ -500,6 +520,7 @@ waiterOrderSelector.addEventListener("change", async () => {
 searchWaiterCustomer.addEventListener("click", () => searchWaiterCustomerByPhone().catch((err) => alert(err.message)));
 createWaiterCustomer.addEventListener("click", () => createWaiterCustomerFromForm().catch((err) => alert(err.message)));
 transferTableButton.addEventListener("click", () => transferSelectedTable().catch((err) => alert(err.message)));
+cancelWaiterOrder.addEventListener("click", () => cancelSelectedOrder().catch((err) => alert(err.message)));
 refreshWaiter.addEventListener("click", () => loadBootstrap().catch((err) => alert(err.message)));
 logoutWaiter.addEventListener("click", () => window.parent.postMessage({ type: "KMASTER_MOBILE_LOGOUT" }, "*"));
 

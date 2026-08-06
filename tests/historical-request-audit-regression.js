@@ -49,7 +49,8 @@ assert.match(pos, /billing\.html\?restaurantId=.*&orderId=/, 'KOT navigation mus
 assert.match(billing, /requestedOrderId[\s\S]*showSubmittedOrder\(requestedOrderId\)/, 'Billing must automatically open the submitted order');
 assert.match(admin, /btn\.dataset\.reportType[\s\S]*loadReports\.click\(\)/, 'Report sidebar navigation must load the selected daily report');
 assert.match(mobileManifest, /android:usesCleartextTraffic="true"/, 'Android must permit same-WiFi HTTP access to the local POS');
-assert.doesNotMatch(`${mobileHtml}\n${mobile}`, /No restaurant selected|Select your restaurant|Select a restaurant|Select restaurant/, 'Mobile login must not ask users to select a restaurant');
+assert.match(mobileHtml, /<select id="restaurantSelect" hidden aria-hidden="true"><\/select>/, 'Mobile login restaurant discovery must remain hidden');
+assert.doesNotMatch(mobileHtml.match(/<section class="login-panel"[\s\S]*?<\/section>/)?.[0] || '', /No restaurant selected|Select your restaurant|Select a restaurant|Select restaurant/, 'Mobile login must not ask users to select a restaurant');
 assert.match(admin, /postJson\('\/reports\/print'[\s\S]*currentOperationalReport/, 'Report Print must queue the loaded report instead of opening an A4 browser dialog');
 assert.match(server, /INSERT INTO print_jobs\(type,ref_id,kitchen_id,printer_id,payload,status\) VALUES\('REPORT'/, 'Reports must queue through the configured BILL printer');
 assert.match(thermal, /Billing \(Success\)[\s\S]*Virtual Wallet Summary[\s\S]*Online Orders/, 'Sales thermal report must contain every requested section');

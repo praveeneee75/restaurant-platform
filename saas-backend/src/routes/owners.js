@@ -1,4 +1,5 @@
 const express = require('express');
+const { validStateCode } = require('../utils/indiaStates');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
@@ -321,6 +322,71 @@ router.post('/profile', authenticateOwner, async (req, res) => {
   }
 });
 
+router.get('/branch-profiles', authenticateOwner, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT t.restaurant_code, t.name, t.legal_name, t.gstin, t.fssai_license_no,
+             t.sac_code, t.tax_rate, t.state_code, t.address_line_1, t.address_line_2,
+             t.city, t.state, t.country, t.phone, t.email, t.currency, t.timezone
+      FROM restaurant_owners ro
+      JOIN tenants t ON t.id = ro.tenant_id
+      WHERE ro.owner_user_id = $1 AND ro.active = true
+      ORDER BY t.name
+    `, [req.owner.id]);
+    res.json({ success: true, branches: result.rows });
+  } catch (err) {
+    console.error('OWNER BRANCH PROFILES ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.put('/branch-profiles/:restaurantCode', authenticateOwner, async (req, res) => {
+  const profile = req.body || {};
+  const required = ['name','legalName','sacCode','stateCode','addressLine1','city','state','country','phone','email','currency','timezone'];
+  const missing = required.filter((key) => !String(profile[key] || '').trim());
+  if (missing.length) return res.status(400).json({ success: false, message: `Complete the required branch fields: ${missing.join(', ')}` });
+  if (!/^\d{2}$/.test(String(profile.stateCode))) return res.status(400).json({ success: false, message: 'Select a valid Indian state or union territory' });
+  if (!validStateCode(profile.state, profile.stateCode)) return res.status(400).json({ success: false, message: 'State and GST state code do not match' });
+  if (!/^\d{6,8}$/.test(String(profile.sacCode))) return res.status(400).json({ success: false, message: 'SAC code must contain 6 to 8 digits' });
+  if (profile.gstin && !/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(String(profile.gstin).trim().toUpperCase())) return res.status(400).json({ success: false, message: 'Enter a valid GSTIN' });
+  if (profile.gstin && String(profile.gstin).trim().slice(0,2) !== String(profile.stateCode)) return res.status(400).json({ success: false, message: 'GSTIN prefix must match the selected GST state code' });
+  if (profile.fssaiLicenseNo && !/^\d{14}$/.test(String(profile.fssaiLicenseNo).replace(/\D/g, ''))) return res.status(400).json({ success: false, message: 'FSSAI number must contain 14 digits' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(profile.email))) return res.status(400).json({ success: false, message: 'Enter a valid branch email' });
+  try {
+    const result = await pool.query(`
+      UPDATE tenants t SET name=$1, legal_name=$2, gstin=NULLIF($3,''), fssai_license_no=NULLIF($4,''),
+        sac_code=$5, tax_rate=$6, state_code=$7, address_line_1=$8, address_line_2=$9,
+        city=$10, state=$11, country=$12, phone=$13, email=$14, currency=$15, timezone=$16, updated_at=NOW()
+      WHERE t.restaurant_code=$17 AND EXISTS (
+        SELECT 1 FROM restaurant_owners ro WHERE ro.tenant_id=t.id AND ro.owner_user_id=$18 AND ro.active=true
+      ) RETURNING t.restaurant_code, t.name
+    `, [String(profile.name).trim(), String(profile.legalName).trim(), String(profile.gstin || '').trim().toUpperCase(), String(profile.fssaiLicenseNo || '').replace(/\D/g,''), String(profile.sacCode).trim(), Number(profile.taxRate || 0), String(profile.stateCode), String(profile.addressLine1).trim(), String(profile.addressLine2 || '').trim(), String(profile.city).trim(), String(profile.state).trim(), String(profile.country).trim(), String(profile.phone).trim(), String(profile.email).trim().toLowerCase(), String(profile.currency).trim().toUpperCase(), String(profile.timezone).trim(), String(req.params.restaurantCode).trim().toUpperCase(), req.owner.id]);
+    if (!result.rowCount) return res.status(404).json({ success: false, message: 'Branch not found or not assigned to this owner' });
+    res.json({ success: true, message: `${result.rows[0].name} profile saved. POS will receive it at next authentication.` });
+  } catch (err) {
+    console.error('OWNER BRANCH PROFILE UPDATE ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.post('/branch-profiles/:restaurantCode/disconnect', authenticateOwner, async (req, res) => {
+  const restaurantCode = String(req.params.restaurantCode || '').trim().toUpperCase();
+  try {
+    const assigned = await pool.query(`SELECT t.restaurant_code, t.name FROM restaurant_owners ro
+      JOIN tenants t ON t.id = ro.tenant_id
+      WHERE ro.owner_user_id = $1 AND ro.active = true ORDER BY t.name`, [req.owner.id]);
+    if (assigned.rowCount <= 1) return res.status(400).json({ success: false, message: 'Keep at least one outlet connected to this owner account' });
+    const result = await pool.query(`UPDATE restaurant_owners ro SET active = false
+      FROM tenants t WHERE ro.tenant_id = t.id AND ro.owner_user_id = $1
+        AND ro.active = true AND t.restaurant_code = $2 RETURNING t.name`, [req.owner.id, restaurantCode]);
+    if (!result.rowCount) return res.status(404).json({ success: false, message: 'Connected outlet not found' });
+    res.json({ success: true, message: `${result.rows[0].name} was disconnected from this owner account. Restaurant and POS data were not deleted.` });
+  } catch (err) {
+    console.error('OWNER BRANCH DISCONNECT ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
 router.post('/logout', authenticateOwner, async (req, res) => {
   try {
     await revokeToken(tokenFromRequest(req));
@@ -391,6 +457,218 @@ router.get('/dashboard', authenticateOwner, async (req, res) => {
     });
   } catch (err) {
     console.error('OWNER DASHBOARD ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.get('/dashboard/statistics', authenticateOwner, async (req, res) => {
+  const requestedDate = String(req.query.date || '').trim();
+  const reportDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)
+    ? requestedDate
+    : new Date().toISOString().slice(0, 10);
+  const requestedRestaurant = String(req.query.restaurantId || 'ALL').trim();
+  try {
+    const result = await pool.query(`
+      SELECT t.id, t.name, t.restaurant_code,
+             COALESCE(r.gross_sales, 0) AS gross_sales,
+             COALESCE(r.net_sales, 0) AS net_sales,
+             COALESCE(r.tax_amount, 0) AS tax_amount,
+             COALESCE(r.discount_amount, 0) AS discount_amount,
+             COALESCE(r.refunds_amount, 0) AS refunds_amount,
+             COALESCE(r.orders_count, 0) AS orders_count,
+             COALESCE(r.cash_total, 0) AS cash_total,
+             COALESCE(r.card_total, 0) AS card_total,
+             COALESCE(r.upi_total, 0) AS upi_total,
+             r.updated_at,
+             s.executive_sales,
+             s.reprint_summary,
+             s.received_at AS snapshot_received_at
+      FROM restaurant_owners ro
+      JOIN tenants t ON t.id = ro.tenant_id
+      LEFT JOIN tenant_daily_reports r ON r.tenant_id = t.id AND r.report_date = $2::date
+      LEFT JOIN tenant_operational_snapshots s ON s.tenant_id = t.id
+      WHERE ro.owner_user_id = $1 AND ro.active = true
+        AND ($3 = 'ALL' OR t.restaurant_code = $3)
+      ORDER BY t.name
+    `, [req.owner.id, reportDate, requestedRestaurant]);
+    if (requestedRestaurant !== 'ALL' && !result.rowCount) {
+      return res.status(404).json({ success: false, message: 'Restaurant not found for this owner' });
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const rows = result.rows.map((row) => {
+      const sales = row.executive_sales && typeof row.executive_sales === 'object' ? row.executive_sales : {};
+      const leakage = sales.leakage || {};
+      const bills = leakage.bills || {};
+      const reprints = row.reprint_summary && typeof row.reprint_summary === 'object' ? row.reprint_summary : {};
+      const currentOnly = reportDate === today;
+      return {
+        name: row.name,
+        restaurantCode: row.restaurant_code,
+        orders: Number(row.orders_count || 0),
+        sales: Number(row.gross_sales || 0),
+        netSales: Number(row.net_sales || 0),
+        tax: Number(row.tax_amount || 0),
+        discount: Number(row.discount_amount || 0),
+        refunds: Number(row.refunds_amount || 0),
+        cashCollection: Number(row.cash_total || 0),
+        cardCollection: Number(row.card_total || 0),
+        upiCollection: Number(row.upi_total || 0),
+        onlineSales: currentOnly ? Number(sales.onlineOrders?.sales || 0) : 0,
+        modified: currentOnly ? Number(bills.modified || 0) : 0,
+        reprinted: currentOnly ? Number(bills.reprinted || reprints.count || reprints.total || 0) : 0,
+        waivedOff: currentOnly ? Number(bills.waived || 0) : 0,
+        roundOff: currentOnly ? Number(sales.today?.roundOff || sales.roundOff || 0) : 0,
+        deliveryCharge: currentOnly ? Number(sales.today?.deliveryCharge || sales.deliveryCharge || 0) : 0,
+        containerCharge: currentOnly ? Number(sales.today?.containerCharge || sales.containerCharge || 0) : 0,
+        serviceCharge: currentOnly ? Number(sales.today?.serviceCharge || sales.serviceCharge || 0) : 0,
+        reportUpdatedAt: row.updated_at || null,
+        snapshotUpdatedAt: row.snapshot_received_at || null
+      };
+    });
+    const sumFields = ['orders', 'sales', 'netSales', 'tax', 'discount', 'refunds', 'cashCollection', 'cardCollection', 'upiCollection', 'onlineSales', 'modified', 'reprinted', 'waivedOff', 'roundOff', 'deliveryCharge', 'containerCharge', 'serviceCharge'];
+    const totals = Object.fromEntries(sumFields.map((field) => [field, rows.reduce((sum, row) => sum + Number(row[field] || 0), 0)]));
+    res.json({ success: true, reportDate, restaurantId: requestedRestaurant, totals, outlets: rows });
+  } catch (err) {
+    console.error('OWNER DASHBOARD STATISTICS ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.get('/dashboard/live-orders', authenticateOwner, async (req, res) => {
+  const requestedRestaurant = String(req.query.restaurantId || 'ALL').trim();
+  try {
+    const result = await pool.query(`
+      SELECT t.name, t.restaurant_code, s.live_operations, s.received_at
+      FROM restaurant_owners ro
+      JOIN tenants t ON t.id = ro.tenant_id
+      LEFT JOIN tenant_operational_snapshots s ON s.tenant_id = t.id
+      WHERE ro.owner_user_id = $1 AND ro.active = true
+        AND ($2 = 'ALL' OR t.restaurant_code = $2)
+      ORDER BY t.name
+    `, [req.owner.id, requestedRestaurant]);
+    if (requestedRestaurant !== 'ALL' && !result.rowCount) {
+      return res.status(404).json({ success: false, message: 'Restaurant not found for this owner' });
+    }
+    const orders = [];
+    let lastUpdatedAt = null;
+    result.rows.forEach((row) => {
+      const operations = row.live_operations && typeof row.live_operations === 'object' ? row.live_operations : {};
+      Object.entries(operations).forEach(([channel, values]) => {
+        (Array.isArray(values) ? values : []).forEach((order) => {
+          if (String(order.reference || '').toUpperCase().startsWith('DRAFT-')) return;
+          orders.push({ ...order, channel, outletName: row.name, restaurantCode: row.restaurant_code });
+        });
+      });
+      if (row.received_at && (!lastUpdatedAt || new Date(row.received_at) > new Date(lastUpdatedAt))) lastUpdatedAt = row.received_at;
+    });
+    const running = orders.filter((order) => !/PENDING|PREPAR|WAITING|READY|OUT_FOR_DELIVERY/i.test(String(order.status || '')));
+    const pending = orders.filter((order) => /PENDING|PREPAR|WAITING|READY|OUT_FOR_DELIVERY/i.test(String(order.status || '')));
+    const tables = [];
+    const tableKeys = new Set();
+    orders.filter((order) => order.channel === 'dineIn' && order.table).forEach((order) => {
+      const key = `${order.restaurantCode}:${order.table}`;
+      if (tableKeys.has(key)) return;
+      tableKeys.add(key);
+      const tableOrders = orders.filter((candidate) => candidate.restaurantCode === order.restaurantCode && candidate.channel === 'dineIn' && candidate.table === order.table);
+      tables.push({ outletName: order.outletName, restaurantCode: order.restaurantCode, table: order.table, orders: tableOrders.length, amount: tableOrders.reduce((sum, item) => sum + Number(item.total || 0), 0) });
+    });
+    res.json({ success: true, restaurantId: requestedRestaurant, running, pending, tables, lastUpdatedAt });
+  } catch (err) {
+    console.error('OWNER LIVE ORDERS ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.get('/dashboard/online-orders', authenticateOwner, async (req, res) => {
+  const restaurantId = String(req.query.restaurantId || 'ALL').trim();
+  const source = String(req.query.source || 'ALL').trim().toUpperCase();
+  const status = String(req.query.status || 'ALL').trim().toUpperCase();
+  const orderNo = String(req.query.orderNo || '').trim().slice(0, 80);
+  const allowedHours = new Set([24, 120, 168, 720]);
+  const hours = allowedHours.has(Number(req.query.hours)) ? Number(req.query.hours) : 120;
+  const allowedStatuses = new Set(['ALL', 'PLACED', 'ACCEPTED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY', 'COMPLETED', 'REJECTED', 'CANCELLED']);
+  if (!allowedStatuses.has(status) || !['ALL', 'HOME_WEBSITE', 'FOODPANDA'].includes(source)) {
+    return res.status(400).json({ success: false, message: 'Invalid online-order filter' });
+  }
+  try {
+    const result = await pool.query(`
+      SELECT o.id, o.order_no, o.order_type, o.customer_name, o.customer_phone,
+             o.customer_email, o.delivery_address, o.payment_mode, o.payment_status,
+             o.order_status, o.subtotal, o.discount_amount, o.delivery_fee,
+             o.tax_amount, o.total_amount, o.notes, o.pos_pulled_at, o.pos_order_id,
+             o.created_at, o.updated_at, t.name AS outlet_name, t.restaurant_code,
+             'HOME_WEBSITE'::text AS source
+      FROM online_orders o
+      JOIN restaurant_owners ro ON ro.tenant_id = o.tenant_id AND ro.active = true
+      JOIN tenants t ON t.id = o.tenant_id
+      WHERE ro.owner_user_id = $1
+        AND ($2 = 'ALL' OR t.restaurant_code = $2)
+        AND o.created_at >= NOW() - ($3::text || ' hours')::interval
+        AND ($4 = 'ALL' OR o.order_status = $4)
+        AND ($5 = '' OR o.order_no ILIKE '%' || $5 || '%')
+        AND ($6 IN ('ALL', 'HOME_WEBSITE'))
+      ORDER BY o.created_at DESC
+      LIMIT 250
+    `, [req.owner.id, restaurantId, hours, status, orderNo, source]);
+    const totals = result.rows.reduce((sum, order) => ({ orders: sum.orders + 1, amount: sum.amount + Number(order.total_amount || 0) }), { orders: 0, amount: 0 });
+    res.json({ success: true, filters: { restaurantId, source, status, orderNo, hours }, totals, orders: result.rows });
+  } catch (err) {
+    console.error('OWNER ONLINE ORDERS ERROR:', err.message);
+    res.status(500).json({ success: false, message: publicError(err) });
+  }
+});
+
+router.get('/dashboard/reports', authenticateOwner, async (req, res) => {
+  const reportType = String(req.query.type || 'day-wise').trim().toLowerCase();
+  const restaurantId = String(req.query.restaurantId || 'ALL').trim();
+  const today = new Date().toISOString().slice(0, 10);
+  const fromDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.fromDate || '')) ? String(req.query.fromDate) : today;
+  const toDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.toDate || '')) ? String(req.query.toDate) : fromDate;
+  if (!['day-wise', 'sales', 'item-wise', 'online', 'discount'].includes(reportType)) {
+    return res.status(400).json({ success: false, message: 'Unsupported report type' });
+  }
+  try {
+    let result;
+    if (reportType === 'item-wise') {
+      result = await pool.query(`SELECT t.name AS outlet, i.item_name AS item,
+        SUM(i.quantity_sold)::numeric AS quantity, SUM(i.total_sales)::numeric AS sales
+        FROM tenant_item_sales i JOIN tenants t ON t.id = i.tenant_id
+        JOIN restaurant_owners ro ON ro.tenant_id = t.id AND ro.active = true
+        WHERE ro.owner_user_id = $1 AND ($2 = 'ALL' OR t.restaurant_code = $2)
+          AND i.report_date BETWEEN $3::date AND $4::date
+        GROUP BY t.id, i.item_name ORDER BY t.name, sales DESC`, [req.owner.id, restaurantId, fromDate, toDate]);
+    } else if (reportType === 'online') {
+      result = await pool.query(`SELECT t.name AS outlet, o.order_no, o.order_type, o.customer_name,
+        o.order_status, o.payment_mode, o.total_amount AS total, o.created_at
+        FROM online_orders o JOIN tenants t ON t.id = o.tenant_id
+        JOIN restaurant_owners ro ON ro.tenant_id = t.id AND ro.active = true
+        WHERE ro.owner_user_id = $1 AND ($2 = 'ALL' OR t.restaurant_code = $2)
+          AND o.created_at::date BETWEEN $3::date AND $4::date
+        ORDER BY o.created_at DESC LIMIT 1000`, [req.owner.id, restaurantId, fromDate, toDate]);
+    } else if (reportType === 'sales') {
+      result = await pool.query(`SELECT t.name AS outlet,
+        SUM(r.orders_count)::numeric AS orders, SUM(r.gross_sales)::numeric AS gross_sales,
+        SUM(r.discount_amount)::numeric AS discount, SUM(r.tax_amount)::numeric AS tax,
+        SUM(r.net_sales)::numeric AS net_sales
+        FROM tenant_daily_reports r JOIN tenants t ON t.id = r.tenant_id
+        JOIN restaurant_owners ro ON ro.tenant_id = t.id AND ro.active = true
+        WHERE ro.owner_user_id = $1 AND ($2 = 'ALL' OR t.restaurant_code = $2)
+          AND r.report_date BETWEEN $3::date AND $4::date
+        GROUP BY t.id ORDER BY net_sales DESC`, [req.owner.id, restaurantId, fromDate, toDate]);
+    } else {
+      result = await pool.query(`SELECT t.name AS outlet, r.report_date AS date,
+        r.orders_count AS orders, r.gross_sales, r.discount_amount AS discount,
+        r.tax_amount AS tax, r.net_sales, r.refunds_amount AS refunds
+        FROM tenant_daily_reports r JOIN tenants t ON t.id = r.tenant_id
+        JOIN restaurant_owners ro ON ro.tenant_id = t.id AND ro.active = true
+        WHERE ro.owner_user_id = $1 AND ($2 = 'ALL' OR t.restaurant_code = $2)
+          AND r.report_date BETWEEN $3::date AND $4::date
+          AND ($5 != 'discount' OR r.discount_amount != 0)
+        ORDER BY r.report_date DESC, t.name`, [req.owner.id, restaurantId, fromDate, toDate, reportType]);
+    }
+    res.json({ success: true, reportType, restaurantId, fromDate, toDate, rows: result.rows });
+  } catch (err) {
+    console.error('OWNER MOBILE REPORT ERROR:', err.message);
     res.status(500).json({ success: false, message: publicError(err) });
   }
 });

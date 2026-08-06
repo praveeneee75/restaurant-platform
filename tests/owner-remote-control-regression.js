@@ -11,7 +11,7 @@ const checks = [
   [read('pos-app/backend/server.js').includes('runOwnerControlTick') && read('pos-app/backend/server.js').includes('applyRemoteConfiguration'), 'POS pull/apply/ack loop'],
   [read('pos-app/backend/server.js').includes("license_reauthentication_required: '1'") && read('pos-app/backend/server.js').includes('LICENSE_REAUTH_REQUIRED'), 'POS reauthentication notification'],
   [read('saas-backend/public/owner-control.html').includes('No invoice-level data is exposed') && !read('saas-backend/public/js/owner-control.js').includes('/invoices'), 'owner sales excludes invoices'],
-  [read('mobile-app/www/js/app.js').includes('ownerCloudToken') && read('mobile-app/www/js/app.js').includes('/owner-control/owner/dashboard'), 'mobile owner cloud dashboard works outside restaurant Wi-Fi'],
+  [read('mobile-app/www/js/app.js').includes('ownerCloudToken') && read('mobile-app/www/js/app.js').includes('/owners/dashboard/statistics'), 'mobile owner cloud dashboard works outside restaurant Wi-Fi'],
   [read('saas-backend/src/routes/ownerControl.js').includes("delete payload.restorePath") && read('saas-backend/public/owner-control.html').includes('Restore is intentionally confirmed locally'), 'remote restore safety boundary'],
   [read('saas-backend/src/routes/monitoring.js').includes('tenant_owner_alerts'), 'health alerts from POS heartbeat'],
   [read('saas-backend/public/js/owner-login.js').includes('"/owner-control.html"') && read('saas-backend/public/js/saas-session.js').includes('homeUrl: "/owner-control.html"') && read('saas-backend/public/js/owner-change-password.js').includes('"/owner-control.html"'), 'redesigned owner control is the default post-login dashboard'],

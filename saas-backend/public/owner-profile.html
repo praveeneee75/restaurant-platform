@@ -3,7 +3,7 @@
 <head>
   <title>Owner Profile | K'Master POS</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/css/app.css?v=20260727-owner-nav-3">
+  <link rel="stylesheet" href="/css/app.css?v=20260805-profile-sections-2">
 </head>
 <body class="owner-page">
   <header class="owner-appbar">
@@ -23,7 +23,19 @@
       <h1>Profile</h1>
       <p>Manage your contact details and password.</p>
     </section>
-    <section class="owner-section">
+
+    <nav class="owner-profile-tabs" aria-label="Profile sections">
+      <button class="active" type="button" data-profile-tab="branches">Restaurant branches</button>
+      <button type="button" data-profile-tab="account">Account details</button>
+      <button type="button" data-profile-tab="security">Security</button>
+    </nav>
+
+    <section class="owner-section owner-profile-panel owner-branch-profiles-section" data-profile-panel="branches">
+      <div class="section-heading"><h2>Restaurant &amp; Branch Profiles</h2><p>Each branch keeps its own address and contact details. Saved changes sync to that POS during its next authentication.</p></div>
+      <div id="branchProfiles" class="branch-profile-list"><p>Loading branch profiles...</p></div>
+      <p id="branchProfileMsg" class="form-message"></p>
+    </section>
+    <section class="owner-section owner-profile-panel owner-contact-section" data-profile-panel="account" hidden>
       <div class="section-heading">
         <h2>Contact Details</h2>
         <p>These details are used for restaurant notifications and account recovery.</p>
@@ -46,7 +58,7 @@
       <p id="profileMsg" class="form-message"></p>
     </section>
 
-    <section class="owner-section">
+    <section class="owner-section owner-profile-panel owner-password-section" data-profile-panel="security" hidden>
       <div class="section-heading">
         <h2>Change Password</h2>
         <p>Use at least 10 characters with uppercase, lowercase and a number.</p>
@@ -68,6 +80,7 @@
   </main>
 
   <script src="/js/saas-session.js" data-session-scope="owner"></script>
-  <script src="/js/owner-profile.js?v=20260710"></script>
+  <script src="/js/india-states.js?v=1"></script>
+  <script src="/js/owner-profile.js?v=20260805-profile-sections"></script>
 </body>
 </html>

@@ -1015,11 +1015,11 @@ function renderSettings() {
   settingLegalName.value = settings.legal_name || "";
   settingGstin.value = settings.gstin || "";
   settingFssaiLicenseNo.value = settings.fssai_license_no || "";
-  settingStateCode.value = settings.state_code || "33";
+  settingStateCode.value = settings.state_code || "";
   settingAddressLine1.value = settings.address_line_1 || "";
   settingAddressLine2.value = settings.address_line_2 || "";
   settingCity.value = settings.city || "";
-  settingState.value = settings.state || "";
+  window.KMasterIndiaStates?.populate(settingState, settings.state || "");
   settingCountry.value = settings.country || "";
   settingPhone.value = settings.phone || "";
   settingEmail.value = settings.email || "";
@@ -1245,6 +1245,11 @@ function collectSettings() {
   };
 }
 
+settingState.addEventListener('change', () => {
+  settingStateCode.value = settingState.options[settingState.selectedIndex]?.dataset.stateCode || '';
+  if (!settingSacCode.value.trim()) settingSacCode.value = '996331';
+});
+
 const SETTINGS_KEYS_BY_SECTION = {
   profile: ["restaurant_display_name", "legal_name", "gstin", "fssai_license_no", "state_code", "address_line_1", "address_line_2", "city", "state", "country", "phone", "email", "currency", "timezone", "logo_path"],
   pos: ["default_order_type", "allow_non_invoice_orders", "allow_discount", "allow_manual_price_override", "allow_refund", "allow_order_cancel", "require_manager_pin_for_discount", "require_manager_pin_for_refund", "require_manager_pin_for_void", "require_clock_in_before_order", "pos_show_final_bill_print_dine_in", "pos_show_final_bill_print_parcel", "pos_show_final_bill_print_party"],
@@ -1349,10 +1354,48 @@ const reportTitles = { sales:"Sales Summary", orders:"Order Summary", categories
 function selectReportType(type) {
   activeReportType = reportTitles[type] ? type : "sales";
   reportHeading.textContent = reportTitles[activeReportType];
+  salesSummaryCards.hidden = activeReportType !== "sales";
+  operationalReportPanel.hidden = activeReportType === "sales";
   document.querySelectorAll("[data-report-tab]").forEach((button) => button.classList.toggle("active", button.dataset.reportTab === activeReportType));
+}
+
+function renderExecutiveSalesSummary(data) {
+  const sales = data.executiveSales || {};
+  const paid = sales.paid || {};
+  const row = (label, value) => `<p class="sales-summary-line"><span>${esc(label)}</span><strong>${esc(value)}</strong></p>`;
+  const moneyRow = (label, value) => row(label, money(value));
+  const tax = Number(paid.tax || 0);
+  salesBillingSuccess.innerHTML = row('Count', paid.count || 0) + row('Invoice Nos.', `${paid.invoice_from || '-'} - ${paid.invoice_to || '-'}`) + moneyRow('Sub Total', paid.sub_total) + moneyRow('Discount', paid.discount) + moneyRow('Delivery Charge', paid.delivery_charge) + moneyRow('Container Charge', paid.container_charge) + moneyRow('Service Charge', paid.service_charge) + moneyRow('Additional Charge', paid.additional_charge) + moneyRow('Other Deduction Charge', paid.other_deduction) + moneyRow('C.G.S.T', tax / 2) + moneyRow('S.G.S.T', tax / 2) + moneyRow('Round Off', paid.round_off) + moneyRow('Waived off', paid.waived_off) + moneyRow('Grand Total', paid.grand_total) + moneyRow('Net Sales', paid.net_sales);
+  salesBillingCancel.innerHTML = row('Count', sales.cancelled?.count || 0) + moneyRow('Amount', sales.cancelled?.amount || 0);
+  const list = (target, rows, labelKey='label', includeCount=true) => { target.innerHTML = (rows || []).map((entry) => row(entry[labelKey] || '-', `${includeCount ? `${entry.count ?? entry.orders ?? 0} · ` : ''}${money(entry.total)}`)).join('') || '<p>Records not available</p>'; };
+  list(salesOrderTypes, sales.orderTypes); list(salesPaymentModes, sales.payments);
+  salesComplimentary.innerHTML = row('Count', sales.complimentary?.count || 0) + moneyRow('Amount', sales.complimentary?.amount || 0);
+  salesReturns.innerHTML = row('Count', sales.returns?.count || 0) + moneyRow('Amount', sales.returns?.amount || 0);
+  list(salesExpenses, sales.expenses, 'date', false); list(salesWithdrawals, sales.withdrawals, 'date', false); list(salesCashTopups, sales.cashTopups, 'date', false); list(salesOnlineOrders, sales.onlineOrders, 'payment_type');
 }
 document.querySelectorAll("[data-report-tab]").forEach((button) => button.addEventListener("click", () => { selectReportType(button.dataset.reportTab); loadReports.click(); }));
 selectReportType("sales");
+
+function renderOperationalReportRows(report, moneyKeys) {
+  const rows = report.rows || [];
+  const cells = (row, blankCategory = false) => report.columns.map(([key]) => {
+    const value = blankCategory && key === 'category' ? '' : row[key];
+    return `<td>${moneyKeys.has(key) ? money(value) : esc(value ?? "-")}</td>`;
+  }).join("");
+  if (activeReportType !== 'items') return rows.map((row) => `<tr>${cells(row)}</tr>`).join("");
+  const groups = new Map();
+  rows.forEach((row) => {
+    const category = String(row.category || 'Uncategorised');
+    if (!groups.has(category)) groups.set(category, []);
+    groups.get(category).push(row);
+  });
+  return [...groups.entries()].map(([category, items]) => {
+    const totals = items.reduce((sum, row) => ({ quantity:sum.quantity + Number(row.quantity || 0), net_amount:sum.net_amount + Number(row.net_amount || 0), tax_amount:sum.tax_amount + Number(row.tax_amount || 0), total_sales:sum.total_sales + Number(row.total_sales || 0) }), {quantity:0,net_amount:0,tax_amount:0,total_sales:0});
+    const subtotal = Object.fromEntries(report.columns.map(([key]) => [key, '']));
+    Object.assign(subtotal, { item:'Category subtotal', quantity:totals.quantity, net_amount:totals.net_amount, tax_amount:totals.tax_amount, total_sales:totals.total_sales });
+    return `<tr class="report-category-row"><th colspan="${report.columns.length}">${esc(category)}</th></tr>${items.map((row) => `<tr>${cells(row, true)}</tr>`).join('')}<tr class="report-category-subtotal">${cells(subtotal)}</tr>`;
+  }).join('');
+}
 
 document.querySelectorAll("[data-inventory-tab]").forEach((btn) => btn.addEventListener("click", () => showInventoryTab(btn.dataset.inventoryTab)));
 document.querySelectorAll("[data-modifier-tab]").forEach((btn) => btn.addEventListener("click", () => showModifierTab(btn.dataset.modifierTab)));
@@ -1420,7 +1463,31 @@ printerDiscoveryResults?.addEventListener('change', () => {
   printerName.value = printer.name; printerConnection.value = printer.connection; printerAddress.value = printer.address;
 });
 categoryForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/categories/save", { id: categoryId.value || null, name: categoryName.value, kitchenId: categoryKitchen.value, active: categoryActive.checked }); categoryForm.reset(); categoryActive.checked = true; await loadAdmin(); });
-itemForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, alphaShortCode: itemAlphaShortCode.value, numericShortCode: itemNumericShortCode.value, taxMode: itemTaxMode.value, onlineDescription: itemOnlineDescription.value, imageUrl: itemImageUrl.value, isVeg: itemVeg.checked, allowDineIn: itemDineIn.checked, allowParcel: itemParcel.checked, allowPartyOrder: itemPartyOrder.checked, onlineEnabled: itemOnlineEnabled.checked, active: itemActive.checked }); itemForm.reset(); itemDineIn.checked = true; itemParcel.checked = true; itemPartyOrder.checked = true; itemActive.checked = true; itemOnlineEnabled.checked = true; itemTaxMode.value = "INCLUSIVE"; await loadAdmin(); });
+itemForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  itemValidationStatus.textContent = "";
+  const currentId = String(itemId.value || "");
+  const name = itemName.value.trim().toLowerCase();
+  const alpha = itemAlphaShortCode.value.trim().replace(/\s+/g, " ").toUpperCase();
+  const numeric = itemNumericShortCode.value.trim();
+  const duplicate = (state.admin.items || []).find((item) => String(item.id) !== currentId && (
+    String(item.name || "").trim().toLowerCase() === name
+    || (alpha && String(item.alpha_short_code || "").trim().toUpperCase() === alpha)
+    || (numeric && String(item.numeric_short_code || "").trim() === numeric)
+  ));
+  if (duplicate) {
+    const field = String(duplicate.name || "").trim().toLowerCase() === name ? "item name" : (alpha && String(duplicate.alpha_short_code || "").trim().toUpperCase() === alpha ? "alphabetic short code" : "numeric short code");
+    itemValidationStatus.textContent = `This ${field} is already used by ${duplicate.name}. Enter a unique value.`;
+    return;
+  }
+  try {
+    await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, alphaShortCode: itemAlphaShortCode.value, numericShortCode: itemNumericShortCode.value, taxMode: itemTaxMode.value, onlineDescription: itemOnlineDescription.value, imageUrl: itemImageUrl.value, isVeg: itemVeg.checked, allowDineIn: itemDineIn.checked, allowParcel: itemParcel.checked, allowPartyOrder: itemPartyOrder.checked, onlineEnabled: itemOnlineEnabled.checked, active: itemActive.checked });
+    itemForm.reset(); itemDineIn.checked = true; itemParcel.checked = true; itemPartyOrder.checked = true; itemActive.checked = true; itemOnlineEnabled.checked = true; itemTaxMode.value = "INCLUSIVE";
+    await loadAdmin();
+  } catch (error) {
+    itemValidationStatus.textContent = error.message || "Item could not be saved.";
+  }
+});
 
 itemsTable.addEventListener('change', async (event) => {
   const input = event.target.closest('[data-item-channel]');
@@ -1712,24 +1779,25 @@ document.addEventListener("click", async (event) => {
 loadReports.addEventListener("click", async () => {
   try {
     reportStatus.textContent = "Loading reports...";
-    const data = await fetchJson(`/reports/dashboard?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`);
+    const data = activeReportType === "sales"
+      ? await fetchJson(`/reports/dashboard?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`)
+      : null;
     const report = await fetchJson(`/reports/operational-summary?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&type=${encodeURIComponent(activeReportType)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`);
     currentOperationalReport = report;
     const reportProfile = state.settings?.settings || {};
     operationalReportPrintHeader.innerHTML = `<strong>${esc(reportProfile.restaurant_display_name || reportProfile.legal_name || 'K\'Master POS')}</strong>${reportProfile.gstin ? `<span>GSTIN: ${esc(reportProfile.gstin)}</span>` : ''}<span>${esc(reportTitles[activeReportType])}</span><span>${esc(reportFrom.value)} to ${esc(reportTo.value)}</span>`;
     operationalReportHead.innerHTML = `<tr>${report.columns.map((column) => `<th>${esc(column[1])}</th>`).join("")}</tr>`;
     const moneyKeys = new Set(["net_amount","discount_amount","additional_charge","tax_amount","total_amount","net_sales","discount","tax","total_sales","cash","card","upi","total"]);
-    salesReportRows.innerHTML = (report.rows || []).map((row) => `<tr>${report.columns.map(([key]) => `<td>${moneyKeys.has(key) ? money(row[key]) : esc(row[key] ?? "-")}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${report.columns.length}">No data for the selected period.</td></tr>`;
+    salesReportRows.innerHTML = renderOperationalReportRows(report, moneyKeys) || `<tr><td colspan="${report.columns.length}">No data for the selected period.</td></tr>`;
     const total = (report.rows || []).reduce((sum, row) => sum + Number(row.total_sales ?? row.total_amount ?? row.total ?? 0), 0);
     salesReportSummary.textContent = `${reportTitles[activeReportType]} · ${report.rows?.length || 0} row(s) · ${money(total)} total`;
-    dailySales.innerHTML = (data.dailySales || []).map((row) => `<p><strong>${esc(row.day)}</strong>: ${money(row.total)} · ${row.orders} order(s)</p>`).join("") || "<p>No paid sales for the selected period.</p>";
-    topItems.innerHTML = (data.topSellingItems || []).map((row) => `<p><strong>${esc(row.name)}</strong>: ${row.quantity} · ${money(row.total)}</p>`).join("") || "<p>No paid item sales for the selected period.</p>";
-    orderSummary.innerHTML = (data.orderSummary || []).map((row) => `<p><strong>${esc(row.status)} / ${esc(row.payment_status)}</strong>: ${row.count} · ${money(row.total)}</p>`).join("") || "<p>No orders for the selected period.</p>";
-    taxSummary.innerHTML = `<p>Taxable sales: <strong>${money(data.taxSummary?.taxableSales || 0)}</strong></p><p>Tax collected: <strong>${money(data.taxSummary?.tax || 0)}</strong></p>`;
+    if (activeReportType === "sales") {
+      renderExecutiveSalesSummary(data);
+    }
     reportStatus.textContent = `Reports loaded for ${reportFrom.value} to ${reportTo.value}`;
   } catch (err) {
     reportStatus.textContent = `Unable to load reports: ${err.message}`;
-    dailySales.innerHTML = topItems.innerHTML = orderSummary.innerHTML = taxSummary.innerHTML = `<p>${esc(err.message)}</p>`;
+    if (activeReportType === "sales") salesSummaryCards.querySelectorAll('article div').forEach((panel) => { panel.innerHTML = `<p>${esc(err.message)}</p>`; });
   }
 });
 

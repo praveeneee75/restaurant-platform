@@ -3,7 +3,7 @@
 <head>
   <title>K'Master POS Admin Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/css/app.css?v=kmaster-plan-messaging-ui">
+  <link rel="stylesheet" href="/css/app.css?v=20260805-customer-branches">
 </head>
 <body class="saas-shell">
   <aside class="saas-sidebar">
@@ -93,29 +93,47 @@
         <button id="createStep3Tab" type="button" onclick="showCreateStep(3)">3. License</button>
       </div>
       <div class="wizard-panel active" id="createStep1">
-        <label>Display name<input id="restaurantName" required placeholder="Restaurant or branch name"></label>
-        <label>Legal name<input id="restaurantLegalName" required placeholder="Registered business name"></label>
-        <label>GSTIN<input id="restaurantGstin" required maxlength="15" placeholder="33ABCDE1234F1Z5"></label>
-        <label>FSSAI licence / registration no.<input id="restaurantFssai" required inputmode="numeric" maxlength="14" placeholder="14-digit number"></label>
-        <label>SAC code<input id="restaurantSacCode" required inputmode="numeric" minlength="6" maxlength="8" value="996331"></label>
-        <label>GST rate (%)<input id="restaurantTaxRate" required type="number" min="0" max="100" step="0.01" value="5"></label>
+        <fieldset class="customer-structure"><legend>Customer structure</legend>
+          <label><input type="radio" name="customerStructure" value="SINGLE" checked><span><strong>Single restaurant</strong><small>One owner account and one independently licensed restaurant.</small></span></label>
+          <label><input type="radio" name="customerStructure" value="GROUP"><span><strong>Restaurant group — multiple branches</strong><small>One customer and owner account with separately profiled and licensed branches.</small></span></label>
+          <label><input type="radio" name="customerStructure" value="EXISTING"><span><strong>Add branch to existing customer/group</strong><small>Create another independently profiled branch under an existing owner and restaurant group.</small></span></label>
+        </fieldset>
+        <div id="restaurantGroupFields" class="customer-structure-fields" hidden>
+          <label>Restaurant group name<input id="restaurantGroupName" placeholder="Example: Food Paradise Group"></label>
+          <label>Number of branches<input id="restaurantBranchCount" type="number" min="2" max="10" value="2"></label>
+        </div>
+        <div id="existingCustomerFields" class="customer-structure-fields" hidden>
+          <label>Existing restaurant group<select id="existingOrganizationSelect"><option value="">Select restaurant group</option></select></label>
+          <p class="field-help">Enter the existing owner's notification email below. The new branch receives its own address, tax profile, activation code and license.</p>
+        </div>
+        <div id="singleRestaurantIdentity" class="single-customer-fields">
+          <label>Display name<input id="restaurantName" required placeholder="Restaurant name"></label>
+          <label>Legal name<input id="restaurantLegalName" required placeholder="Registered business name"></label>
+          <label>GSTIN<input id="restaurantGstin" required maxlength="15" placeholder="33ABCDE1234F1Z5"></label>
+          <label>FSSAI licence / registration no.<input id="restaurantFssai" required inputmode="numeric" maxlength="14" placeholder="14-digit number"></label>
+          <label>Restaurant service SAC<input id="restaurantSacCode" required inputmode="numeric" minlength="6" maxlength="8" placeholder="996331"></label>
+          <label>GST rate (%)<input id="restaurantTaxRate" required type="number" min="0" max="100" step="0.01" value="5"></label>
+        </div>
         <label>Contact name<input id="restaurantContact" autocomplete="name" placeholder="Owner or manager name"></label>
         <label>Notification email<input id="restaurantOwnerEmail" type="email" autocomplete="email" placeholder="owner@restaurant.com"></label>
         <label>Mobile number<input id="restaurantOwnerPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+91 98765 43210"></label>
         <div class="wizard-actions"><button type="button" onclick="showCreateStep(2)">Next</button></div>
       </div>
       <div class="wizard-panel" id="createStep2">
-        <label>State code<input id="restaurantStateCode" required inputmode="numeric" maxlength="2" value="33"></label>
-        <label>Address line 1<input id="restaurantAddress1" required placeholder="Street address"></label>
-        <label>Address line 2<input id="restaurantAddress2" required placeholder="Area / landmark"></label>
-        <label>City<input id="restaurantCity" required></label>
-        <label>State<input id="restaurantState" required value="Tamil Nadu"></label>
-        <label>Country<input id="restaurantCountry" required placeholder="India" value="India"></label>
-        <label>Restaurant phone<input id="restaurantPhone" required type="tel" autocomplete="tel"></label>
-        <label>Restaurant email<input id="restaurantEmail" required type="email" autocomplete="email"></label>
-        <label>Currency<select id="restaurantCurrency"><option value="INR">INR</option><option value="USD">USD</option><option value="AUD">AUD</option></select></label>
-        <label>Timezone<input id="restaurantTimezone" required value="Asia/Kolkata"></label>
-        <label>Logo path (optional)<input id="restaurantLogoPath" placeholder="Optional"></label>
+        <div id="singleRestaurantLocation" class="single-customer-fields">
+          <label>State / union territory<select id="restaurantState" required></select></label>
+          <label>GST state code<input id="restaurantStateCode" required inputmode="numeric" maxlength="2" readonly></label>
+          <label>Address line 1<input id="restaurantAddress1" required placeholder="Street address"></label>
+          <label>Address line 2<input id="restaurantAddress2" required placeholder="Area / landmark"></label>
+          <label>City<input id="restaurantCity" required></label>
+          <label>Country<input id="restaurantCountry" required placeholder="India" value="India"></label>
+          <label>Restaurant phone<input id="restaurantPhone" required type="tel" autocomplete="tel"></label>
+          <label>Restaurant email<input id="restaurantEmail" required type="email" autocomplete="email"></label>
+          <label>Currency<select id="restaurantCurrency"><option value="INR">INR</option><option value="USD">USD</option><option value="AUD">AUD</option></select></label>
+          <label>Timezone<input id="restaurantTimezone" required value="Asia/Kolkata"></label>
+          <label>Logo path (optional)<input id="restaurantLogoPath" placeholder="Optional"></label>
+        </div>
+        <div id="multiBranchProfiles" class="multi-branch-profiles" hidden></div>
         <div class="wizard-actions"><button type="button" onclick="showCreateStep(1)">Back</button><button type="button" onclick="showCreateStep(3)">Next</button></div>
       </div>
       <div class="wizard-panel" id="createStep3">
@@ -447,6 +465,7 @@
   </main>
 
   <script src="/js/saas-session.js" data-session-scope="admin"></script>
-  <script src="/js/admin.js?v=1.0.90"></script>
+  <script src="/js/india-states.js?v=1"></script>
+  <script src="/js/admin.js?v=20260805-customer-branches"></script>
 </body>
 </html>

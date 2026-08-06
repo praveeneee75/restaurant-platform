@@ -29,6 +29,27 @@ async function loadLatestRelease() {
   }
 }
 
+async function loadMobileRelease() {
+  try {
+    const response = await fetch("/mobile/download-info", { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.message || "Mobile release information unavailable");
+
+    androidDownloadLink.hidden = !data.android.available;
+    if (data.android.available) androidDownloadLink.href = data.android.downloadUrl;
+    iosDownloadLink.hidden = !data.ios.available;
+    if (data.ios.available) iosDownloadLink.href = data.ios.downloadUrl;
+    mobileDownloadStatus.textContent = data.android.available
+      ? `Android ${data.android.version || ""} APK is ready to download.`
+      : "The Android app has not been published yet.";
+    mobileDownloadHelp.textContent = data.ios.available
+      ? "Android and iPhone/iPad downloads are available."
+      : "Android is available. The iPhone/iPad release is awaiting Apple publishing.";
+  } catch (err) {
+    mobileDownloadStatus.textContent = err.message;
+  }
+}
+
 function goHome() {
   window.location.href = localStorage.getItem("ownerToken")
     ? "/owner-dashboard.html"
@@ -45,3 +66,4 @@ document.getElementById("downloadHomeButton")?.addEventListener("click", (event)
 });
 
 loadLatestRelease();
+loadMobileRelease();

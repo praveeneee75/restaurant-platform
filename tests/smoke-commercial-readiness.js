@@ -48,7 +48,7 @@ function walkFiles(relativePath, predicate) {
 ].forEach(checkJs);
 
 const mobileApp = read('mobile-app/www/js/app.js');
-assert(mobileApp.includes('`${MOBILE_DIRECTORY_URL}/license/owner-pos-login`'), 'Mobile owner email login must use the cloud endpoint');
+assert(mobileApp.includes('`${MOBILE_DIRECTORY_URL}/owners/login`'), 'Mobile owner email login must use the cloud endpoint');
 assert(mobileApp.includes('`${base}/mobile-app/login`'), 'Mobile staff PIN login must use the restaurant POS endpoint');
 assert(mobileApp.includes('if (ownerStyleLogin)'), 'Mobile login must distinguish owner email from staff username');
 assert(mobileApp.includes('Connecting to ${restaurant.name || "restaurant"} POS'), 'Mobile role navigation must show POS connection feedback');

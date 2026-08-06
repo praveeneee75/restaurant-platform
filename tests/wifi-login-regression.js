@@ -55,13 +55,16 @@ const { PREFERRED_POS_PORT, findAvailablePort } = require(path.join(root, 'pos-a
   assert.match(waiterJs, /data-menu-note/, 'selected menu items must expose an inline mobile note field');
   assert.match(waiterJs, /reviewWaiterOrder/, 'the item screen must provide a clear next step to customer validation and review');
   assert.match(waiterJs, /finalWaiterCheck\.hidden = state\.settings\.showFinalBillPrintDineIn === false/, 'Final Check, Bill & Print must follow the Dine In admin setting');
-  assert.match(waiterJs, /parcelWaiterCheck\.disabled = !state\.orderId \|\| state\.fulfillmentType !== "DINE_IN"/, 'captain parcel must only be created from an existing Dine In customer check');
+  assert.match(waiterJs, /parcelWaiterCheck\.hidden = !state\.orderId \|\| state\.fulfillmentType !== "DINE_IN"/, 'captain parcel must only be shown for an existing Dine In customer check');
   assert.match(waiterJs, /const user = userFromMobileParams\(\) \|\| JSON\.parse/, 'the current authenticated mobile session must override stale waiter-page storage');
   assert.match(waiterJs, /waiterOrderSelectorLabel\.hidden = state\.openOrders\.length <= 1/, 'the customer-check dropdown must only appear when multiple checks require a choice');
   assert.match(waiterJs, /state\.openOrders\.length === 1[\s\S]*loadWaiterOrder\(onlyOrderId\)/, 'a single existing customer check must be selected automatically');
   assert.match(waiterJs, /await returnToTables\(\)/, 'successful KOT and final-check actions must return the Captain to Tables');
   assert.doesNotMatch(waiter, /unlockWaiterTable/, 'manual table unlock must not be exposed in the Captain workflow');
-  assert.match(mobile, /showDashboardView\("Owner control loaded\."\)/, 'owner navigation must stay in the mobile owner dashboard');
+  assert.match(mobile, /if \(!state\.user\?\.cloudOwner\) return/, 'POS users must be blocked from mobile owner pages');
+  assert.match(waiterJs, /function taxInclusiveUnitPrice/, 'mobile Dine In must display tax-inclusive item prices');
+  assert.match(waiterJs, /waiterItemSearch\.addEventListener\("input", renderItems\)/, 'mobile menu must support item search');
+  assert.match(waiterJs, /forcePin: true/, 'mobile order cancellation must always request approval PIN validation');
 
   console.log('Wi-Fi login regression checks passed');
 })().catch((error) => {

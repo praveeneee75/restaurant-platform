@@ -1,4 +1,5 @@
 const express = require('express');
+const { validStateCode } = require('../utils/indiaStates');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
@@ -26,7 +27,7 @@ router.post('/create', authenticate, async (req, res) => {
   const {
     name, legalName, gstin, fssaiLicenseNo, sacCode, taxRate, stateCode, addressLine1, addressLine2,
     city, state, country, phone, email, currency, timezone, logoPath,
-    ownerName, ownerEmail, ownerPhone, expiryDate,
+    ownerName, ownerEmail, ownerPhone, addBranch, expiryDate,
     planCode, startsAt, paymentAmount, paymentMode, referenceNo
   } = req.body;
 
@@ -40,10 +41,12 @@ router.post('/create', authenticate, async (req, res) => {
   }
   const normalizedGstin = String(gstin).trim().toUpperCase();
   if (!/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(normalizedGstin)) return res.status(400).json({ success: false, message: 'Enter a valid 15-character GSTIN' });
+  if (normalizedGstin.slice(0, 2) !== String(stateCode).trim()) return res.status(400).json({ success: false, message: 'GSTIN prefix must match the selected GST state code' });
   const normalizedFssai = String(fssaiLicenseNo).replace(/\D/g, '');
   if (!/^\d{14}$/.test(normalizedFssai)) return res.status(400).json({ success: false, message: 'FSSAI licence / registration number must contain 14 digits' });
   if (!/^\d{2}$/.test(String(stateCode).trim())) return res.status(400).json({ success: false, message: 'State code must contain 2 digits' });
   if (!/^\d{6,8}$/.test(String(sacCode).trim())) return res.status(400).json({ success: false, message: 'SAC code must contain 6 to 8 digits' });
+  if (!validStateCode(state, stateCode)) return res.status(400).json({ success: false, message: 'State and GST state code do not match' });
   if (!Number.isFinite(Number(taxRate)) || Number(taxRate) < 0 || Number(taxRate) > 100) return res.status(400).json({ success: false, message: 'GST rate must be between 0 and 100' });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return res.status(400).json({ success: false, message: 'Enter a valid restaurant email address' });
   if (!/^\+?[\d ()-]{8,20}$/.test(String(phone).trim())) return res.status(400).json({ success: false, message: 'Enter a valid restaurant phone number' });
@@ -113,6 +116,7 @@ router.post('/create', authenticate, async (req, res) => {
     );
     let owner = existingOwner.rows[0];
     let temporaryPassword = null;
+    if (addBranch && !owner) throw new Error('No active owner account uses this email. Create the first restaurant before adding a branch.');
     if (owner && !owner.active) {
       throw new Error('An inactive owner account already uses this email. Reactivate it before creating the customer.');
     }

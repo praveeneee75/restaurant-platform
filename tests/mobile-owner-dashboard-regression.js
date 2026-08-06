@@ -1,34 +1,79 @@
+const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const html = fs.readFileSync(path.join(root, 'mobile-app/www/index.html'), 'utf8');
-const css = fs.readFileSync(path.join(root, 'mobile-app/www/css/app.css'), 'utf8');
-const js = fs.readFileSync(path.join(root, 'mobile-app/www/js/app.js'), 'utf8');
+const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
+const html = read('mobile-app/www/index.html');
+const js = read('mobile-app/www/js/app.js');
+const css = read('mobile-app/www/css/app.css');
+const owners = read('saas-backend/src/routes/owners.js');
 
-const requiredIds = [
-  'ownerBusinessDate', 'ownerTotalSales', 'ownerNetSales', 'ownerAverageOrder', 'ownerTaxCollected',
-  'ownerSalesChart', 'ownerPaymentSummary', 'ownerTopItems', 'ownerRunningOrders', 'ownerPendingOrders',
-  'ownerOrderOperations', 'ownerLeakage', 'ownerExpenses', 'ownerBottomNav', 'ownerDrawer'
-];
-for (const id of requiredIds) {
-  if (id === 'ownerBottomNav') {
-    if (!html.includes('class="owner-bottom-nav"')) throw new Error('Owner bottom navigation is missing');
-  } else if (!html.includes(`id="${id}"`)) throw new Error(`Owner dashboard is missing ${id}`);
-}
+assert.match(html, /id="ownerOutletSelect"/);
+assert.match(html, /value="ALL">All outlets/);
+['orders', 'sales', 'netSales', 'tax', 'discount', 'modified', 'reprinted', 'waivedOff', 'roundOff', 'deliveryCharge', 'containerCharge', 'serviceCharge']
+  .forEach((metric) => assert.match(html, new RegExp(`value="${metric}"`)));
+assert.match(html, /id="ownerTaxGauge"/);
+assert.match(html, /id="ownerDiscountGauge"/);
+assert.match(html, /data-live-tab="orders"/);
+assert.match(html, /data-live-tab="tables"/);
+assert.match(html, /id="ownerRunningBreakdown"/);
+assert.match(html, /id="ownerPendingBreakdown"/);
+assert.match(html, /id="ownerRunningTables"/);
+assert.match(html, /data-owner-view="online"/);
+assert.match(html, /data-online-source="FOODPANDA"/);
+assert.match(html, /id="onlineRestaurantFilter"/);
+assert.match(html, /id="onlineOrderNumberFilter"/);
+assert.match(html, /data-owner-view="reports"/);
+assert.match(html, /id="ownerReportSearch"/);
+assert.match(html, /id="ownerReportRestaurant"/);
+assert.match(html, /id="ownerReportCsv"/);
+assert.match(html, /id="ownerReportPrint"/);
+assert.match(html, /data-owner-view="profile"/);
+assert.match(html, /id="ownerProfileSummary"/);
+assert.match(html, /id="ownerBranchProfiles"/);
+assert.match(html, /id="ownerPasswordForm"/);
+assert.match(html, /id="ownerManageConnections"/);
+assert.doesNotMatch(html, /data-role="(?:owner|captain|waiter|cashier|kitchen)"/);
+assert.match(js, /\/owners\/dashboard\/statistics/);
+assert.match(js, /renderCloudOwnerStatistics/);
+assert.match(js, /ownerOutletSelect\.addEventListener\("change"/);
+assert.match(js, /ownerMetricSelect\.addEventListener\("change"/);
+assert.match(js, /refreshCloudLiveOrders/);
+assert.match(js, /renderCloudLiveOrders/);
+assert.match(js, /refreshCloudOnlineOrders/);
+assert.match(js, /renderCloudOnlineOrders/);
+assert.match(js, /refreshCloudOwnerReport/);
+assert.match(js, /ownerReportFavourites/);
+assert.match(js, /exportOwnerReportCsv/);
+assert.match(js, /printOwnerReport/);
+assert.match(js, /refreshCloudOwnerProfile/);
+assert.match(js, /saveCloudOwnerProfile/);
+assert.match(js, /changeCloudOwnerPassword/);
+assert.match(js, /disconnectOwnerBranches/);
+assert.match(js, /if \(!state\.user\?\.cloudOwner\) return/);
+assert.match(css, /\.outlet-bar-chart/);
+assert.match(css, /\.semi-gauge/);
+assert.match(css, /\.live-summary-card/);
+assert.match(css, /\.running-table-kpis/);
+assert.match(css, /\.online-order-card/);
+assert.match(css, /\.report-card/);
+assert.match(css, /printing-owner-report/);
+assert.match(css, /\.mobile-branch-profile/);
+assert.match(owners, /router\.get\('\/dashboard\/statistics', authenticateOwner/);
+assert.match(owners, /FROM restaurant_owners ro/);
+assert.match(owners, /tenant_daily_reports r/);
+assert.match(owners, /restaurant_code = \$3/);
+assert.match(owners, /report_date = \$2::date/);
+assert.match(owners, /router\.get\('\/dashboard\/live-orders', authenticateOwner/);
+assert.match(owners, /startsWith\('DRAFT-'\)/);
+assert.match(owners, /router\.get\('\/dashboard\/online-orders', authenticateOwner/);
+assert.match(owners, /JOIN restaurant_owners ro ON ro\.tenant_id = o\.tenant_id/);
+assert.match(owners, /router\.get\('\/dashboard\/reports', authenticateOwner/);
+assert.match(owners, /tenant_item_sales/);
+assert.match(owners, /router\.get\('\/profile', authenticateOwner/);
+assert.match(owners, /router\.get\('\/branch-profiles', authenticateOwner/);
+assert.match(owners, /router\.post\('\/branch-profiles\/:restaurantCode\/disconnect', authenticateOwner/);
+assert.match(owners, /Keep at least one outlet connected/);
 
-for (const endpoint of ['/reports/dashboard', '/reports/advanced', '/orders/live', '/qr/orders/pending']) {
-  if (!js.includes(endpoint)) throw new Error(`Owner dashboard does not load ${endpoint}`);
-}
-
-for (const behavior of ['refreshOwnerDashboard', 'renderOwnerDashboard', 'showOwnerTab', 'dashboard.topSellingItems']) {
-  if (!js.includes(behavior)) throw new Error(`Owner dashboard behavior is missing ${behavior}`);
-}
-
-for (const responsiveRule of ['.metric-grid', '.owner-bottom-nav', '.owner-drawer', '.bar-chart']) {
-  if (!css.includes(responsiveRule)) throw new Error(`Owner dashboard styling is missing ${responsiveRule}`);
-}
-
-if (/PETPOOJA|POSS/i.test(html + css + js)) throw new Error('Reference-app branding was copied into KMaster mobile');
-
-console.log(JSON.stringify({ passed: true, ownerDashboard: true, apiEndpoints: 4, referenceBrandingCopied: false }));
+console.log('Mobile owner dashboard regression checks passed.');

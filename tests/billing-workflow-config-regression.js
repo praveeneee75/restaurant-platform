@@ -11,7 +11,8 @@ const adminJs = read('pos-app/backend/public/js/admin-dashboard.js');
 
 if (!server.includes("source: 'FINAL_BILL_PRINT'") || !server.includes('submittedKotReference')) throw new Error('Final Bill & Print must submit pending KOT lines');
 if (!posCss.includes('.pos-non-dine-in .customer-panel > label:has(#redeemPoints)') || !posCss.includes('.pos-non-dine-in #paymentAmount')) throw new Error('Parcel/Party billing controls are still visible');
-if (!posCss.includes('grid-template-columns: 500px minmax(0, 1fr) 500px')) throw new Error('Billing left and right panels are not equal width');
+if (!posCss.includes('minmax(300px,20%) minmax(620px,50%) minmax(440px,30%)')) throw new Error('Billing desktop layout is not the approved 20/50/30 table-first view');
+if (!posCss.includes('@media (min-width:651px) and (max-width:1000px)') || !posCss.includes('.billing-detail{grid-column:1/-1')) throw new Error('Billing zoom/narrow-screen reflow protection is missing');
 if (!billing.includes('billingPercentageDiscount') || !billing.includes("valueType: 'PERCENT'")) throw new Error('Percentage discount is missing');
 if (!billing.includes('billing-discount-pair')) throw new Error('Cash and percentage discounts are not paired');
 const printAt = billing.indexOf('id="settlePrintBilling"');

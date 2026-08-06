@@ -305,6 +305,14 @@ function cartTotal() {
   }, 0) + deliveryFeeValue();
 }
 
+function taxInclusiveUnitPrice(item) {
+  const listedPrice = Number(item?.price || 0);
+  const taxRate = Number(state.settings?.taxRate || 0);
+  return String(item?.tax_mode || 'INCLUSIVE').toUpperCase() === 'EXCLUSIVE'
+    ? listedPrice * (1 + taxRate / 100)
+    : listedPrice;
+}
+
 function redeemPointsValue() {
   const requested = Math.max(Number(redeemPoints.value || 0), 0);
   const balance = Number(state.customer?.loyaltyBalance || 0);
@@ -465,7 +473,9 @@ async function loadOpenOrdersForCurrentContext(selectedOrderId = null, { autoSel
 function fetchOpenOrderDetails(orderId, { fresh = false } = {}) {
   const key = Number(orderId);
   if (!fresh && state.orderDetailsCache.has(key)) return state.orderDetailsCache.get(key);
-  const request = fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(key)}`)
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  const request = fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(key)}`, { signal: controller.signal })
     .then(async (response) => {
       const data = await response.json();
       if (!response.ok || data.success === false) throw new Error(data.message || 'Unable to load customer check');
@@ -473,8 +483,10 @@ function fetchOpenOrderDetails(orderId, { fresh = false } = {}) {
     })
     .catch((error) => {
       state.orderDetailsCache.delete(key);
+      if (error.name === 'AbortError') throw new Error('Customer check retrieval timed out. Please retry.');
       throw error;
-    });
+    })
+    .finally(() => clearTimeout(timeout));
   state.orderDetailsCache.set(key, request);
   return request;
 }
@@ -497,7 +509,7 @@ async function restoreCurrentContextOrder() {
     renderCart();
     return;
   }
-  const data = await fetch(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(orderId)}`).then((res) => res.json());
+  const data = await fetchOpenOrderDetails(orderId, { fresh: true });
   if (!data.order || (isDineIn() && Number(state.activeTableId) !== Number(state.selectedTable.id))) return;
   state.orderId = data.order.id;
   state.orderReference = data.order.order_reference || `${data.order.order_sequence || data.order.id}-${data.order.customer_ref || `A${data.order.id}`}`;
@@ -701,7 +713,7 @@ function renderItems(categoryId) {
     if (usesStructuredItemEntry) return `
       <button class="item-tile item-suggestion" data-item="${item.id}" ${state.billingReady ? 'disabled title="Final bill requested for this order"' : ''}>
         <strong>${esc(displayItemCode(item))} · ${esc(item.name)}</strong>
-        <span class="item-price">${money(item.price)}</span>
+        <span class="item-price">${money(taxInclusiveUnitPrice(item))}</span>
       </button>`;
     const matchingLines = state.cart.filter((line) => line.id === item.id && !line.comboId);
     const quantity = matchingLines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
@@ -709,7 +721,7 @@ function renderItems(categoryId) {
     return `
       <button class="item-tile ${quantity > 0 ? "selected" : ""} ${stateClass}" data-item="${item.id}" ${state.billingReady ? 'disabled title="Final bill requested for this order"' : ''}>
         <strong>${esc(displayItemCode(item))} · ${esc(item.name)}</strong>
-        <span class="item-price">${money(item.price)}</span>
+        <span class="item-price">${money(taxInclusiveUnitPrice(item))}</span>
         ${quantity > 0 ? `<span class="tile-quantity-controls"><span data-item-minus="${item.id}" role="button">-</span><em>${quantity}</em><span data-item-plus="${item.id}" role="button">+</span></span>` : ""}
       </button>
     `;
@@ -801,13 +813,13 @@ function renderCart() {
       <div><strong>${esc(item.name)}</strong>${(item.modifiers || []).map((modifier) => `<small>+ ${esc(modifier.name)}</small>`).join("")}</div>
       <span class="parcel-line-note">${item.notes ? esc(item.notes) : "--"}</span>
       <span class="cart-line-quantity">${item.quantity}</span>
-      <span>${money(item.price)}</span>
-      <strong>${money(Number(item.price || 0) * Number(item.quantity || 0))}</strong>
+      <span>${money(taxInclusiveUnitPrice(item))}</span>
+      <strong>${money(taxInclusiveUnitPrice(item) * Number(item.quantity || 0))}</strong>
     </div>` : `
     <div class="cart-line ${state.selectedCartKey === item.key ? "selected" : ""} ${item.sentToKitchen ? "saved" : item.savedLocally ? "pending-save" : "new-item"}" data-cart-line="${item.key}" role="button" tabindex="0" aria-label="Edit ${esc(item.name)}">
       <div>
         <strong>${esc(item.name)}</strong>
-        <span>${money(item.price)}</span>
+        <span>${money(taxInclusiveUnitPrice(item))}</span>
         ${item.sentToKitchen ? "<small>Sent to kitchen</small>" : ""}
         ${(item.modifiers || []).map((modifier) => `<small>+ ${esc(modifier.name)}</small>`).join("")}
         ${item.notes ? `<small class="item-note">Note: ${esc(item.notes)}</small>` : ""}
@@ -846,6 +858,7 @@ function cartItemFromOrderItem(item) {
     comboId: item.comboId || item.combo_id || null,
     name: item.comboId || item.combo_id ? item.name : item.combo_name ? `${item.combo_name}: ${item.name}` : item.name,
     price: item.price,
+    tax_mode: item.tax_mode || "INCLUSIVE",
     quantity: item.quantity,
     modifiers: item.modifiers || [],
     notes: item.notes || "",
@@ -1054,7 +1067,7 @@ function openSplitBillModal() {
     <label class="check-row">
       <input type="checkbox" value="${item.key}" checked>
       ${esc(item.name)} x${item.quantity}
-      <span>${money(item.price * item.quantity)}</span>
+      <span>${money(taxInclusiveUnitPrice(item) * item.quantity)}</span>
     </label>
   `).join("");
   splitBillModal.hidden = false;
@@ -1118,7 +1131,7 @@ function renderItemNoteEditor() {
     itemNoteInput.value = "";
     return;
   }
-  itemNoteTitle.textContent = `${line.name} · ${money(line.price)}`;
+  itemNoteTitle.textContent = `${line.name} · ${money(taxInclusiveUnitPrice(line))}`;
   itemNoteHelp.textContent = line.sentToKitchen
     ? "Already sent to kitchen. Add a new item to send an additional instruction."
     : "This item-level note prints in the Special Note column on the next KOT.";
@@ -1547,7 +1560,7 @@ orderSelector.addEventListener("change", async () => {
   orderSelector.disabled = true;
   orderMeta.textContent = 'Loading customer check...';
   try {
-    const data = await fetchOpenOrderDetails(orderId);
+    const data = await fetchOpenOrderDetails(orderId, { fresh: true });
     if (requestId !== tableSelectionRequest || Number(data.order?.id) !== orderId || (isDineIn() && Number(state.activeTableId) !== Number(state.selectedTable.id))) return;
     state.orderId = data.order.id;
     state.orderReference = data.order.order_reference || `${data.order.order_sequence || data.order.id}-${data.order.customer_ref || `A${data.order.id}`}`;

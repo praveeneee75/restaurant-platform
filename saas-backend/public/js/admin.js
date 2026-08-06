@@ -2,6 +2,71 @@ const token = localStorage.getItem("adminToken");
 const planBuilderState = { plans: [], modules: [], includedByPlan: {} };
 const messagingProviders = [];
 
+window.KMasterIndiaStates?.bind(document.getElementById('restaurantState'), document.getElementById('restaurantStateCode'), document.getElementById('restaurantSacCode'));
+
+function customerStructureValue() {
+  return document.querySelector('input[name="customerStructure"]:checked')?.value || 'SINGLE';
+}
+
+function branchField(index, key) {
+  return document.querySelector(`[data-branch-index="${index}"] [data-branch-field="${key}"]`);
+}
+
+function renderMultiBranchProfiles() {
+  const count = Math.max(2, Math.min(10, Number(restaurantBranchCount.value || 2)));
+  restaurantBranchCount.value = count;
+  multiBranchProfiles.innerHTML = Array.from({ length: count }, (_, index) => `<article class="multi-branch-card" data-branch-index="${index}">
+    <h3>Branch ${index + 1}</h3><div class="multi-branch-grid">
+      <label>Branch display name<input data-branch-field="name" placeholder="Example: Food Paradise - Central" required></label>
+      <label>Legal name<input data-branch-field="legalName" placeholder="Registered business name" required></label>
+      <label>GSTIN<input data-branch-field="gstin" maxlength="15" placeholder="33ABCDE1234F1Z5" required></label>
+      <label>FSSAI licence / registration no.<input data-branch-field="fssaiLicenseNo" inputmode="numeric" maxlength="14" required></label>
+      <label>Restaurant service SAC<input data-branch-field="sacCode" inputmode="numeric" minlength="6" maxlength="8" value="996331" required></label>
+      <label>GST rate (%)<input data-branch-field="taxRate" type="number" min="0" max="100" step="0.01" value="5" required></label>
+      <label>State / union territory<select data-branch-field="state" required></select></label>
+      <label>GST state code<input data-branch-field="stateCode" maxlength="2" readonly required></label>
+      <label>Address line 1<input data-branch-field="addressLine1" required></label>
+      <label>Address line 2<input data-branch-field="addressLine2" required></label>
+      <label>City<input data-branch-field="city" required></label>
+      <label>Country<input data-branch-field="country" value="India" required></label>
+      <label>Branch phone<input data-branch-field="phone" type="tel" required></label>
+      <label>Branch email<input data-branch-field="email" type="email" required></label>
+      <label>Currency<select data-branch-field="currency"><option value="INR">INR</option><option value="USD">USD</option><option value="AUD">AUD</option></select></label>
+      <label>Timezone<input data-branch-field="timezone" value="Asia/Kolkata" required></label>
+      <label>Logo path (optional)<input data-branch-field="logoPath"></label>
+    </div></article>`).join('');
+  for (let index = 0; index < count; index += 1) {
+    window.KMasterIndiaStates?.bind(branchField(index, 'state'), branchField(index, 'stateCode'), branchField(index, 'sacCode'));
+  }
+}
+
+function syncCustomerStructure() {
+  const structure = customerStructureValue();
+  const grouped = structure === 'GROUP';
+  const existing = structure === 'EXISTING';
+  restaurantGroupFields.hidden = !grouped;
+  existingCustomerFields.hidden = !existing;
+  singleRestaurantIdentity.hidden = grouped;
+  singleRestaurantLocation.hidden = grouped;
+  multiBranchProfiles.hidden = !grouped;
+  if (grouped) renderMultiBranchProfiles();
+  if (existing) loadExistingOrganizations();
+  updateCreateReview();
+}
+
+async function loadExistingOrganizations() {
+  try {
+    const data = await api('/organizations/list');
+    existingOrganizationSelect.innerHTML = '<option value="">Select restaurant group</option>' + (data.organizations || []).map((organization) => `<option value="${escapeAttr(organization.id)}">${escapeHtml(organization.name)} · ${Number(organization.restaurant_count || 0)} branch(es)</option>`).join('');
+  } catch (error) {
+    createMsg.innerText = `Unable to load restaurant groups: ${error.message}`;
+  }
+}
+
+document.querySelectorAll('input[name="customerStructure"]').forEach((input) => input.addEventListener('change', syncCustomerStructure));
+restaurantBranchCount.addEventListener('change', renderMultiBranchProfiles);
+syncCustomerStructure();
+
 if (!token) {
   window.location.href = "/login.html";
 }
@@ -1150,73 +1215,100 @@ function showCreateStep(step) {
 function updateCreateReview() {
   if (!window.createReview) return;
   const plan = createPlan?.selectedOptions?.[0];
+  const structure = customerStructureValue();
+  const grouped = structure === 'GROUP';
+  const existing = structure === 'EXISTING';
   createReview.innerHTML = `
-    <strong>${restaurantName.value.trim() || "New restaurant"}</strong>
+    <strong>${grouped ? (restaurantGroupName.value.trim() || 'New restaurant group') : (restaurantName.value.trim() || "New restaurant")}</strong>
+    <span>${grouped ? `${restaurantBranchCount.value || 2} independently profiled and licensed branches` : (existing ? 'New branch for an existing customer/group' : 'Single restaurant customer')}</span>
     <span>Contact: ${restaurantContact.value.trim() || "Not entered"} / ${restaurantOwnerEmail.value.trim() || "No email"} / ${restaurantOwnerPhone.value.trim() || "No mobile"}</span>
-    <span>${restaurantCountry.value.trim() || "India"} / ${restaurantCurrency.value || "INR"}</span>
     <span>Package: ${createPlan.value || "Select package"}${plan?.dataset.modules ? ` with ${plan.dataset.modules}` : ""}</span>
     <span>Expiry: ${expiryDate.value || "Calculated from package duration"}</span>
   `;
 }
 
+function commonCreatePayload() {
+  return {
+    ownerName: restaurantContact.value.trim(), ownerEmail: restaurantOwnerEmail.value.trim(), ownerPhone: restaurantOwnerPhone.value.trim(),
+    expiryDate: expiryDate.value, planCode: createPlan.value, startsAt: createStartDate.value,
+    paymentAmount: createPaymentAmount.value, paymentMode: createPaymentMode.value, referenceNo: createPaymentRef.value.trim()
+  };
+}
+
+function singleRestaurantProfile() {
+  return {
+    name:restaurantName.value.trim(), legalName:restaurantLegalName.value.trim(), gstin:restaurantGstin.value.trim().toUpperCase(),
+    fssaiLicenseNo:restaurantFssai.value.trim(), sacCode:restaurantSacCode.value.trim(), taxRate:restaurantTaxRate.value,
+    stateCode:restaurantStateCode.value.trim(), addressLine1:restaurantAddress1.value.trim(), addressLine2:restaurantAddress2.value.trim(),
+    city:restaurantCity.value.trim(), state:restaurantState.value.trim(), country:restaurantCountry.value.trim(), phone:restaurantPhone.value.trim(),
+    email:restaurantEmail.value.trim(), currency:restaurantCurrency.value, timezone:restaurantTimezone.value.trim(), logoPath:restaurantLogoPath.value.trim()
+  };
+}
+
+function multiBranchProfile(index) {
+  const value = (key) => branchField(index, key)?.value.trim() || '';
+  return { name:value('name'), legalName:value('legalName'), gstin:value('gstin').toUpperCase(), fssaiLicenseNo:value('fssaiLicenseNo'),
+    sacCode:value('sacCode'), taxRate:value('taxRate'), stateCode:value('stateCode'), addressLine1:value('addressLine1'), addressLine2:value('addressLine2'),
+    city:value('city'), state:value('state'), country:value('country'), phone:value('phone'), email:value('email'), currency:value('currency'), timezone:value('timezone'), logoPath:value('logoPath') };
+}
+
+function profileMissing(profile) {
+  return ['name','legalName','gstin','fssaiLicenseNo','sacCode','taxRate','stateCode','addressLine1','addressLine2','city','state','country','phone','email','currency','timezone'].filter((key) => !String(profile[key] || '').trim());
+}
+
 async function createRestaurant() {
   try {
-    if (!restaurantName.value.trim() || !restaurantLegalName.value.trim() || !restaurantGstin.value.trim() || !restaurantFssai.value.trim() || !restaurantSacCode.value.trim() || !restaurantTaxRate.value.trim() || !restaurantContact.value.trim() || !restaurantOwnerEmail.value.trim() || !restaurantOwnerPhone.value.trim()) {
+    const grouped = customerStructureValue() === 'GROUP';
+    const existing = customerStructureValue() === 'EXISTING';
+    if (!restaurantContact.value.trim() || !restaurantOwnerEmail.value.trim() || !restaurantOwnerPhone.value.trim() || (grouped && !restaurantGroupName.value.trim()) || (existing && !existingOrganizationSelect.value)) {
       showCreateStep(1);
-      createMsg.innerText = "All restaurant identity and owner contact fields are required.";
+      createMsg.innerText = grouped ? "Restaurant group name and all owner contact fields are required." : (existing ? 'Select the existing restaurant group and complete the owner contact fields.' : "All owner contact fields are required.");
       return;
     }
-    const locationInputs = [restaurantStateCode, restaurantAddress1, restaurantAddress2, restaurantCity, restaurantState, restaurantCountry, restaurantPhone, restaurantEmail, restaurantCurrency, restaurantTimezone];
-    if (locationInputs.some((input) => !input.value.trim())) {
+    if (!grouped && [restaurantName, restaurantLegalName, restaurantGstin, restaurantFssai, restaurantSacCode, restaurantTaxRate].some((input) => !input.value.trim())) {
+      showCreateStep(1);
+      createMsg.innerText = 'All restaurant identity fields are required.';
+      return;
+    }
+    const profiles = grouped
+      ? Array.from({ length:Number(restaurantBranchCount.value || 2) }, (_, index) => multiBranchProfile(index))
+      : [singleRestaurantProfile()];
+    const incompleteIndex = profiles.findIndex((profile) => profileMissing(profile).length);
+    if (incompleteIndex >= 0) {
       showCreateStep(2);
-      createMsg.innerText = "All restaurant profile fields are required. Logo is optional.";
+      createMsg.innerText = `${grouped ? `Branch ${incompleteIndex + 1}` : 'Restaurant'} is incomplete: ${profileMissing(profiles[incompleteIndex]).join(', ')}. Logo is optional.`;
       return;
     }
-    const data = await api("/tenants/create", {
-      method: "POST",
-      body: JSON.stringify({
-        name: restaurantName.value.trim(),
-        legalName: restaurantLegalName.value.trim(),
-        gstin: restaurantGstin.value.trim().toUpperCase(),
-        fssaiLicenseNo: restaurantFssai.value.trim(),
-        sacCode: restaurantSacCode.value.trim(),
-        taxRate: restaurantTaxRate.value,
-        stateCode: restaurantStateCode.value.trim(),
-        addressLine1: restaurantAddress1.value.trim(),
-        addressLine2: restaurantAddress2.value.trim(),
-        city: restaurantCity.value.trim(),
-        state: restaurantState.value.trim(),
-        ownerName: restaurantContact.value.trim(),
-        ownerEmail: restaurantOwnerEmail.value.trim(),
-        ownerPhone: restaurantOwnerPhone.value.trim(),
-        country: restaurantCountry.value.trim(),
-        phone: restaurantPhone.value.trim(),
-        email: restaurantEmail.value.trim(),
-        currency: restaurantCurrency.value,
-        timezone: restaurantTimezone.value.trim(),
-        logoPath: restaurantLogoPath.value.trim(),
-        expiryDate: expiryDate.value,
-        planCode: createPlan.value,
-        startsAt: createStartDate.value,
-        paymentAmount: createPaymentAmount.value,
-        paymentMode: createPaymentMode.value,
-        referenceNo: createPaymentRef.value.trim()
-      })
-    });
+    createMsg.innerText = grouped ? `Creating ${profiles.length} branches and their licenses...` : 'Creating customer...';
+    const created = [];
+    for (let index = 0; index < profiles.length; index += 1) {
+      const data = await api('/tenants/create', { method:'POST', body:JSON.stringify({ ...commonCreatePayload(), ...profiles[index], addBranch:existing || index > 0 }) });
+      created.push(data);
+    }
+    if (grouped) {
+      const organization = await api('/organizations/create', { method:'POST', body:JSON.stringify({ name:restaurantGroupName.value.trim(), legalName:profiles[0].legalName, email:restaurantOwnerEmail.value.trim(), phone:restaurantOwnerPhone.value.trim() }) });
+      const branchGroup = await api('/organizations/branch-groups/save', { method:'POST', body:JSON.stringify({ organizationId:organization.organization.id, name:'All Branches', description:`Branches created during ${restaurantGroupName.value.trim()} onboarding` }) });
+      for (let index = 0; index < created.length; index += 1) {
+        await api('/organizations/restaurants/assign', { method:'POST', body:JSON.stringify({ organizationId:organization.organization.id, restaurantCode:created[index].restaurantCode, branchGroupId:branchGroup.group.id, branchName:profiles[index].name }) });
+      }
+    } else if (existing) {
+      await api('/organizations/restaurants/assign', { method:'POST', body:JSON.stringify({ organizationId:existingOrganizationSelect.value, restaurantCode:created[0].restaurantCode, branchGroupId:null, branchName:profiles[0].name }) });
+    }
+    const data = created[0];
     const emailStatus = data.notification?.sent
       ? `Welcome email sent to ${data.owner.email}.`
       : `${data.notification?.reason || "Welcome email was not sent."}`;
     const passwordStatus = data.temporaryPassword
       ? `\nTemporary password: ${data.temporaryPassword}\nThe owner must change it after first login.`
       : "\nThe restaurant was added to the existing owner account.";
-    document.getElementById("createMsg").innerText = `Customer Created
+    document.getElementById("createMsg").innerText = `${grouped ? 'Restaurant Group Created' : 'Customer Created'}
 
-Restaurant ID: ${data.restaurantCode}
-License Key: ${data.licenseKey}
+${created.map((branch, index) => `${profiles[index].name}\nRestaurant ID: ${branch.restaurantCode}\nLicense Key: ${branch.licenseKey}`).join('\n\n')}
 Owner login: ${data.owner.email}${passwordStatus}
 
 ${emailStatus}`;
     restaurantName.value = "";
+    restaurantGroupName.value = "";
     restaurantContact.value = "";
     restaurantOwnerEmail.value = "";
     restaurantOwnerPhone.value = "";

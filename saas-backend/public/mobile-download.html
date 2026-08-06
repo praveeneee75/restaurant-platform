@@ -7,15 +7,21 @@
   <title>K'Master POS Mobile App</title>
   <link rel="stylesheet" href="/css/app.css?v=kmaster-mobile-download">
 </head>
-<body>
-  <h2>K'Master POS Mobile App</h2>
-  <section class="mobile-download-page">
+<body class="owner-page">
+  <header class="owner-appbar">
+    <a class="owner-appbrand" href="/owner-dashboard.html"><span class="owner-appmark">K'</span><span>K'Master Owner</span></a>
+    <nav class="owner-actions" aria-label="Owner actions"><a href="/owner-dashboard.html">Dashboard</a><a href="/owner-control.html">Owner control</a><a class="active" href="/downloads.html">Downloads</a><a href="/owner-profile.html">Profile</a></nav>
+  </header>
+  <main class="owner-layout">
+  <section class="owner-page-intro"><p class="eyebrow">Owner Portal · Downloads</p><h1>K'Master POS Mobile App</h1><p>Install the current mobile release on an authorised phone or tablet.</p></section>
+  <section class="mobile-download-page owner-section">
     <h3 id="mobilePlatformTitle">Choose your device</h3>
     <p id="mobilePlatformMessage">Checking available mobile releases...</p>
     <a id="androidDownloadLink" class="primary-download-link" href="/mobile/download/android" hidden>Download Android APK</a>
     <a id="iosDownloadLink" class="primary-download-link" href="#" hidden>Open iPhone/iPad download</a>
     <p id="mobileInstallHelp"></p>
   </section>
+  </main>
   <script src="/js/mobile-download.js?v=1"></script>
 </body>
 </html>

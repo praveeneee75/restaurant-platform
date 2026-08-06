@@ -10,7 +10,7 @@ const adminJs = read('pos-app/backend/public/js/admin-dashboard.js');
 const server = read('pos-app/backend/server.js');
 const thermal = read('pos-app/electron/thermalEscPos.js');
 
-assert.match(css, /grid-template-columns:\s*500px minmax\(0, 1fr\) 500px/, 'Billing left and right panels must have equal desktop widths');
+assert.match(css, /grid-template-columns:minmax\(300px,20%\) minmax\(620px,50%\) minmax\(440px,30%\)/, 'Billing desktop must preserve the approved 20/50/30 table-first proportions');
 assert.match(css, /\.billing-discount-pair\s*\{[^}]*grid-template-columns:1fr/s, 'Cash and percentage discounts must use separate rows');
 assert.match(css, /\.recent-order\s*\{[^}]*font-size:\s*14px/s, 'Billing recent-order cards need readable left-panel typography');
 assert.match(css, /\.billing-recent h3\s*\{\s*font-size:\s*16px/, 'Billing recent-order heading needs readable typography');

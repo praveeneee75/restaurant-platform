@@ -172,6 +172,7 @@
         <label class="check-row"><input id="itemOnlineEnabled" type="checkbox" checked> Show on online ordering page</label>
         <label class="check-row"><input id="itemActive" type="checkbox" checked> Active</label>
         <button>Save Item</button>
+        <p id="itemValidationStatus" class="field-error" role="alert" aria-live="polite"></p>
       </form>
       <div class="toolbar item-filter-toolbar"><input id="itemSearch" placeholder="Search all menu item columns"><button type="button" class="secondary-btn" id="clearItemFilters">Clear filters</button></div>
       <div class="table-panel availability-items-panel"><table class="availability-items-table"><thead>
@@ -431,11 +432,18 @@
         <p id="reportStatus" class="form-hint" role="status" aria-live="polite"></p>
       </div>
       <div class="table-panel sales-report-table" id="operationalReportPanel"><table><thead id="operationalReportHead"></thead><tbody id="salesReportRows"></tbody></table></div>
-      <div class="report-grid">
-        <article><h3>Daily Sales</h3><div id="dailySales"></div></article>
-        <article><h3>Top Selling Items</h3><div id="topItems"></div></article>
-        <article><h3>Order Summary</h3><div id="orderSummary"></div></article>
-        <article><h3>Tax Summary</h3><div id="taxSummary"></div></article>
+      <div class="report-grid" id="salesSummaryCards">
+        <article><h3>Billing (Success)</h3><div id="salesBillingSuccess"></div></article>
+        <article><h3>Billing (Cancel)</h3><div id="salesBillingCancel"></div></article>
+        <article><h3>Order Type</h3><div id="salesOrderTypes"></div></article>
+        <article><h3>Payment Mode</h3><div id="salesPaymentModes"></div></article>
+        <article><h3>Complimentary Orders</h3><div id="salesComplimentary"></div></article>
+        <article><h3>Sales Return Orders</h3><div id="salesReturns"></div></article>
+        <article><h3>Virtual Wallet Summary</h3><div id="salesWallet">Records not available</div></article>
+        <article><h3>Expenses Summary</h3><div id="salesExpenses"></div></article>
+        <article><h3>Withdrawal Summary</h3><div id="salesWithdrawals"></div></article>
+        <article><h3>Cash Top-Up Summary</h3><div id="salesCashTopups"></div></article>
+        <article><h3>Online Orders</h3><div id="salesOnlineOrders"></div></article>
       </div>
     </section>
 
@@ -466,11 +474,11 @@
             <label>Legal name<input id="settingLegalName"></label>
             <label>GSTIN<input id="settingGstin"></label>
             <label>FSSAI licence / registration no.<input id="settingFssaiLicenseNo" inputmode="numeric" maxlength="14" placeholder="14-digit number"></label>
-            <label>State code<input id="settingStateCode" maxlength="2" placeholder="33"></label>
+            <label>State / union territory<select id="settingState"></select></label>
+            <label>GST state code<input id="settingStateCode" maxlength="2" readonly></label>
             <label>Address line 1<input id="settingAddressLine1"></label>
             <label>Address line 2<input id="settingAddressLine2"></label>
             <label>City<input id="settingCity"></label>
-            <label>State<input id="settingState"></label>
             <label>Country<input id="settingCountry"></label>
             <label>Phone<input id="settingPhone"></label>
             <label>Email<input id="settingEmail" type="email"></label>
@@ -887,6 +895,7 @@
 
   <script src="/js/ui-feedback.js"></script>
   <script src="/js/nav-notifications.js"></script>
-  <script src="/js/admin-dashboard.js"></script>
+  <script src="/js/india-states.js?v=1"></script>
+  <script src="/js/admin-dashboard.js?v=1.0.148-profile"></script>
 </body>
 </html>

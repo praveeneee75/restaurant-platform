@@ -38,15 +38,14 @@
         <div class="check-actions"><button id="newWaiterCheck" type="button">New customer check</button><button id="parcelWaiterCheck" type="button">Parcel check</button></div>
       </div>
       <p id="selectedCheckStatus" class="fulfilment-status">Choose an existing check or start a new one.</p>
-      <button id="continueWaiterMenu" type="button">Continue to items</button>
-      <button id="finalWaiterCheck" class="check-final-button" type="button">Final Check, Bill &amp; Print</button>
+      <div class="check-bottom-actions"><button id="continueWaiterMenu" type="button">Continue to items</button><button id="finalWaiterCheck" class="check-final-button" type="button">Final Check, Bill &amp; Print</button></div>
     </section>
 
     <section class="panel" data-waiter-panel="menu">
       <h2 id="selectedTableTitle">Select a table</h2>
-      <div id="waiterCategories" class="category-strip"></div>
-      <div id="waiterItems" class="item-list"></div>
-      <button id="reviewWaiterOrder" class="review-order-button" type="button">Review customer &amp; order</button>
+      <label class="waiter-item-search"><span>Search menu</span><input id="waiterItemSearch" type="search" placeholder="Item name or code" autocomplete="off"></label>
+      <div class="menu-browser"><aside id="waiterCategories" class="category-strip"></aside><div id="waiterItems" class="item-list"></div></div>
+      <div class="mobile-bottom-action"><button id="reviewWaiterOrder" class="review-order-button" type="button">Review customer &amp; order</button></div>
     </section>
 
     <section class="panel cart-panel" data-waiter-panel="order">
@@ -69,6 +68,7 @@
         <button id="transferTableButton" type="button">Transfer Table</button>
       </div>
       <div class="actions">
+        <button id="cancelWaiterOrder" class="cancel-order-button" type="button">Cancel order</button>
         <button id="saveWaiterOrder" type="button">Save Order</button>
         <button id="submitWaiterKot" type="button">Submit KOT</button>
       </div>

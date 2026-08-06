@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#2563eb">
+  <meta name="theme-color" content="#087f73">
   <meta name="color-scheme" content="light">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -40,66 +40,138 @@
       </label>
       <button id="loginButton" type="button">Sign in</button>
       <button id="biometricLoginButton" type="button" class="secondary-button" hidden>Sign in with biometrics</button>
+      <button id="loginBiometricSettings" type="button" class="login-security-link">Manage biometric sign-in</button>
       <p id="loginStatus" class="status-line">Preparing secure login...</p>
     </section>
 
     <section class="dashboard-panel" id="dashboardView" hidden>
       <header class="owner-appbar">
+        <div class="owner-app-identity"><span class="owner-mark">K'</span><span><strong>K'Master Insights</strong><small>Owner workspace</small></span></div>
         <button id="ownerMenuButton" type="button" class="icon-button" aria-label="Open menu">☰</button>
-        <button id="ownerOutletButton" type="button" class="outlet-button"><span id="ownerOutletName">Restaurant</span><span>⌄</span></button>
+        <label class="outlet-select-wrap" aria-label="Select outlet"><select id="ownerOutletSelect"><option value="ALL">All outlets</option></select></label>
         <button id="ownerRefreshButton" type="button" class="icon-button" aria-label="Refresh dashboard">↻</button>
         <button id="ownerNotificationButton" type="button" class="icon-button notification-button" aria-label="Notifications">♢<span id="ownerNotificationCount">0</span></button>
       </header>
       <div class="owner-content">
         <div class="owner-title-row">
-          <div><p class="eyebrow">Owner workspace</p><h2 id="dashboardTitle">Business overview</h2></div>
+          <div><p class="eyebrow">Business pulse</p><h2 id="dashboardTitle">Performance overview</h2></div>
           <label class="date-control">Business date<input id="ownerBusinessDate" type="date"></label>
         </div>
         <p id="dashboardStatus" class="status-line" role="status">Loading dashboard...</p>
 
         <section class="owner-view active" data-owner-view="sales">
-          <div class="metric-grid">
-            <article class="metric-card"><span>Total sales</span><strong id="ownerTotalSales">₹0.00</strong><small id="ownerPaidOrders">0 paid orders</small></article>
-            <article class="metric-card"><span>Net sales</span><strong id="ownerNetSales">₹0.00</strong><small>after discounts & refunds</small></article>
-            <article class="metric-card"><span>Average order</span><strong id="ownerAverageOrder">₹0.00</strong><small id="ownerAllOrders">0 total orders</small></article>
-            <article class="metric-card"><span>Tax collected</span><strong id="ownerTaxCollected">₹0.00</strong><small>for selected date</small></article>
-          </div>
-          <article class="insight-card">
-            <header><div><h3>Sales trend</h3><p>Paid sales by hour</p></div><span id="ownerSyncStatus" class="sync-pill">Live POS</span></header>
-            <div id="ownerSalesChart" class="bar-chart" aria-label="Hourly sales chart"></div>
+          <article class="insight-card owner-statistics-card">
+            <header><div><h3>Today at a glance</h3><p>Verified totals received from your outlets</p></div><span id="ownerSyncStatus" class="sync-pill">Data status</span></header>
+            <div class="metric-grid">
+              <article class="metric-card"><span>Gross takings</span><strong id="ownerTotalSales">₹0.00</strong><small id="ownerPaidOrders">0 orders</small></article>
+              <article class="metric-card"><span>Realised revenue</span><strong id="ownerNetSales">₹0.00</strong><small id="ownerOutletCount">0 outlets</small></article>
+              <article class="metric-card"><span>Digital channel</span><strong id="ownerOnlineSales">₹0.00</strong><small id="ownerOnlineShare">0% of sales</small></article>
+              <article class="metric-card"><span>Cash received</span><strong id="ownerCashCollection">₹0.00</strong><small id="ownerCashShare">0% of sales</small></article>
+            </div>
           </article>
-          <article class="insight-card"><header><div><h3>Payment collection</h3><p>Settlement mix</p></div></header><div id="ownerPaymentSummary" class="list-stack"></div></article>
-          <article class="insight-card"><header><div><h3>Top performing items</h3><p>Quantity and revenue</p></div></header><div id="ownerTopItems" class="list-stack"></div></article>
+          <article class="insight-card outlet-statistics-card">
+            <header><div><h3>Outlet comparison</h3><p>Rank locations using a selected measure</p></div></header>
+            <div class="statistics-controls">
+              <label>Metric<select id="ownerMetricSelect"><option value="orders">Orders</option><option value="sales" selected>Sales</option><option value="netSales">Net sales</option><option value="tax">Tax</option><option value="discount">Discount</option><option value="modified">Modified</option><option value="reprinted">Re-printed</option><option value="waivedOff">Waived off</option><option value="roundOff">Round off</option><option value="deliveryCharge">Delivery charge</option><option value="containerCharge">Container charge</option><option value="serviceCharge">Service charge</option></select></label>
+              <label>Order<select id="ownerSortSelect"><option value="desc">Highest first</option><option value="asc">Lowest first</option></select></label>
+            </div>
+            <div id="ownerSalesChart" class="outlet-bar-chart" aria-label="Outlet comparison chart"></div>
+            <div id="ownerOutletRows" class="outlet-ranking"></div>
+          </article>
+          <article class="insight-card gauge-card"><header><div><h3>Taxes</h3><p>Total tax and outlet share</p></div></header><div id="ownerTaxGauge" class="semi-gauge"></div><div id="ownerTaxRows" class="outlet-ranking"></div></article>
+          <article class="insight-card gauge-card"><header><div><h3>Discounts</h3><p id="ownerDiscountShare">0% discounts given</p></div></header><div id="ownerDiscountGauge" class="semi-gauge"></div><div id="ownerDiscountRows" class="outlet-ranking"></div></article>
+          <div class="legacy-owner-data" hidden aria-hidden="true"><span id="ownerAverageOrder"></span><span id="ownerAllOrders"></span><span id="ownerTaxCollected"></span><div id="ownerPaymentSummary"></div><div id="ownerTopItems"></div></div>
         </section>
 
         <section class="owner-view" data-owner-view="operations">
-          <div class="metric-grid">
-            <article class="metric-card"><span>Running orders</span><strong id="ownerRunningOrders">0</strong><small id="ownerRunningAmount">₹0.00 value</small></article>
-            <article class="metric-card"><span>Pending approval</span><strong id="ownerPendingOrders">0</strong><small>QR/customer orders</small></article>
+          <div class="live-page-heading"><h3>Current activity</h3><button id="ownerLiveRefresh" class="icon-button" type="button" aria-label="Refresh current activity">↻</button></div>
+          <div class="live-tabs" role="tablist"><button class="active" data-live-tab="orders" type="button">Running orders</button><button data-live-tab="tables" type="button">Running tables</button></div>
+          <section class="live-tab-panel active" data-live-panel="orders">
+            <article class="insight-card live-summary-card"><header><h3><i class="live-indicator"></i> Running orders</h3></header><div class="live-total-grid"><div><span>Total orders</span><strong id="ownerRunningOrders">0</strong></div><div><span>Total amount</span><strong id="ownerRunningAmount">₹0.00</strong></div></div><div id="ownerRunningBreakdown" class="live-breakdown"></div></article>
+            <article class="insight-card live-summary-card"><header><h3><i class="live-indicator"></i> Pending orders</h3></header><div class="live-total-grid"><div><span>Total orders</span><strong id="ownerPendingOrders">0</strong></div><div><span>Total amount</span><strong id="ownerPendingAmount">₹0.00</strong></div></div><div id="ownerPendingBreakdown" class="live-breakdown"></div></article>
+          </section>
+          <section class="live-tab-panel" data-live-panel="tables">
+            <div class="running-table-kpis"><article><span>◉</span><div><strong id="ownerActiveTables">0</strong><small>Active tables</small></div></article><article><span>⌁</span><div><strong id="ownerTableRevenue">₹0.00</strong><small>Revenue (estimated)</small></div></article></div>
+            <div id="ownerRunningTables" class="running-tables-list"></div>
+          </section>
+          <div class="legacy-owner-data" hidden aria-hidden="true"><div id="ownerOrderOperations"></div><div id="ownerLeakage"></div><div id="ownerExpenses"></div></div>
+        </section>
+
+        <section class="owner-view" data-owner-view="online">
+          <div class="live-page-heading"><h3>Digital orders</h3><button id="ownerOnlineRefresh" class="icon-button" type="button" aria-label="Refresh digital orders">↻</button></div>
+          <div class="online-source-tabs" role="tablist"><button class="active" data-online-source="ALL" type="button">▦ All</button><button data-online-source="FOODPANDA" type="button">FoodPanda</button><button data-online-source="HOME_WEBSITE" type="button">⌂ Home website</button></div>
+          <article class="insight-card online-filter-card">
+            <div class="online-filter-grid">
+              <label>Select restaurant<select id="onlineRestaurantFilter"><option value="ALL">All outlets</option></select></label>
+              <label>Record type<select id="onlinePeriodFilter"><option value="24">Last 24 hours</option><option value="120" selected>Last 5 days</option><option value="168">Last 7 days</option><option value="720">Last 30 days</option></select></label>
+              <label>Status<select id="onlineStatusFilter"><option value="ALL">All</option><option value="PLACED">Placed</option><option value="ACCEPTED">Accepted</option><option value="PREPARING">Preparing</option><option value="READY">Ready</option><option value="OUT_FOR_DELIVERY">Out for delivery</option><option value="COMPLETED">Completed</option><option value="REJECTED">Rejected</option><option value="CANCELLED">Cancelled</option></select></label>
+              <label>Order number<input id="onlineOrderNumberFilter" inputmode="search" placeholder="Search order number"></label>
+            </div>
+            <div class="online-filter-actions"><button id="onlineApplyFilters" type="button">Apply</button><button id="onlineResetFilters" class="secondary-button" type="button">Show all</button></div>
+          </article>
+          <div class="online-result-summary"><span id="onlineResultCount">0 orders</span><strong id="onlineResultAmount">₹0.00</strong></div>
+          <div id="ownerOnlineOrderResults" class="online-order-results"></div>
+        </section>
+
+        <section class="owner-view" data-owner-view="reports">
+          <div id="ownerReportCatalog">
+            <div class="live-page-heading"><h3>Reports</h3></div>
+            <label class="report-search"><span>⌕</span><input id="ownerReportSearch" type="search" placeholder="Search reports" autocomplete="off"></label>
+            <section id="ownerFavouriteReports" class="report-section" hidden><header><h3>Favourites</h3><p>Your frequently used reports</p></header><div class="report-card-list"></div></section>
+            <section class="report-section"><header><h3>Restaurant reports</h3><p>Calculated from synchronized outlet data</p></header><div id="ownerReportCards" class="report-card-list"></div></section>
           </div>
-          <article class="insight-card"><header><div><h3>Order operations</h3><p>Current order types and status</p></div></header><div id="ownerOrderOperations" class="list-stack"></div></article>
-          <article class="insight-card"><header><div><h3>Revenue leakage</h3><p>Discounts, refunds and expenses</p></div></header><div id="ownerLeakage" class="list-stack"></div></article>
-          <article class="insight-card"><header><div><h3>Expenses</h3><p>Selected business date</p></div></header><div id="ownerExpenses" class="list-stack"></div></article>
+          <div id="ownerReportDetail" hidden>
+            <div class="live-page-heading"><button id="ownerReportBack" class="icon-button" type="button" aria-label="Back to reports">←</button><h3 id="ownerReportTitle">Report</h3></div>
+            <article class="insight-card report-filter-card">
+              <div class="report-filter-grid">
+                <label>From date<input id="ownerReportFrom" type="date"></label>
+                <label>To date<input id="ownerReportTo" type="date"></label>
+                <label>Outlet<select id="ownerReportRestaurant"><option value="ALL">All outlets</option></select></label>
+              </div>
+              <button id="ownerReportRun" type="button">Load report</button>
+            </article>
+            <div class="report-result-toolbar"><strong id="ownerReportResultCount">0 rows</strong><div><button id="ownerReportCsv" class="secondary-button" type="button">Export CSV</button><button id="ownerReportPrint" type="button">Print</button></div></div>
+            <section id="ownerReportResults" class="report-results"><p class="empty-state">Choose filters and load the report.</p></section>
+          </div>
+        </section>
+
+        <section class="owner-view" data-owner-view="profile">
+          <div class="live-page-heading"><h3>Profile</h3><button id="ownerProfileRefresh" class="icon-button" type="button" aria-label="Refresh profile">↻</button></div>
+          <article class="insight-card profile-account-card">
+            <header><div><h3>User information</h3><p>Owner account details from K'Master SaaS</p></div><button id="ownerProfileEdit" class="secondary-button compact-button" type="button">Edit</button></header>
+            <dl id="ownerProfileSummary" class="profile-details"></dl>
+            <form id="ownerProfileForm" class="profile-form" hidden>
+              <label>Name<input id="ownerProfileName" autocomplete="name"></label>
+              <label>Login email<input id="ownerProfileUsername" type="email" disabled></label>
+              <label>Notification email<input id="ownerProfileEmail" type="email" autocomplete="email"></label>
+              <label>Mobile number<input id="ownerProfileMobile" type="tel" autocomplete="tel"></label>
+              <div class="profile-form-actions"><button id="ownerProfileCancel" class="secondary-button" type="button">Cancel</button><button type="submit">Save profile</button></div>
+            </form>
+          </article>
+          <article class="insight-card profile-security-card">
+            <header><div><h3>Security</h3><p>Use a strong password you have not used before</p></div></header>
+            <details><summary>Change password</summary><form id="ownerPasswordForm" class="profile-form"><label>Current password<input id="ownerCurrentPassword" type="password" autocomplete="current-password"></label><label>New password<input id="ownerNewPassword" type="password" autocomplete="new-password"></label><label>Confirm new password<input id="ownerConfirmPassword" type="password" autocomplete="new-password"></label><small>At least 10 characters with uppercase, lowercase and a number.</small><button type="submit">Change password</button></form></details>
+          </article>
+          <section class="profile-branches-section"><header><h3>Restaurant profiles</h3><p>Branch details synchronized from SaaS and sent to POS during authentication.</p></header><div id="ownerBranchProfiles" class="profile-branch-list"></div></section>
+          <article class="insight-card profile-connections-card"><header><div><h3>Outlet connections</h3><p>Remove an outlet from this owner's analytics without deleting its restaurant or POS records.</p></div></header><button id="ownerManageConnections" class="secondary-button" type="button">Manage connected outlets</button></article>
         </section>
 
         <section class="owner-view" data-owner-view="more">
           <article class="insight-card">
-            <header><div><h3>Restaurant workspaces</h3><p>Open operational tools</p></div></header>
+            <header><div><h3>Owner tools</h3><p>Account and business information</p></div></header>
             <div class="role-grid">
-              <button data-role="owner" type="button">Owner dashboard</button>
-              <button data-role="captain" type="button">Captain Ordering</button>
-              <button data-role="waiter" type="button">Waiter Ordering</button>
-              <button data-role="cashier" type="button">Cashier POS</button>
-              <button data-role="kitchen" type="button">Kitchen KDS</button>
+              <button data-open-owner-reports type="button">Business reports</button>
+              <button data-open-owner-profile type="button">Account and outlets</button>
             </div>
           </article>
           <article class="insight-card settings-actions"><button id="settingsButton" type="button" class="secondary-button">App settings</button><button id="logoutButton" type="button" class="danger-button">Logout</button></article>
         </section>
       </div>
-      <nav class="owner-bottom-nav" aria-label="Owner dashboard sections">
-        <button class="active" data-owner-tab="sales" type="button"><span>▥</span>Sales</button>
-        <button data-owner-tab="operations" type="button"><span>◎</span>Operations</button>
-        <button data-owner-tab="more" type="button"><span>•••</span>More</button>
+      <nav class="owner-bottom-nav owner-bottom-nav-four" aria-label="Owner dashboard sections">
+        <button class="active" data-owner-tab="sales" type="button"><span>▥</span>Overview</button>
+        <button data-owner-tab="operations" type="button"><span>◎</span>Activity</button>
+        <button data-owner-tab="online" type="button"><span>⌂</span>Digital</button>
+        <button data-owner-tab="more" type="button"><span>•••</span>Account</button>
       </nav>
     </section>
 
@@ -107,16 +179,21 @@
       <button id="closeOwnerDrawer" class="drawer-backdrop" aria-label="Close menu"></button>
       <nav class="drawer-panel">
         <header><div class="logo mini-logo"></div><div><strong id="drawerRestaurantName">Restaurant</strong><small id="drawerUserName">Owner</small></div></header>
-        <button data-drawer-tab="sales">▥ Dashboard</button>
-        <button data-drawer-tab="operations">◎ Daily operations</button>
-        <button data-role="owner">▤ Owner dashboard</button>
-        <button data-role="captain">⌁ Captain ordering</button>
-        <button data-role="cashier">▣ Cashier POS</button>
+        <button data-drawer-tab="sales">▥ Performance overview</button>
+        <p class="drawer-section-title">Business monitoring</p>
+        <button data-drawer-tab="operations">◎ Current activity</button>
+        <button data-drawer-tab="online">⌂ Digital orders</button>
+        <button data-drawer-tab="reports">▤ Business reports</button>
         <hr>
+        <button data-drawer-tab="profile">◎ Profile</button>
         <button id="drawerSettingsButton">⚙ App settings</button>
         <button id="drawerLogoutButton" class="drawer-logout">↪ Logout</button>
       </nav>
     </aside>
+
+    <dialog id="ownerConnectionsDialog" class="app-dialog connections-dialog">
+      <form method="dialog"><header class="dialog-header"><div><h2>Connected outlets</h2><p>Select one or more outlets to remove from this owner account.</p></div><button value="cancel" class="secondary-button">Close</button></header><div id="ownerConnectionChoices" class="connection-choices"></div><p class="connection-warning">Disconnecting hides future owner analytics for those outlets. Restaurant and POS data remain intact.</p><button id="ownerDisconnectBranches" type="button" class="danger-button">Disconnect selected</button></form>
+    </dialog>
 
     <dialog id="biometricPrompt" class="app-dialog">
       <form method="dialog">

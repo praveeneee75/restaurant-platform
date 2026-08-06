@@ -241,7 +241,7 @@ function assertSettings(actual, expected, label) {
   if (!dashboardJs.includes('control.disabled = !active')) throw new Error('Hidden subsection controls can still block form submission');
   if (!dashboardJs.includes('validateSettingsSection(activeSection)')) throw new Error('Settings sections are not validated without locking the form');
   if (!dashboardJs.includes('input.addEventListener("input"')) throw new Error('Settings validation errors are not cleared while the user edits');
-  if (!dashboardJs.includes('data.topSellingItems')) throw new Error('Reports UI does not use the dashboard API top-selling field');
+  if (!dashboardJs.includes('data.executiveSales')) throw new Error('Reports UI does not use the dashboard API executive sales summary');
 
   const feedbackJs = fs.readFileSync(path.join(__dirname, '..', 'pos-app', 'backend', 'public', 'js', 'ui-feedback.js'), 'utf8');
   if (!feedbackJs.includes('window.alert = showAppMessage')) throw new Error('Native blocking alerts can still leave Electron inputs without focus');
