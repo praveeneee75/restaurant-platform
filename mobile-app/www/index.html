@@ -57,11 +57,13 @@
         <button id="ownerNotificationButton" type="button" class="icon-button notification-button" aria-label="Notifications">♢<span id="ownerNotificationCount">0</span></button>
       </header>
       <div class="owner-content">
-        <div class="owner-title-row">
-          <div><p class="eyebrow">Business pulse</p><h2 id="dashboardTitle">Performance overview</h2></div>
-          <label class="date-control">Business date<input id="ownerBusinessDate" type="date"></label>
+        <div id="ownerPerformanceHeader">
+          <div class="owner-title-row">
+            <div><p class="eyebrow">Business pulse</p><h2 id="dashboardTitle">Performance overview</h2></div>
+            <label class="date-control">Business date<input id="ownerBusinessDate" type="date"></label>
+          </div>
+          <p id="dashboardStatus" class="status-line" role="status">Loading dashboard...</p>
         </div>
-        <p id="dashboardStatus" class="status-line" role="status">Loading dashboard...</p>
 
         <section class="owner-view active" data-owner-view="sales">
           <article class="insight-card owner-statistics-card">

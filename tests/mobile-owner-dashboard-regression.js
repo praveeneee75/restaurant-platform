@@ -10,6 +10,7 @@ const css = read('mobile-app/www/css/app.css');
 const owners = read('saas-backend/src/routes/owners.js');
 
 assert.match(html, /id="ownerOutletSelect"/);
+assert.match(html, /id="ownerPerformanceHeader"/);
 assert.match(html, /value="ALL">All outlets/);
 ['orders', 'sales', 'netSales', 'tax', 'discount', 'modified', 'reprinted', 'waivedOff', 'roundOff', 'deliveryCharge', 'containerCharge', 'serviceCharge']
   .forEach((metric) => assert.match(html, new RegExp(`value="${metric}"`)));
@@ -37,6 +38,7 @@ assert.match(html, /id="ownerManageConnections"/);
 assert.doesNotMatch(html, /data-role="(?:owner|captain|waiter|cashier|kitchen)"/);
 assert.match(js, /\/owners\/dashboard\/statistics/);
 assert.match(js, /renderCloudOwnerStatistics/);
+assert.match(js, /ownerPerformanceHeader\.hidden = tab !== "sales"/);
 assert.match(js, /ownerOutletSelect\.addEventListener\("change"/);
 assert.match(js, /ownerMetricSelect\.addEventListener\("change"/);
 assert.match(js, /refreshCloudLiveOrders/);

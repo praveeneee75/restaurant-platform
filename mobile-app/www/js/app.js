@@ -146,6 +146,7 @@ function today() { return new Date().toISOString().slice(0, 10); }
 
 function showOwnerTab(tab) {
   if (!state.user?.cloudOwner) return;
+  ownerPerformanceHeader.hidden = tab !== "sales";
   document.querySelectorAll("[data-owner-view]").forEach((view) => view.classList.toggle("active", view.dataset.ownerView === tab));
   document.querySelectorAll("[data-owner-tab]").forEach((button) => button.classList.toggle("active", button.dataset.ownerTab === tab));
   ownerDrawer.hidden = true;
@@ -625,7 +626,7 @@ function reportMobileAttempt(details) {
       posReachable: Boolean(details.posReachable),
       loginSucceeded: Boolean(details.loginSucceeded),
       error: String(details.error || "").slice(0, 300),
-      appVersion: "1.0.34",
+      appVersion: "1.0.35",
       platform: navigator.userAgent || "Mobile app"
     })
   }).catch(() => undefined);
