@@ -32,6 +32,8 @@ const state = {
 };
 const native = window.KMasterNative || { isNative: false };
 const BIOMETRIC_KEY = "kmaster-biometric-login";
+let staffConnectionMonitor = null;
+let staffConnectionChecking = false;
 const REQUEST_TIMEOUT_MS = 12000;
 let pendingCredentials = null;
 
@@ -91,6 +93,7 @@ async function offerBiometric(credentials) {
 }
 
 function showLoginView(message, options = {}) {
+  stopStaffConnectionMonitor();
   document.body.classList.remove("owner-mode");
   loginView.hidden = false;
   dashboardView.hidden = true;
@@ -134,6 +137,48 @@ async function validateStaffPosConnection(restaurant) {
   await fetchJson(`${base}/health`);
   await fetchJson(`${base}/mobile-app/config?restaurantId=${encodeURIComponent(restaurant.restaurantId)}`);
   return base;
+}
+
+function showWifiInterruption(message = "POS is offline. Connect to the restaurant Wi-Fi, then refresh.") {
+  if (webviewPanel.hidden || !webviewPanel.classList.contains("staff-workspace")) return;
+  wifiInterruptionStatus.textContent = message;
+  wifiInterruptionScreen.hidden = false;
+}
+
+async function checkActiveStaffConnection({ manual = false } = {}) {
+  if (staffConnectionChecking || webviewPanel.hidden || !webviewPanel.classList.contains("staff-workspace")) return false;
+  staffConnectionChecking = true;
+  if (manual) {
+    refreshWifiConnection.disabled = true;
+    refreshWifiConnection.textContent = "Checking...";
+    wifiInterruptionStatus.textContent = "Checking the restaurant POS connection...";
+  }
+  try {
+    await validateStaffPosConnection(state.restaurant || savedRestaurant());
+    wifiInterruptionScreen.hidden = true;
+    try { appFrame.contentWindow?.dispatchEvent(new Event("online")); } catch (_) { /* cross-origin frame */ }
+    return true;
+  } catch (error) {
+    showWifiInterruption(manual ? "POS is still offline. Confirm Wi-Fi is on and the restaurant network is connected." : "Your order screen is safely kept open.");
+    return false;
+  } finally {
+    staffConnectionChecking = false;
+    if (manual) {
+      refreshWifiConnection.disabled = false;
+      refreshWifiConnection.textContent = "Refresh connection";
+    }
+  }
+}
+
+function startStaffConnectionMonitor() {
+  clearInterval(staffConnectionMonitor);
+  staffConnectionMonitor = setInterval(() => checkActiveStaffConnection(), 5000);
+}
+
+function stopStaffConnectionMonitor() {
+  clearInterval(staffConnectionMonitor);
+  staffConnectionMonitor = null;
+  if (typeof wifiInterruptionScreen !== "undefined") wifiInterruptionScreen.hidden = true;
 }
 
 function currency(value) {
@@ -626,7 +671,7 @@ function reportMobileAttempt(details) {
       posReachable: Boolean(details.posReachable),
       loginSucceeded: Boolean(details.loginSucceeded),
       error: String(details.error || "").slice(0, 300),
-      appVersion: "1.0.36",
+      appVersion: "1.0.37",
       platform: navigator.userAgent || "Mobile app"
     })
   }).catch(() => undefined);
@@ -987,6 +1032,7 @@ offlineLogoutButton.addEventListener("click", () => logoutButton.click());
 async function openRoleWorkspace(role, button) {
   ownerDrawer.hidden = true;
   if (role === "owner") {
+    stopStaffConnectionMonitor();
     webviewPanel.hidden = true;
     appFrame.src = "about:blank";
     showDashboardView("Owner control loaded.");
@@ -1030,6 +1076,8 @@ async function openRoleWorkspace(role, button) {
     closeFrame.textContent = "Close";
     appFrame.src = paths[role];
     webviewPanel.hidden = false;
+    wifiInterruptionScreen.hidden = true;
+    startStaffConnectionMonitor();
     dashboardStatus.textContent = `${button.textContent} opened.`;
     return true;
   } catch (err) {
@@ -1113,12 +1161,18 @@ drawerSettingsButton.addEventListener("click", async () => { ownerDrawer.hidden 
 drawerLogoutButton.addEventListener("click", () => { ownerDrawer.hidden = true; logoutButton.click(); });
 
 closeFrame.addEventListener("click", () => {
+  stopStaffConnectionMonitor();
   appFrame.src = "about:blank";
   webviewPanel.hidden = true;
 });
 
+refreshWifiConnection.addEventListener("click", () => checkActiveStaffConnection({ manual: true }));
+window.addEventListener("offline", () => showWifiInterruption("Your order screen is safely kept open."));
+window.addEventListener("online", () => checkActiveStaffConnection());
+
 window.addEventListener("message", (event) => {
   if (event.data?.type !== "KMASTER_MOBILE_LOGOUT") return;
+  stopStaffConnectionMonitor();
   appFrame.src = "about:blank";
   webviewPanel.hidden = true;
   logoutButton.click();

@@ -229,6 +229,15 @@
         <button id="closeFrame" type="button">Close</button>
       </header>
       <iframe id="appFrame" title="Restaurant app view"></iframe>
+      <div id="wifiInterruptionScreen" class="wifi-interruption-screen" hidden role="alert" aria-live="assertive">
+        <div class="wifi-interruption-card">
+          <span class="wifi-interruption-icon" aria-hidden="true">⌁</span>
+          <h2>Connect to the POS Wi-Fi</h2>
+          <p>The restaurant POS cannot be reached. Turn on Wi-Fi and reconnect to the restaurant network.</p>
+          <button id="refreshWifiConnection" type="button">Refresh connection</button>
+          <small id="wifiInterruptionStatus">Your order screen is safely kept open.</small>
+        </div>
+      </div>
     </section>
   </main>
   <script src="js/native-plugins.js"></script>

@@ -496,10 +496,21 @@ iframe {
 }
 .webview-panel.staff-workspace {
   grid-template-rows: 1fr;
-  top: max(28px, env(safe-area-inset-top));
-  min-height: calc(100dvh - max(28px, env(safe-area-inset-top)));
+  inset: 0;
+  min-height: 100dvh;
+  padding-top: max(28px, env(safe-area-inset-top));
+  box-sizing: border-box;
+  background: #f4f7f6;
 }
 .webview-panel.staff-workspace > header { display: none; }
+.wifi-interruption-screen { position:absolute; inset:0; z-index:20; display:grid; place-items:center; padding:max(24px,env(safe-area-inset-top)) 20px max(24px,env(safe-area-inset-bottom)); background:#f4f7f6; }
+.wifi-interruption-screen[hidden] { display:none!important; }
+.wifi-interruption-card { width:min(100%,430px); padding:28px 22px; border:1px solid #cbd5e1; border-radius:22px; background:white; box-shadow:0 18px 45px rgba(15,23,42,.12); text-align:center; }
+.wifi-interruption-icon { display:grid; place-items:center; width:64px; height:64px; margin:0 auto 16px; border-radius:50%; background:#e6f5f2; color:#087f73; font-size:34px; font-weight:900; }
+.wifi-interruption-card h2 { margin:0 0 10px; font-size:24px; }
+.wifi-interruption-card p { margin:0 0 20px; color:#64748b; line-height:1.5; }
+.wifi-interruption-card button { width:100%; }
+.wifi-interruption-card small { display:block; margin-top:12px; color:#64748b; }
 @media (min-width: 980px) and (orientation: landscape) {
   .app-shell {
     grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.2fr);

@@ -45,6 +45,7 @@ const { PREFERRED_POS_PORT, findAvailablePort } = require(path.join(root, 'pos-a
 
   const waiter = fs.readFileSync(path.join(root, 'pos-app/backend/public/waiter.html'), 'utf8');
   const waiterJs = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/waiter.js'), 'utf8');
+  const waiterCss = fs.readFileSync(path.join(root, 'pos-app/backend/public/css/waiter.css'), 'utf8');
   for (const step of ['tables', 'check', 'menu', 'order']) {
     assert.match(waiter, new RegExp(`data-waiter-step="${step}"`), `mobile Dine In should provide the ${step} step`);
   }
@@ -56,6 +57,11 @@ const { PREFERRED_POS_PORT, findAvailablePort } = require(path.join(root, 'pos-a
   assert.match(waiterJs, /data-menu-note/, 'selected menu items must expose an inline mobile note field');
   assert.match(waiterJs, /reviewWaiterOrder/, 'the item screen must provide a clear next step to customer validation and review');
   assert.match(waiterJs, /finalWaiterCheck\.hidden = state\.settings\.showFinalBillPrintDineIn === false/, 'Final Check, Bill & Print must follow the Dine In admin setting');
+  assert.match(waiterCss, /\.check-panel\.mobile-active \.check-bottom-actions \{ position:fixed;[\s\S]*bottom:0/, 'mobile Check actions must remain anchored to the bottom safe area');
+  assert.match(waiterCss, /\[data-waiter-panel="menu"\]\.mobile-active \.mobile-bottom-action \{ position:fixed;[\s\S]*bottom:0/, 'mobile Items review action must remain anchored to the bottom safe area');
+  assert.match(waiter, /class="review-bottom-actions"[\s\S]*class="transfer-panel"[\s\S]*class="actions"/, 'mobile Review must group transfer and order actions into one bottom control area');
+  assert.match(waiterCss, /\.cart-panel\.mobile-active \.review-bottom-actions \{ position:fixed;[\s\S]*bottom:0/, 'mobile Review transfer and order actions must remain anchored to the bottom safe area');
+  assert.match(waiterCss, /\.customer-controls \{ grid-template-columns:minmax\(0,1fr\) auto; align-items:end; \}/, 'mobile Review customer fields and action buttons must share aligned rows');
   assert.match(waiterJs, /parcelWaiterCheck\.hidden = !state\.orderId \|\| state\.fulfillmentType !== "DINE_IN"/, 'captain parcel must only be shown for an existing Dine In customer check');
   assert.match(waiterJs, /const user = userFromMobileParams\(\) \|\| JSON\.parse/, 'the current authenticated mobile session must override stale waiter-page storage');
   assert.match(waiterJs, /waiterOrderSelectorLabel\.hidden = state\.openOrders\.length <= 1/, 'the customer-check dropdown must only appear when multiple checks require a choice');
@@ -73,6 +79,10 @@ const { PREFERRED_POS_PORT, findAvailablePort } = require(path.join(root, 'pos-a
   assert.match(mobileHtml, /id="posOfflineActions"[\s\S]*id="loginBiometricSettings"[\s\S]*id="retryPosConnection"[\s\S]*id="offlineLogoutButton"/, 'offline state must expose biometric, retry and sign-out actions in one group');
   assert.match(mobile, /showLoginView\(staffPosOfflineMessage\(err\), \{ loginAttempt: true \}\)/, 'an explicit failed login must display the detailed POS connection error');
   assert.match(mobile, /showLoginView\("POS is Offline"\)/, 'background saved-session validation must show only the concise offline state');
+  assert.match(mobileHtml, /id="wifiInterruptionScreen"[\s\S]*id="refreshWifiConnection"/, 'active staff workspaces must provide a Wi-Fi interruption screen with refresh');
+  assert.match(mobile, /setInterval\(\(\) => checkActiveStaffConnection\(\), 5000\)/, 'active staff workspaces must continuously validate POS reachability');
+  assert.match(mobile, /wifiInterruptionScreen\.hidden = true[\s\S]*dispatchEvent\(new Event\("online"\)\)/, 'successful reconnection must reveal and resume the preserved workspace');
+  assert.doesNotMatch(mobile, /refreshWifiConnection[\s\S]{0,300}appFrame\.src\s*=/, 'Wi-Fi refresh must not replace the preserved POS page');
 
   console.log('Wi-Fi login regression checks passed');
 })().catch((error) => {
