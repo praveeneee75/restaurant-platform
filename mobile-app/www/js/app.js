@@ -97,9 +97,14 @@ function showLoginView(message) {
   webviewPanel.hidden = true;
   appFrame.src = "about:blank";
   if (message) loginStatus.textContent = message;
+  const connectionError = Boolean(message && /offline|unreachable|cannot reach|timed out/i.test(message));
+  loginView.classList.toggle("connection-error", connectionError);
+  posOfflineActions.hidden = !connectionError || Boolean(state.user?.cloudOwner);
 }
 
 function showDashboardView(message) {
+  loginView.classList.remove("connection-error");
+  posOfflineActions.hidden = true;
   loginView.hidden = true;
   dashboardView.hidden = false;
   dashboardTitle.textContent = "Performance overview";
@@ -113,6 +118,22 @@ function showDashboardView(message) {
     showOwnerTab("sales");
     refreshOwnerDashboard().catch((error) => { dashboardStatus.textContent = error.message; });
   }
+}
+
+function staffPosOfflineMessage(error) {
+  const detail = String(error?.message || "").trim();
+  const guidance = "The restaurant POS desktop app is offline or unreachable. Open the desktop POS, connect this phone to the same Wi-Fi, then try again.";
+  return detail && !/Cannot reach the restaurant POS|Connection timed out/i.test(detail)
+    ? `${guidance} ${detail}`
+    : guidance;
+}
+
+async function validateStaffPosConnection(restaurant) {
+  const base = restaurantPosUrl(restaurant);
+  if (!restaurant?.restaurantId || !base) throw new Error("The restaurant POS address is unavailable.");
+  await fetchJson(`${base}/health`);
+  await fetchJson(`${base}/mobile-app/config?restaurantId=${encodeURIComponent(restaurant.restaurantId)}`);
+  return base;
 }
 
 function currency(value) {
@@ -604,7 +625,7 @@ function reportMobileAttempt(details) {
       posReachable: Boolean(details.posReachable),
       loginSucceeded: Boolean(details.loginSucceeded),
       error: String(details.error || "").slice(0, 300),
-      appVersion: "1.0.26",
+      appVersion: "1.0.34",
       platform: navigator.userAgent || "Mobile app"
     })
   }).catch(() => undefined);
@@ -736,11 +757,18 @@ async function loadRestaurants() {
     if (remembered) {
       await useRestaurant(remembered);
       showRoleGrid(state.user.role);
-      showDashboardView(`Signed in as ${state.user.role}.`);
       if (!state.user.cloudOwner) {
         const landingByRole = { CAPTAIN: "captain", WAITER: "waiter", KITCHEN: "kitchen", CASHIER: "cashier", MANAGER: "cashier", MANAGER_1: "cashier", MANAGER_2: "cashier" };
         const landing = landingByRole[String(state.user.role || "").toUpperCase()];
-        if (landing) await openRoleWorkspace(landing, { disabled: false, textContent: "Staff workspace" });
+        try {
+          await validateStaffPosConnection(remembered);
+          showDashboardView(`Signed in as ${state.user.role}. Opening workspace...`);
+          if (landing) await openRoleWorkspace(landing, { disabled: false, textContent: "Staff workspace" });
+        } catch (error) {
+          showLoginView(staffPosOfflineMessage(error));
+        }
+      } else {
+        showDashboardView(`Signed in as ${state.user.role}.`);
       }
     } else {
       state.restaurant = null;
@@ -932,6 +960,25 @@ loginBiometricSettings.addEventListener("click", async () => {
   settingsDialog.showModal();
 });
 
+retryPosConnection.addEventListener("click", async () => {
+  retryPosConnection.disabled = true;
+  retryPosConnection.textContent = "Checking POS...";
+  try {
+    const restaurant = state.restaurant || savedRestaurant();
+    await validateStaffPosConnection(restaurant);
+    if (!state.user) throw new Error("Sign in again to continue.");
+    const landingByRole = { CAPTAIN: "captain", WAITER: "waiter", KITCHEN: "kitchen", CASHIER: "cashier", MANAGER: "cashier", MANAGER_1: "cashier", MANAGER_2: "cashier" };
+    showDashboardView(`POS connected. Opening workspace...`);
+    await openRoleWorkspace(landingByRole[String(state.user.role || "").toUpperCase()] || "cashier", retryPosConnection);
+  } catch (error) {
+    showLoginView(staffPosOfflineMessage(error));
+  } finally {
+    retryPosConnection.disabled = false;
+    retryPosConnection.textContent = "Retry POS connection";
+  }
+});
+offlineLogoutButton.addEventListener("click", () => logoutButton.click());
+
 async function openRoleWorkspace(role, button) {
   ownerDrawer.hidden = true;
   if (role === "owner") {
@@ -959,7 +1006,7 @@ async function openRoleWorkspace(role, button) {
   };
   if (!restId || !posBase || !state.user) {
     showLoginView("Login first.");
-    return;
+    return false;
   }
   button.disabled = true;
   dashboardStatus.textContent = `Connecting to ${restaurant.name || "restaurant"} POS...`;
@@ -979,8 +1026,12 @@ async function openRoleWorkspace(role, button) {
     appFrame.src = paths[role];
     webviewPanel.hidden = false;
     dashboardStatus.textContent = `${button.textContent} opened.`;
+    return true;
   } catch (err) {
-    dashboardStatus.textContent = err.message || "Cannot open this workspace. Check the POS connection.";
+    const message = staffPosOfflineMessage(err);
+    dashboardStatus.textContent = message;
+    if (!state.user?.cloudOwner) showLoginView(message);
+    return false;
   } finally {
     button.disabled = false;
   }

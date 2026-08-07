@@ -24,6 +24,7 @@ const { PREFERRED_POS_PORT, findAvailablePort } = require(path.join(root, 'pos-a
   assert.match(server, /sendPosHeartbeat\(\).*Initial POS heartbeat skipped/, 'POS should advertise its port as soon as it starts');
 
   const mobile = fs.readFileSync(path.join(root, 'mobile-app/www/js/app.js'), 'utf8');
+  const mobileHtml = fs.readFileSync(path.join(root, 'mobile-app/www/index.html'), 'utf8');
   const loginStart = mobile.indexOf('async function findLocalStaffLogin');
   const attemptsStart = mobile.indexOf('const attempts = candidates.map', loginStart);
   const refreshStart = mobile.indexOf('await fetchRestaurantDirectory()', loginStart);
@@ -65,6 +66,11 @@ const { PREFERRED_POS_PORT, findAvailablePort } = require(path.join(root, 'pos-a
   assert.match(waiterJs, /function taxInclusiveUnitPrice/, 'mobile Dine In must display tax-inclusive item prices');
   assert.match(waiterJs, /waiterItemSearch\.addEventListener\("input", renderItems\)/, 'mobile menu must support item search');
   assert.match(waiterJs, /forcePin: true/, 'mobile order cancellation must always request approval PIN validation');
+  assert.match(mobile, /function staffPosOfflineMessage/, 'mobile app must provide a visible desktop-POS-offline validation message');
+  assert.match(mobile, /await validateStaffPosConnection\(remembered\)/, 'saved staff sessions must validate the desktop POS before hiding login');
+  assert.match(mobile, /if \(!state\.user\?\.cloudOwner\) showLoginView\(message\)/, 'workspace connection failures must return staff to a visible error state');
+  assert.match(mobile, /retryPosConnection\.addEventListener/, 'offline validation state must provide an operational retry action');
+  assert.match(mobileHtml, /id="posOfflineActions"[\s\S]*id="retryPosConnection"[\s\S]*id="offlineLogoutButton"/, 'offline state must expose retry and sign-out actions');
 
   console.log('Wi-Fi login regression checks passed');
 })().catch((error) => {

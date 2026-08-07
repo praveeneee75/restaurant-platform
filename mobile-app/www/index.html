@@ -41,7 +41,11 @@
       <button id="loginButton" type="button">Sign in</button>
       <button id="biometricLoginButton" type="button" class="secondary-button" hidden>Sign in with biometrics</button>
       <button id="loginBiometricSettings" type="button" class="login-security-link">Manage biometric sign-in</button>
-      <p id="loginStatus" class="status-line">Preparing secure login...</p>
+      <p id="loginStatus" class="status-line" role="alert">Preparing secure login...</p>
+      <div id="posOfflineActions" class="offline-actions" hidden>
+        <button id="retryPosConnection" type="button">Retry POS connection</button>
+        <button id="offlineLogoutButton" type="button" class="secondary-button">Sign out</button>
+      </div>
     </section>
 
     <section class="dashboard-panel" id="dashboardView" hidden>
