@@ -1,5 +1,13 @@
 require('dotenv').config()
 
+// Electron can outlive a console or launcher that owned its inherited pipes.
+// A later timer must not crash the POS merely because stdout/stderr was closed.
+for (const stream of [process.stdout, process.stderr]) {
+  stream?.on?.('error', (error) => {
+    if (error?.code !== 'EPIPE') throw error;
+  });
+}
+
 if (process.env.POS_DESKTOP === '1') {
   const fs = require('fs');
   const path = require('path');
@@ -3573,7 +3581,6 @@ setInterval(() => {
   const restaurantId = getSingleRestaurantId();
 
   if (!restaurantId) {
-    console.log('No activated restaurant found');
     return;
   }
 
