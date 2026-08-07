@@ -1,6 +1,6 @@
 {
   "name": "pos-app",
-  "version": "1.0.152",
+  "version": "1.0.153",
   "description": "Restaurant POS local backend",
   "main": "electron/main.js",
   "scripts": {
@@ -61,6 +61,8 @@
     "asarUnpack": [
       "node_modules/bcrypt/**/*",
       "node_modules/better-sqlite3/**/*",
+      "node_modules/bindings/**/*",
+      "node_modules/file-uri-to-path/**/*",
       "electron/rawPrint.ps1"
     ],
     "win": {

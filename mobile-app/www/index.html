@@ -40,11 +40,11 @@
       </label>
       <button id="loginButton" type="button">Sign in</button>
       <button id="biometricLoginButton" type="button" class="secondary-button" hidden>Sign in with biometrics</button>
-      <button id="loginBiometricSettings" type="button" class="login-security-link">Manage biometric sign-in</button>
       <p id="loginStatus" class="status-line" role="alert">Preparing secure login...</p>
       <div id="posOfflineActions" class="offline-actions" hidden>
-        <button id="retryPosConnection" type="button">Retry POS connection</button>
-        <button id="offlineLogoutButton" type="button" class="secondary-button">Sign out</button>
+        <button id="loginBiometricSettings" type="button" class="offline-icon-button" title="Manage biometric sign-in" aria-label="Manage biometric sign-in"><span aria-hidden="true">●</span><small>Biometric</small></button>
+        <button id="retryPosConnection" type="button" class="offline-icon-button" title="Retry POS connection" aria-label="Retry POS connection"><span aria-hidden="true">↻</span><small>Retry</small></button>
+        <button id="offlineLogoutButton" type="button" class="offline-icon-button" title="Sign out" aria-label="Sign out"><span aria-hidden="true">⇥</span><small>Sign out</small></button>
       </div>
     </section>
 

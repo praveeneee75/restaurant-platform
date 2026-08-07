@@ -90,13 +90,13 @@ async function offerBiometric(credentials) {
   if (availability.isAvailable) biometricPrompt.showModal();
 }
 
-function showLoginView(message) {
+function showLoginView(message, options = {}) {
   document.body.classList.remove("owner-mode");
   loginView.hidden = false;
   dashboardView.hidden = true;
   webviewPanel.hidden = true;
   appFrame.src = "about:blank";
-  if (message) loginStatus.textContent = message;
+  if (message) loginStatus.textContent = options.loginAttempt ? message : (/offline|unreachable|cannot reach|timed out/i.test(message) ? "POS is Offline" : message);
   const connectionError = Boolean(message && /offline|unreachable|cannot reach|timed out/i.test(message));
   loginView.classList.toggle("connection-error", connectionError);
   posOfflineActions.hidden = !connectionError || Boolean(state.user?.cloudOwner);
@@ -626,7 +626,7 @@ function reportMobileAttempt(details) {
       posReachable: Boolean(details.posReachable),
       loginSucceeded: Boolean(details.loginSucceeded),
       error: String(details.error || "").slice(0, 300),
-      appVersion: "1.0.35",
+      appVersion: "1.0.36",
       platform: navigator.userAgent || "Mobile app"
     })
   }).catch(() => undefined);
@@ -766,7 +766,7 @@ async function loadRestaurants() {
           showDashboardView(`Signed in as ${state.user.role}. Opening workspace...`);
           if (landing) await openRoleWorkspace(landing, { disabled: false, textContent: "Staff workspace" });
         } catch (error) {
-          showLoginView(staffPosOfflineMessage(error));
+          showLoginView("POS is Offline");
         }
       } else {
         showDashboardView(`Signed in as ${state.user.role}.`);
@@ -869,7 +869,11 @@ async function login() {
       pin: pin.value.trim()
     });
   } catch (err) {
-    loginStatus.textContent = err.message || "Login failed. Please try again.";
+    if (!ownerStyleLogin && /offline|unreachable|cannot reach|timed out|failed to fetch|network/i.test(String(err.message || ""))) {
+      showLoginView(staffPosOfflineMessage(err), { loginAttempt: true });
+    } else {
+      loginStatus.textContent = err.message || "Login failed. Please try again.";
+    }
   } finally {
     loginButton.disabled = false;
     loginButton.textContent = "Login";

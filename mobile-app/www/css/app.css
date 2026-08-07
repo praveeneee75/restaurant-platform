@@ -170,9 +170,11 @@ select:focus-visible {
 .login-panel .secondary-button { min-height:50px; background:#eff6ff; color:#1e3a8a; }
 .login-panel .status-line { padding:10px 12px; border-radius:12px; background:#f8fafc; color:#64748b; font-size:12px; line-height:1.4; }
 .login-panel.connection-error .status-line { border:1px solid #fecaca; background:#fff1f2; color:#9f1239; font-size:13px; }
-.offline-actions { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; }
+.offline-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:auto; padding-top:14px; }
 .offline-actions[hidden] { display:none!important; }
-.offline-actions .secondary-button { width:auto; }
+.offline-icon-button { min-width:0; padding:8px 4px; border-radius:12px; background:#eef4f8; color:#17345d; display:grid; justify-items:center; gap:2px; box-shadow:none; }
+.offline-icon-button span { font-size:20px; line-height:1; }
+.offline-icon-button small { font-size:10px; font-weight:700; }
 .login-panel[hidden] {
   display: none !important;
 }
@@ -536,8 +538,7 @@ iframe {
   .active-restaurant { margin:5px 0 3px; font-size:11px; }
   .brand-copy #brandStatus { font-size:12px; }
   .login-panel { padding:18px; border-radius:20px; }
-  .offline-actions { grid-template-columns:1fr; }
-  .offline-actions .secondary-button { width:100%; }
+  .offline-actions { grid-template-columns:repeat(3,minmax(0,1fr)); }
   .dashboard-panel { min-height: calc(100dvh - 24px); }
   .secondary-button {
     width: 100%;

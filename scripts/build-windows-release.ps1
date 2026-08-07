@@ -23,11 +23,20 @@ try {
   }
   if ($LASTEXITCODE -ne 0) { throw "Windows packaging failed with exit code $LASTEXITCODE" }
   $packagedNative = Join-Path $app 'dist-installers\win-unpacked\resources\app.asar.unpacked\node_modules\better-sqlite3'
+  $packagedBindings = Join-Path $app 'dist-installers\win-unpacked\resources\app.asar.unpacked\node_modules\bindings'
   $electron = Join-Path $app 'node_modules\electron\dist\electron.exe'
+  if (-not (Test-Path -LiteralPath $packagedBindings)) {
+    throw "Packaged SQLite dependency is missing: $packagedBindings"
+  }
   $env:ELECTRON_RUN_AS_NODE = '1'
   try {
-    & $electron -e "const Database=require(process.argv[1]);const db=new Database(':memory:');if(db.prepare('SELECT 1 ok').get().ok!==1)process.exit(2);db.close();" $packagedNative
-    if ($LASTEXITCODE -ne 0) { throw "Packaged SQLite validation failed with exit code $LASTEXITCODE" }
+    Push-Location ([System.IO.Path]::GetTempPath())
+    try {
+      & $electron -e "const Database=require(process.argv[1]);const db=new Database(':memory:');if(db.prepare('SELECT 1 ok').get().ok!==1)process.exit(2);db.close();" $packagedNative
+      if ($LASTEXITCODE -ne 0) { throw "Packaged SQLite validation failed with exit code $LASTEXITCODE" }
+    } finally {
+      Pop-Location
+    }
   } finally {
     Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
   }

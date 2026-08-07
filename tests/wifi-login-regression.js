@@ -70,7 +70,9 @@ const { PREFERRED_POS_PORT, findAvailablePort } = require(path.join(root, 'pos-a
   assert.match(mobile, /await validateStaffPosConnection\(remembered\)/, 'saved staff sessions must validate the desktop POS before hiding login');
   assert.match(mobile, /if \(!state\.user\?\.cloudOwner\) showLoginView\(message\)/, 'workspace connection failures must return staff to a visible error state');
   assert.match(mobile, /retryPosConnection\.addEventListener/, 'offline validation state must provide an operational retry action');
-  assert.match(mobileHtml, /id="posOfflineActions"[\s\S]*id="retryPosConnection"[\s\S]*id="offlineLogoutButton"/, 'offline state must expose retry and sign-out actions');
+  assert.match(mobileHtml, /id="posOfflineActions"[\s\S]*id="loginBiometricSettings"[\s\S]*id="retryPosConnection"[\s\S]*id="offlineLogoutButton"/, 'offline state must expose biometric, retry and sign-out actions in one group');
+  assert.match(mobile, /showLoginView\(staffPosOfflineMessage\(err\), \{ loginAttempt: true \}\)/, 'an explicit failed login must display the detailed POS connection error');
+  assert.match(mobile, /showLoginView\("POS is Offline"\)/, 'background saved-session validation must show only the concise offline state');
 
   console.log('Wi-Fi login regression checks passed');
 })().catch((error) => {
