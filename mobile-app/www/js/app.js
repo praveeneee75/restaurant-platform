@@ -671,7 +671,7 @@ function reportMobileAttempt(details) {
       posReachable: Boolean(details.posReachable),
       loginSucceeded: Boolean(details.loginSucceeded),
       error: String(details.error || "").slice(0, 300),
-      appVersion: "1.0.37",
+      appVersion: "1.0.38",
       platform: navigator.userAgent || "Mobile app"
     })
   }).catch(() => undefined);

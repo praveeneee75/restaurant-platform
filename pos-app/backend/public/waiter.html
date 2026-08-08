@@ -50,7 +50,7 @@
 
     <section class="panel cart-panel" data-waiter-panel="order">
       <h2>Order</h2>
-      <p id="lockStatus">No table locked</p>
+      <p id="lockStatus" hidden aria-hidden="true">No table locked</p>
       <div class="customer-controls">
         <label>Customer phone<input id="waiterCustomerPhone" inputmode="tel" placeholder="Customer phone"></label>
         <button id="searchWaiterCustomer" type="button">Search</button>
@@ -76,6 +76,24 @@
       </div>
     </section>
   </main>
+
+  <dialog id="cancelOrderDialog" class="waiter-dialog">
+    <form id="cancelOrderForm">
+      <h2>Cancel submitted order</h2>
+      <p>Enter the six-digit cancellation approval PIN. The cancellation will be recorded in the audit log.</p>
+      <label>Approval PIN<input id="cancelOrderPin" type="password" inputmode="numeric" maxlength="6" autocomplete="off"></label>
+      <p id="cancelOrderPinStatus" class="dialog-status" role="alert"></p>
+      <div><button id="cancelOrderDialogClose" type="button" class="secondary-button">Back</button><button type="submit" class="cancel-order-button">Cancel order</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="finalBillDraftDialog" class="waiter-dialog">
+    <form id="finalBillDraftForm" method="dialog">
+      <h2>Saved items not submitted to KOT</h2>
+      <p id="finalBillDraftMessage"></p>
+      <div class="three-action-dialog"><button id="cancelFinalBillDraft" type="button" class="secondary-button">Cancel</button><button id="discardFinalBillDraft" type="button" class="cancel-order-button">Discard</button><button id="proceedFinalBillDraft" type="button">Proceed</button></div>
+    </form>
+  </dialog>
 
   <script src="/js/ui-feedback.js"></script>
   <script src="/js/waiter.js"></script>

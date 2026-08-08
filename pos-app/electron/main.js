@@ -306,6 +306,17 @@ ipcMain.handle('pos:start-print-worker', async (_event, restaurantId) => {
   return startPrintWorker(restaurantId);
 });
 
+ipcMain.handle('pos:refresh-license', async () => {
+  const result = await refreshLicenseOnline();
+  return {
+    success: Boolean(result?.valid && result?.online),
+    online: Boolean(result?.online),
+    message: result?.valid && result?.online
+      ? 'Restaurant profile synchronized from the license service.'
+      : (result?.valid ? 'POS is offline. The cached license remains active, but the restaurant profile was not synchronized.' : (result?.message || 'Profile synchronization failed.'))
+  };
+});
+
 async function publishRuntimeState(entitlement, reason) {
   await backendRequest('POST', '/desktop/license/state', {
     status: entitlement && !isExpired(entitlement) ? 'ACTIVE' : 'EXPIRED',

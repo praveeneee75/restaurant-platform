@@ -91,6 +91,7 @@ async function loadBootstrap() {
   if (bootstrapInFlight) return;
   bootstrapInFlight = true;
   waiterStatus.textContent = "Refreshing tables...";
+  const customerDraft = { phone: waiterCustomerPhone.value, name: waiterCustomerName.value };
   try {
     const [pos, permissions] = await Promise.all([
       fetchJson(`/pos/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`),
@@ -112,6 +113,10 @@ async function loadBootstrap() {
     }
     if (!state.selectedCategoryId) state.selectedCategoryId = "ALL";
     renderAll();
+    if (!state.customer) {
+      waiterCustomerPhone.value = customerDraft.phone;
+      waiterCustomerName.value = customerDraft.name;
+    }
   } finally {
     bootstrapInFlight = false;
   }
@@ -315,13 +320,39 @@ async function submitKot() {
 
 async function requestFinalCheck() {
   if (!state.orderId || state.cart.some((item) => !item.sentToKitchen)) await saveOrder();
+  const readiness = await fetchJson(`/orders/final-bill-readiness?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(state.orderId)}`);
+  let draftItemAction = null;
+  if (Number(readiness.draftItemCount || 0) > 0) {
+    draftItemAction = await requestFinalBillDraftDecision(Number(readiness.draftItemCount));
+    if (draftItemAction === "CANCEL") return;
+  }
   finalWaiterCheck.disabled = true;
-  const result = await postJson("/orders/final-bill", { orderId: state.orderId });
+  const result = await postJson("/orders/final-bill", { orderId: state.orderId, draftItemAction });
   state.billingReady = true;
   renderOrderControls();
   const message = result.message;
   await returnToTables();
   waiterStatus.textContent = message;
+}
+
+function requestFinalBillDraftDecision(draftItemCount) {
+  return new Promise((resolve) => {
+    finalBillDraftMessage.textContent = `${draftItemCount} saved item line(s) have not been submitted to KOT. Proceed will submit them to KOT and continue. Discard will remove them and continue.`;
+    const finish = (decision) => {
+      proceedFinalBillDraft.onclick = null;
+      discardFinalBillDraft.onclick = null;
+      cancelFinalBillDraft.onclick = null;
+      finalBillDraftDialog.oncancel = null;
+      finalBillDraftDialog.close();
+      resolve(decision);
+    };
+    proceedFinalBillDraft.onclick = () => finish("PROCEED");
+    discardFinalBillDraft.onclick = () => finish("DISCARD");
+    cancelFinalBillDraft.onclick = () => finish("CANCEL");
+    finalBillDraftDialog.oncancel = (event) => { event.preventDefault(); finish("CANCEL"); };
+    finalBillDraftDialog.showModal();
+    proceedFinalBillDraft.focus();
+  });
 }
 
 async function returnToTables() {
@@ -337,6 +368,7 @@ async function returnToTables() {
   state.latestUpdatedAt = null;
   state.billingReady = false;
   state.fulfillmentType = "DINE_IN";
+  waiterItemSearch.value = "";
   await loadBootstrap();
   showMobileStep("tables");
 }
@@ -351,6 +383,7 @@ async function startNewWaiterCheck() {
   state.latestUpdatedAt = null;
   state.billingReady = false;
   state.fulfillmentType = "DINE_IN";
+  waiterItemSearch.value = "";
   renderAll();
   showMobileStep("menu");
 }
@@ -405,13 +438,40 @@ async function transferSelectedTable() {
 
 async function cancelSelectedOrder() {
   if (!state.orderId) throw new Error("Choose an open order first");
-  if (!confirm("Cancel this order? The cancellation is recorded in the audit log.")) return;
-  const pin = prompt("Enter the six-digit cancellation approval PIN");
-  if (pin === null) return;
-  if (!/^\d{6}$/.test(pin.trim())) throw new Error("Enter the six-digit cancellation approval PIN");
-  await postJson("/orders/cancel", { orderId: state.orderId, pin: pin.trim(), forcePin: true });
+  if (!await window.appConfirm("Cancel this submitted order? The cancellation is recorded in the audit log.", { acceptLabel: "Continue" })) return;
+  const pin = await requestCancellationPin();
+  if (!pin) return;
+  await postJson("/orders/cancel", { orderId: state.orderId, pin, forcePin: true });
   waiterStatus.textContent = "Order cancelled";
   await returnToTables();
+}
+
+function requestCancellationPin() {
+  return new Promise((resolve) => {
+    cancelOrderPin.value = "";
+    cancelOrderPinStatus.textContent = "";
+    const finish = (value) => {
+      cancelOrderForm.onsubmit = null;
+      cancelOrderDialogClose.onclick = null;
+      cancelOrderDialog.oncancel = null;
+      cancelOrderDialog.close();
+      resolve(value);
+    };
+    cancelOrderForm.onsubmit = (event) => {
+      event.preventDefault();
+      const value = cancelOrderPin.value.trim();
+      if (!/^\d{6}$/.test(value)) {
+        cancelOrderPinStatus.textContent = "Enter the six-digit cancellation approval PIN.";
+        cancelOrderPin.focus();
+        return;
+      }
+      finish(value);
+    };
+    cancelOrderDialogClose.onclick = () => finish(null);
+    cancelOrderDialog.oncancel = (event) => { event.preventDefault(); finish(null); };
+    cancelOrderDialog.showModal();
+    cancelOrderPin.focus();
+  });
 }
 
 async function renewLock() {

@@ -17,6 +17,6 @@ assert(['B2', 'B3', 'B4'].every((suffix) => provisioner.includes('`${sourceCode}
 assert(provisioner.includes('NOT EXISTS') && provisioner.includes("existing.status = 'ACTIVE'"), 'branch provisioning is idempotent for active subscriptions');
 assert(provisioner.includes('online_menu_snapshots') && provisioner.includes('FOOD_PARADISE_PILOT'), 'each branch receives the Food Paradise SaaS menu snapshot');
 assert(adminHtml.includes('data-nav-category="settings"') && adminHtml.includes('data-nav-group="settings"'), 'Settings is a top-level Admin category');
-assert(adminHtml.includes('Promo Codes &amp; Reward Points') && adminJs.includes('Promo Codes & Reward Points'), 'reward management is grouped under Promo Codes & Reward Points');
+assert(adminHtml.includes('data-nav-category="rewards"') && adminHtml.includes('data-nav-group="rewards"') && adminHtml.includes('data-settings-section="promos"') && adminHtml.includes('data-settings-section="reward-points"') && adminHtml.includes('data-settings-section="loyalty-program"'), 'Reward Management groups Promo Codes, Reward Points and Loyalty Program');
 
 console.log('White-label branch provisioning regression passed.');

@@ -668,6 +668,44 @@ function ensureRestaurantSchema(db) {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (sequence_key, period_key)
     );
+
+    CREATE TABLE IF NOT EXISTS loyalty_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      rule_type TEXT NOT NULL,
+      qualifying_item_id INTEGER,
+      qualifying_category_id INTEGER,
+      reward_item_id INTEGER,
+      qualifying_quantity INTEGER DEFAULT 1,
+      reward_quantity INTEGER DEFAULT 1,
+      discount_type TEXT DEFAULT 'PERCENT',
+      discount_value REAL DEFAULT 100,
+      minimum_visits INTEGER DEFAULT 0,
+      minimum_spend REAL DEFAULT 0,
+      valid_from DATE,
+      valid_to DATE,
+      priority INTEGER DEFAULT 100,
+      per_order_limit INTEGER DEFAULT 1,
+      active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (qualifying_item_id) REFERENCES items(id),
+      FOREIGN KEY (qualifying_category_id) REFERENCES categories(id),
+      FOREIGN KEY (reward_item_id) REFERENCES items(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS loyalty_rule_redemptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      loyalty_rule_id INTEGER NOT NULL,
+      customer_id INTEGER NOT NULL,
+      order_id INTEGER NOT NULL,
+      discount_amount REAL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(loyalty_rule_id, customer_id, order_id),
+      FOREIGN KEY (loyalty_rule_id) REFERENCES loyalty_rules(id),
+      FOREIGN KEY (customer_id) REFERENCES customers(id),
+      FOREIGN KEY (order_id) REFERENCES orders(id)
+    );
   `);
   const settingsCount = db.prepare("SELECT COUNT(*) AS count FROM settings WHERE key IN ('loyalty_earn_amount', 'loyalty_point_value')").get().count;
   if (settingsCount < 2) {

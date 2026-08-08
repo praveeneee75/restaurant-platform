@@ -377,7 +377,14 @@ button:hover,
   font-weight: 800;
   line-height: 1.25;
   text-align: left;
+  text-decoration: none !important;
 }
+
+.admin-category-btn:hover,
+.admin-category-btn:focus,
+.admin-category-btn:active,
+.admin-category-btn:visited,
+.admin-category-btn * { text-decoration: none !important; }
 
 .admin-category-btn:hover,
 .admin-category-btn.active {
@@ -449,7 +456,35 @@ button:hover,
   font-size: 14px;
   font-weight: 700;
   line-height: 1.25;
+  text-decoration: none !important;
 }
+.admin-nav .nav-btn:hover, .admin-nav .nav-btn:focus, .admin-nav .nav-btn:active,
+.admin-nav .nav-link:hover, .admin-nav .nav-link:focus, .admin-nav .nav-link:active, .admin-nav .nav-link:visited,
+.admin-nav .nav-btn *, .admin-nav .nav-link * { text-decoration:none !important; }
+.editor-panel > div:has(> button), .toolbar > div:has(> button), .invoice-detail-actions, .action-cell { column-gap:10px; row-gap:8px; }
+.loyalty-rule-guide { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin:14px 0; }
+.loyalty-rule-guide article { padding:14px; border:1px solid var(--border); border-radius:12px; background:#f8fafc; }
+.loyalty-rule-guide article p { margin:6px 0 0; color:var(--muted); }
+.loyalty-rule-editor { grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); }
+.profile-sync-row { grid-column:1/-1; display:flex; align-items:center; gap:12px; padding:12px; border:1px solid var(--border); border-radius:12px; background:#f8fafc; }
+.profile-sync-row p { margin:0; }
+.crm-executive-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
+.crm-executive-summary article { display:grid; gap:6px; padding:18px; border:1px solid var(--border); border-radius:14px; background:linear-gradient(145deg,#fff,#f3f7fb); box-shadow:0 8px 20px rgba(15,23,42,.05); }
+.crm-executive-summary span,.customer-value-grid span { color:var(--muted); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
+.crm-executive-summary strong { font-size:24px; }
+.crm-executive-summary small { color:var(--muted); }
+.customer-search-panel { display:grid; grid-template-columns:minmax(280px,1fr) auto auto; align-items:end; gap:10px; padding:16px; border:1px solid var(--border); border-radius:14px; background:#fff; }
+.customer-search-panel label { display:grid; gap:6px; font-weight:800; }
+.customer-directory-panel .section-heading { margin-bottom:12px; }
+.customer-directory-panel .section-heading h2,.customer-directory-panel .section-heading p { margin:0 0 4px; }
+.eyebrow { margin:0; color:#d97706; font-size:12px; font-weight:900; letter-spacing:.08em; }
+.customer-contact { color:var(--muted); }
+.customer-value-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:14px 0 20px; }
+.customer-value-grid article { display:grid; gap:5px; padding:12px; border:1px solid var(--border); border-radius:10px; background:#f8fafc; }
+.customer-value-grid strong { font-size:18px; }
+.crm-timeline,.loyalty-ledger { display:grid; gap:8px; }
+.crm-timeline p,.loyalty-ledger p { display:grid; grid-template-columns:auto auto 1fr auto; align-items:center; gap:10px; margin:0; padding:10px 12px; border:1px solid var(--border); border-radius:10px; }
+@media (max-width:1100px) { .crm-executive-summary,.customer-value-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 
 .admin-nav .nav-btn:hover,
 .admin-nav .nav-btn.active,
@@ -1043,7 +1078,7 @@ button:hover,
 .cart-line.pending-save { background: #fef3c7 !important; border-left: 5px solid #d97706 !important; }
 .cart-line.new-item { background: #dbeafe !important; border-left: 5px solid #2563eb !important; }
 .billing-summary-panel { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 22px; }.billing-summary-panel div { padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }.billing-summary-panel span, .billing-summary-panel strong { display: block; }.billing-summary-panel span { color: var(--muted); font-size: 12px; }.billing-summary-panel strong { margin-top: 6px; font-size: 20px; }
-.billing-detail { padding: 22px; background: #fff; border-left: 1px solid var(--border); }.billing-empty { margin-top: 35vh; color: var(--muted); text-align: center; }.bill-lines { margin: 24px 0; border-top: 1px solid var(--border); }.bill-lines div { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }.bill-total { display: flex; justify-content: space-between; padding: 18px 0; font-size: 20px; }.billing-hint { color: var(--muted); font-size: 13px; }
+.billing-detail { padding: 22px; background: #fff; border-left: 1px solid var(--border); }.billing-empty { margin-top: 35vh; color: var(--muted); text-align: center; }.bill-lines { margin: 24px 0; border-top: 1px solid var(--border); }.bill-lines div { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }.billing-total-breakdown { border-top:1px solid var(--border); border-bottom:1px solid var(--border); padding:10px 0; }.bill-adjustment-row { display:flex; justify-content:space-between; gap:12px; padding:7px 0; color:var(--muted); }.bill-adjustment-row.discount strong { color:#9f1239; }.bill-total { display: flex; justify-content: space-between; padding: 14px 0 8px; font-size: 20px; }.billing-hint { color: var(--muted); font-size: 13px; }
 .bill-kot-group { margin: 0; padding: 0 0 8px; border-bottom: 2px solid var(--border); }.bill-kot-group + .bill-kot-group { padding-top: 12px; }.bill-kot-group h3 { margin: 0; padding: 10px 0 6px; color: var(--primary); font-size: 14px; }
 .billing-payment { display: grid; gap: 10px; margin-top: 12px; padding-top: 16px; border-top: 1px solid var(--border); }.billing-payment h3 { margin: 0; }
 .app-home-brand small b { margin-left: 8px; color: #2563eb; }.app-home-nav [data-notification-count] { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 4px; border-radius: 999px; background: #f59e0b; color: #fff; font-size: 11px; }

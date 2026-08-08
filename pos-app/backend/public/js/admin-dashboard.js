@@ -565,20 +565,22 @@ async function showInvoiceDetail(invoiceId) {
   const items = data.items || [];
   const discounts = data.discounts || [];
   const payments = data.payments || [];
+  const invoiceGrossTotal = items.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
   const discountTotal = discounts.reduce((sum, row) => sum + (String(row.value_type || '').toUpperCase() === 'PERCENT'
-    ? Number(invoice.total_amount || 0) * Number(row.value || 0) / Math.max(100 - Number(row.value || 0), 1)
+    ? invoiceGrossTotal * Number(row.value || 0) / 100
     : Number(row.value || 0)), 0);
   const refundedAmount = Number(invoice.refunded_amount || 0);
   const remainingPaid = Math.max(Number(invoice.paid_amount || 0), 0);
   const hasInvoice = Boolean(invoice.is_invoice && invoice.invoice_no);
-  panel.innerHTML = `<header><div><h3>${esc(hasInvoice ? invoice.invoice_no : `Settled order ${invoice.order_reference || invoice.id}`)}</h3><p class="invoice-detail-meta">${esc(invoice.customer_name || 'Walk-in customer')} · ${esc(invoice.table_no || invoice.order_type || '')} · ${esc(formatDateTime(invoice.settled_at))}</p></div><div class="invoice-detail-actions">${hasInvoice ? '<button type="button" class="secondary-btn" id="printInvoice">Print</button><button type="button" class="secondary-btn" id="downloadInvoicePdf">Save PDF</button>' : '<button type="button" class="primary-btn" id="generateInvoice">Generate Invoice</button>'}</div></header><div class="invoice-detail-lines">${items.map(item => `<div class="invoice-detail-line"><span>${esc(item.name)} × ${item.quantity}${item.notes ? `<small>Note: ${esc(item.notes)}</small>` : ''}</span><strong>${money(Number(item.price || 0) * Number(item.quantity || 0))}</strong></div>`).join('') || '<p>No items recorded.</p>'}</div><div class="invoice-detail-total"><span>Total</span><strong>${money(invoice.total_amount)}</strong></div>`;
+  panel.innerHTML = `<header><div><h3>${esc(hasInvoice ? invoice.invoice_no : `Settled order ${invoice.order_reference || invoice.id}`)}</h3><p class="invoice-detail-meta">${esc(invoice.customer_name || 'Walk-in customer')} · ${esc(invoice.table_no || invoice.order_type || '')} · ${esc(formatDateTime(invoice.settled_at))}</p></div><div class="invoice-detail-actions">${hasInvoice ? '<button type="button" class="secondary-btn" id="printInvoice">Print</button><button type="button" class="secondary-btn" id="downloadInvoicePdf">Save PDF</button>' : '<button type="button" class="primary-btn" id="generateInvoice">Generate Invoice</button>'}</div></header><div class="invoice-detail-lines">${items.map(item => `<div class="invoice-detail-line"><span>${esc(item.name)} × ${item.quantity}${item.notes ? `<small>Note: ${esc(item.notes)}</small>` : ''}</span><strong>${money(Number(item.price || 0) * Number(item.quantity || 0))}</strong></div>`).join('') || '<p>No items recorded.</p>'}</div>${discountTotal > 0 ? `<div class="invoice-detail-total"><span>Subtotal</span><strong>${money(invoiceGrossTotal)}</strong></div>` : ''}<div class="invoice-detail-total"><span>Total paid</span><strong>${money(invoice.total_amount)}</strong></div>`;
   panel.hidden = false;
   if (discountTotal > 0) {
     const discountSummary = document.createElement('div');
     discountSummary.className = 'invoice-discount-summary';
     const label = discounts.length === 1 && discounts[0].promo_code ? `Discount applied (${esc(discounts[0].promo_code)})` : 'Discount applied';
     discountSummary.innerHTML = `<div class="invoice-detail-total"><span>${label}</span><strong>-${money(discountTotal)}</strong></div>`;
-    panel.querySelector('.invoice-detail-total')?.before(discountSummary);
+    const invoiceTotalRows = panel.querySelectorAll('.invoice-detail-total');
+    invoiceTotalRows[invoiceTotalRows.length - 1]?.before(discountSummary);
   }
   if (refundedAmount > 0) {
     const refundSummary = document.createElement('div');
@@ -612,8 +614,8 @@ async function showInvoiceDetail(invoiceId) {
     const amount = Number(document.getElementById('refundAmount').value);
     const status = document.getElementById('refundStatus');
     if (!Number.isFinite(amount) || amount <= 0) { status.textContent = 'Enter a positive refund amount.'; return; }
-    if (amount > Number(invoice.paid_amount || 0)) { status.textContent = 'Refund cannot exceed the amount paid.'; return; }
-    if (!window.confirm(`Refund ${money(amount)} from this invoice?`)) return;
+    if (amount > remainingPaid) { status.textContent = 'Refund cannot exceed the remaining paid amount.'; return; }
+    if (!await window.appConfirm(`Refund ${money(amount)} from this invoice?`, { acceptLabel: 'Refund' })) return;
     try {
       const result = await postJson('/orders/refund', { restaurantId, orderId: invoice.id, amount, refundMode: document.getElementById('refundMode').value, reason: document.getElementById('refundReason').value, refundedByRole: actor.role });
       status.textContent = `${money(result.refundedAmount)} refunded.`;
@@ -1304,6 +1306,8 @@ function showSettingsSection(section = "profile") {
     profile: "Restaurant Profile",
     billing: "Billing",
     promos: "Promo Codes & Reward Points",
+    "reward-points": "Reward Points",
+    "loyalty-program": "Loyalty Program",
     pos: "POS Behaviour",
     kot: "Kitchen / KOT",
     "bill-print": "Bill Configuration",
@@ -1317,8 +1321,105 @@ function showSettingsSection(section = "profile") {
   const title = document.getElementById("settingsSectionTitle");
   if (title) title.textContent = titles[section] || "Restaurant Settings";
   const actions = document.getElementById("settingsActions");
-  if (actions) actions.hidden = section === "promos";
+  if (actions) actions.hidden = ["promos", "reward-points", "loyalty-program"].includes(section);
 }
+
+async function loadRewardPointSettings() {
+  const data = await fetchJson(`/loyalty/settings?restaurantId=${encodeURIComponent(restaurantId)}`);
+  rewardEarnAmount.value = data.earnAmount;
+  rewardPointValue.value = data.pointValue;
+}
+
+saveRewardPointSettings.addEventListener("click", async () => {
+  const result = await postJson("/loyalty/settings", { earnAmount: rewardEarnAmount.value, pointValue: rewardPointValue.value });
+  rewardPointStatus.textContent = result.success ? "Reward point settings saved." : (result.message || "Save failed.");
+});
+
+syncRestaurantProfile.addEventListener("click", async () => {
+  syncRestaurantProfile.disabled = true;
+  profileSyncStatus.textContent = "Synchronizing restaurant profile...";
+  try {
+    if (!window.posDesktop?.refreshLicense) throw new Error("Profile synchronization is available only in the installed POS desktop app.");
+    const result = await window.posDesktop.refreshLicense();
+    if (!result.success) throw new Error(result.message || "Profile synchronization failed.");
+    await loadSettings();
+    profileSyncStatus.textContent = result.message || "Restaurant profile synchronized.";
+  } catch (error) {
+    profileSyncStatus.textContent = error.message;
+  } finally {
+    syncRestaurantProfile.disabled = false;
+  }
+});
+
+function populateLoyaltyRuleOptions() {
+  const itemOptions = (state.admin?.items || []).filter((item) => Number(item.active) !== 0)
+    .map((item) => `<option value="${item.id}">${esc(item.name)}</option>`).join("");
+  const categoryOptions = (state.admin?.categories || []).filter((category) => Number(category.active) !== 0)
+    .map((category) => `<option value="${category.id}">${esc(category.name)}</option>`).join("");
+  loyaltyQualifyingItem.innerHTML = `<option value="">Select product</option>${itemOptions}`;
+  loyaltyRewardItem.innerHTML = `<option value="">Same as qualifying product</option>${itemOptions}`;
+  loyaltyQualifyingCategory.innerHTML = `<option value="">Any category</option>${categoryOptions}`;
+}
+
+function clearLoyaltyRuleForm() {
+  loyaltyRuleId.value = "";
+  loyaltyRuleName.value = "";
+  loyaltyRuleType.value = "PRODUCT_REWARD";
+  loyaltyQualifyingCategory.value = "";
+  loyaltyQualifyingItem.value = "";
+  loyaltyQualifyingQuantity.value = "1";
+  loyaltyRewardItem.value = "";
+  loyaltyRewardQuantity.value = "1";
+  loyaltyDiscountType.value = "PERCENT";
+  loyaltyDiscountValue.value = "100";
+  loyaltyMinimumVisits.value = "0";
+  loyaltyMinimumSpend.value = "0";
+  loyaltyValidFrom.value = "";
+  loyaltyValidTo.value = "";
+  loyaltyPriority.value = "100";
+  loyaltyPerOrderLimit.value = "1";
+  loyaltyRuleActive.checked = true;
+  loyaltyRuleStatus.textContent = "";
+}
+
+function loyaltyRuleDescription(rule) {
+  if (rule.rule_type === "MILESTONE") return `${Number(rule.minimum_visits || 0)} visits / INR ${money(rule.minimum_spend || 0)} spend`;
+  const qualifier = rule.qualifying_item_name || rule.qualifying_category_name || "Eligible products";
+  const reward = rule.reward_item_name || rule.qualifying_item_name || "qualifying product";
+  return `Buy ${rule.qualifying_quantity} ${esc(qualifier)}; reward ${rule.reward_quantity} ${esc(reward)}`;
+}
+
+async function loadLoyaltyRules() {
+  populateLoyaltyRuleOptions();
+  const data = await fetchJson(`/loyalty/rules?restaurantId=${encodeURIComponent(restaurantId)}`);
+  state.loyaltyRules = data.rules || [];
+  loyaltyRulesBody.innerHTML = state.loyaltyRules.map((rule) => `<tr>
+    <td><strong>${esc(rule.name)}</strong><br>Priority ${Number(rule.priority || 100)}</td>
+    <td>${loyaltyRuleDescription(rule)}</td>
+    <td>${rule.discount_type === "PERCENT" ? `${money(rule.discount_value)}%` : `INR ${money(rule.discount_value)}`}</td>
+    <td>${esc(rule.valid_from || "Any")} – ${esc(rule.valid_to || "Any")}</td>
+    <td>${Number(rule.active) ? "Active" : "Inactive"}</td>
+    <td class="action-cell"><button type="button" class="mini-btn" data-edit-loyalty-rule="${rule.id}">Edit</button><button type="button" class="danger-btn" data-delete-loyalty-rule="${rule.id}">Disable</button></td>
+  </tr>`).join("") || '<tr><td colspan="6">No loyalty rules configured.</td></tr>';
+}
+
+saveLoyaltyRule.addEventListener("click", async () => {
+  try {
+    await postJson("/loyalty/rules/save", {
+      id: loyaltyRuleId.value || null, name: loyaltyRuleName.value, ruleType: loyaltyRuleType.value,
+      qualifyingItemId: loyaltyQualifyingItem.value || null, qualifyingCategoryId: loyaltyQualifyingCategory.value || null,
+      rewardItemId: loyaltyRewardItem.value || null, qualifyingQuantity: loyaltyQualifyingQuantity.value,
+      rewardQuantity: loyaltyRewardQuantity.value, discountType: loyaltyDiscountType.value, discountValue: loyaltyDiscountValue.value,
+      minimumVisits: loyaltyMinimumVisits.value, minimumSpend: loyaltyMinimumSpend.value, validFrom: loyaltyValidFrom.value,
+      validTo: loyaltyValidTo.value, priority: loyaltyPriority.value, perOrderLimit: loyaltyPerOrderLimit.value,
+      active: loyaltyRuleActive.checked
+    });
+    clearLoyaltyRuleForm();
+    loyaltyRuleStatus.textContent = "Loyalty rule saved.";
+    await loadLoyaltyRules();
+  } catch (error) { loyaltyRuleStatus.textContent = error.message; }
+});
+clearLoyaltyRule.addEventListener("click", clearLoyaltyRuleForm);
 
 function showAdminNavCategory(category = "menu") {
   document.querySelectorAll("[data-nav-group]").forEach((group) => {
@@ -1342,6 +1443,8 @@ document.querySelectorAll(".nav-btn").forEach((btn) => {
     btn.classList.add("active");
     document.getElementById(`view-${btn.dataset.view}`).classList.add("active");
     if (btn.dataset.view === "settings") showSettingsSection(btn.dataset.settingsSection || "profile");
+    if (btn.dataset.settingsSection === "reward-points") loadRewardPointSettings().catch((error) => { rewardPointStatus.textContent = error.message; });
+    if (btn.dataset.settingsSection === "loyalty-program") loadLoyaltyRules().catch((error) => { loyaltyRuleStatus.textContent = error.message; });
     if (btn.dataset.reportType) {
       selectReportType(btn.dataset.reportType);
       loadReports.click();
@@ -1751,6 +1854,20 @@ document.addEventListener("click", async (event) => {
       }
       return;
     }
+    if (pick("editLoyaltyRule")) {
+      const rule = (state.loyaltyRules || []).find((row) => String(row.id) === String(pick("editLoyaltyRule")));
+      if (rule) {
+        loyaltyRuleId.value = rule.id; loyaltyRuleName.value = rule.name; loyaltyRuleType.value = rule.rule_type;
+        loyaltyQualifyingCategory.value = rule.qualifying_category_id || ""; loyaltyQualifyingItem.value = rule.qualifying_item_id || "";
+        loyaltyQualifyingQuantity.value = rule.qualifying_quantity || 1; loyaltyRewardItem.value = rule.reward_item_id || "";
+        loyaltyRewardQuantity.value = rule.reward_quantity || 1; loyaltyDiscountType.value = rule.discount_type || "PERCENT";
+        loyaltyDiscountValue.value = rule.discount_value || 0; loyaltyMinimumVisits.value = rule.minimum_visits || 0;
+        loyaltyMinimumSpend.value = rule.minimum_spend || 0; loyaltyValidFrom.value = rule.valid_from || "";
+        loyaltyValidTo.value = rule.valid_to || ""; loyaltyPriority.value = rule.priority || 100;
+        loyaltyPerOrderLimit.value = rule.per_order_limit || 1; loyaltyRuleActive.checked = Number(rule.active) === 1;
+      }
+      return;
+    }
     if (pick("deleteKitchen")) { if (await approve("Delete this kitchen?")) await postJson("/admin/kitchens/delete", { id: pick("deleteKitchen") }).then(loadAdmin); return; }
     if (pick("deletePrinter")) { if (await approve("Delete this printer?")) await postJson("/admin/printers/delete", { id: pick("deletePrinter") }).then(loadAdmin); return; }
     if (pick("deleteCategory")) { if (await approve("Delete this category?")) await postJson("/admin/categories/delete", { id: pick("deleteCategory") }).then(loadAdmin); return; }
@@ -1769,6 +1886,7 @@ document.addEventListener("click", async (event) => {
     if (pick("deleteModifierAssignment")) { if (await approve("Delete this assignment?")) await postJson("/modifiers/assign/delete", { id: pick("deleteModifierAssignment") }).then(loadModifiers); return; }
     if (pick("deleteCombo")) { if (await approve("Delete this combo?")) await postJson("/combos/delete", { id: pick("deleteCombo") }).then(loadModifiers); return; }
     if (pick("deletePromo")) { if (await approve("Disable this promocode?", "Disable")) await postJson("/admin/promo-codes/delete", { id: pick("deletePromo") }).then(loadPromoCodes); return; }
+    if (pick("deleteLoyaltyRule")) { if (await approve("Disable this loyalty rule?", "Disable")) await postJson("/loyalty/rules/delete", { id: pick("deleteLoyaltyRule") }).then(loadLoyaltyRules); return; }
     if (pick("restoreBackup") && confirm("Restore this backup?")) await postJson("/backup/restore", { filename: pick("restoreBackup") }).then((data) => alert(data.message));
     if (pick("forceLogout") && confirm("Force logout this device?")) await postJson("/device-sessions/force-logout", { id: pick("forceLogout") }).then(loadDeviceSessions);
   } catch (err) {

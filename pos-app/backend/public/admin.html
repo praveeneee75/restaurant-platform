@@ -24,6 +24,7 @@
         <button type="button" class="admin-category-btn" data-nav-category="tables">Table Management</button>
         <button type="button" class="admin-category-btn" data-nav-category="users">User Management</button>
         <button type="button" class="admin-category-btn" data-nav-category="customers">Customers</button>
+        <button type="button" class="admin-category-btn" data-nav-category="rewards">Reward Management</button>
         <button type="button" class="admin-category-btn" data-nav-category="business">Business</button>
         <button type="button" class="admin-category-btn" data-nav-category="printing">Printer Configuration</button>
         <button type="button" class="admin-category-btn" data-nav-category="settings">Settings</button>
@@ -58,6 +59,13 @@
         <a class="nav-link" href="/customer.html">Customer Management</a>
       </div>
 
+      <div class="nav-group" data-nav-group="rewards" hidden>
+        <p class="nav-group-title">Reward Management</p>
+        <button class="nav-btn" data-view="settings" data-settings-section="promos">Promo Codes</button>
+        <button class="nav-btn" data-view="settings" data-settings-section="reward-points">Reward Points</button>
+        <button class="nav-btn" data-view="settings" data-settings-section="loyalty-program">Loyalty Program</button>
+      </div>
+
       <div class="nav-group" data-nav-group="business" hidden>
         <p class="nav-group-title">Business</p>
         <button class="nav-btn" data-view="inventory">Inventory</button>
@@ -78,7 +86,6 @@
         <p class="nav-group-title">Settings</p>
         <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="profile">Restaurant Profile</button>
         <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="billing">Billing</button>
-        <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="promos">Promo Codes &amp; Reward Points</button>
         <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="pos">POS Behaviour</button>
         <button class="nav-btn nav-sub-btn" data-view="backup">Backup</button>
         <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="online">Online Ordering</button>
@@ -485,6 +492,7 @@
             <label>Currency<input id="settingCurrency" required></label>
             <label>Timezone<input id="settingTimezone" required></label>
             <label>Logo path<input id="settingLogoPath"></label>
+            <div class="profile-sync-row"><button id="syncRestaurantProfile" type="button" class="secondary-btn">Sync profile from cloud</button><p id="profileSyncStatus" class="settings-help" role="status"></p></div>
           </article>
 
           <article class="settings-section" data-settings-panel="pos" hidden>
@@ -601,6 +609,42 @@
             <label>Preview paper width<select id="settingKotPreviewPaperWidth"><option value="58">58 mm</option><option value="80">80 mm</option></select></label>
             <div class="print-preview-actions"><button type="button" class="secondary-btn" id="testKotLayoutPrint">Test Print</button><button type="button" class="secondary-btn" id="saveKotLayoutPdf">Save as PDF</button></div>
             <div id="kotTemplatePreview" class="bill-template-preview" aria-label="KOT template preview"></div>
+          </article>
+
+          <article class="settings-section" data-settings-panel="reward-points" hidden>
+            <h3>Reward Points</h3>
+            <p class="settings-help">Configure how customers earn points and the monetary value used when points are redeemed.</p>
+            <label>Spend amount required for one point<input id="rewardEarnAmount" type="number" step="0.01" min="1"></label>
+            <label>Discount value of one point<input id="rewardPointValue" type="number" step="0.01" min="0.01"></label>
+            <div><button type="button" id="saveRewardPointSettings">Save Reward Points</button></div>
+            <p id="rewardPointStatus" class="settings-help" role="status"></p>
+          </article>
+
+          <article class="settings-section" data-settings-panel="loyalty-program" hidden>
+            <h3>Loyalty Program</h3>
+            <p class="settings-help">Active rules are applied automatically to attached customers. When several rules qualify, the customer receives the highest-value benefit; priority resolves ties.</p>
+            <div class="editor-panel loyalty-rule-editor">
+              <input id="loyaltyRuleId" type="hidden">
+              <label>Rule name<input id="loyaltyRuleName" placeholder="Example: Buy 1 coffee, second 50% off"></label>
+              <label>Rule type<select id="loyaltyRuleType"><option value="PRODUCT_REWARD">Buy X / Get Y or Nth item</option><option value="MILESTONE">Visit or spend milestone</option></select></label>
+              <label>Qualifying category<select id="loyaltyQualifyingCategory"><option value="">Any category</option></select></label>
+              <label>Qualifying product<select id="loyaltyQualifyingItem"><option value="">Select product</option></select></label>
+              <label>Qualifying quantity before reward<input id="loyaltyQualifyingQuantity" type="number" min="1" value="1"></label>
+              <label>Reward product<select id="loyaltyRewardItem"><option value="">Same as qualifying product</option></select></label>
+              <label>Reward quantity<input id="loyaltyRewardQuantity" type="number" min="1" value="1"></label>
+              <label>Benefit type<select id="loyaltyDiscountType"><option value="PERCENT">Percentage off reward</option><option value="FLAT">Fixed discount</option></select></label>
+              <label>Benefit value<input id="loyaltyDiscountValue" type="number" min="0.01" step="0.01" value="100"></label>
+              <label>Minimum completed visits<input id="loyaltyMinimumVisits" type="number" min="0" value="0"></label>
+              <label>Minimum lifetime spend<input id="loyaltyMinimumSpend" type="number" min="0" step="0.01" value="0"></label>
+              <label>Valid from<input id="loyaltyValidFrom" type="date"></label>
+              <label>Valid to<input id="loyaltyValidTo" type="date"></label>
+              <label>Priority<input id="loyaltyPriority" type="number" min="1" value="100"></label>
+              <label>Maximum applications per order<input id="loyaltyPerOrderLimit" type="number" min="1" value="1"></label>
+              <label class="check-row"><input id="loyaltyRuleActive" type="checkbox" checked> Active</label>
+              <div><button type="button" id="saveLoyaltyRule">Save loyalty rule</button><button type="button" class="secondary-btn" id="clearLoyaltyRule">Clear</button></div>
+            </div>
+            <p id="loyaltyRuleStatus" class="settings-help" role="status"></p>
+            <div class="table-panel"><table><thead><tr><th>Rule</th><th>Qualification</th><th>Benefit</th><th>Validity</th><th>Status</th><th>Actions</th></tr></thead><tbody id="loyaltyRulesBody"></tbody></table></div>
           </article>
 
           <article class="settings-section" data-settings-panel="bill-print" hidden>

@@ -105,6 +105,7 @@ const posConfirmTitle = document.getElementById("posConfirmTitle");
 const posConfirmMessage = document.getElementById("posConfirmMessage");
 const posConfirmInput = document.getElementById("posConfirmInput");
 const cancelPosConfirm = document.getElementById("cancelPosConfirm");
+const discardPosConfirm = document.getElementById("discardPosConfirm");
 const acceptPosConfirm = document.getElementById("acceptPosConfirm");
 let posToastTimer;
 const displayItemCode = (item) => String(item.item_code || String(item.id).padStart(4, "0")).replace(/^ITM[-\s]*/i, "");
@@ -531,6 +532,8 @@ function askPosConfirmation(message, title = "Confirm action") {
     posConfirmTitle.textContent = title;
     posConfirmMessage.textContent = String(message || "");
     posConfirmInput.hidden = true;
+    discardPosConfirm.hidden = true;
+    acceptPosConfirm.textContent = "Confirm";
     posConfirmModal.hidden = false;
     const finish = (accepted) => {
       posConfirmModal.hidden = true;
@@ -541,6 +544,33 @@ function askPosConfirmation(message, title = "Confirm action") {
     const accept = () => finish(true);
     const cancel = () => finish(false);
     acceptPosConfirm.addEventListener("click", accept);
+    cancelPosConfirm.addEventListener("click", cancel);
+    acceptPosConfirm.focus();
+  });
+}
+
+function askFinalBillDraftDecision(draftItemCount) {
+  return new Promise((resolve) => {
+    posConfirmTitle.textContent = "Saved items not submitted to KOT";
+    posConfirmMessage.textContent = `${draftItemCount} saved item line(s) have not been submitted to KOT. Proceed will submit them to KOT and continue. Discard will remove them and continue.`;
+    posConfirmInput.hidden = true;
+    discardPosConfirm.hidden = false;
+    acceptPosConfirm.textContent = "Proceed";
+    posConfirmModal.hidden = false;
+    const finish = (decision) => {
+      posConfirmModal.hidden = true;
+      discardPosConfirm.hidden = true;
+      acceptPosConfirm.textContent = "Confirm";
+      acceptPosConfirm.removeEventListener("click", proceed);
+      discardPosConfirm.removeEventListener("click", discard);
+      cancelPosConfirm.removeEventListener("click", cancel);
+      resolve(decision);
+    };
+    const proceed = () => finish("PROCEED");
+    const discard = () => finish("DISCARD");
+    const cancel = () => finish("CANCEL");
+    acceptPosConfirm.addEventListener("click", proceed);
+    discardPosConfirm.addEventListener("click", discard);
     cancelPosConfirm.addEventListener("click", cancel);
     acceptPosConfirm.focus();
   });
@@ -705,13 +735,15 @@ function renderCategories() {
 
 function renderItems(categoryId) {
   const query = (itemSearch?.value || "").trim().toLowerCase();
+  const itemEntryDisabled = state.billingReady || (isDineIn() && !state.selectedTable);
+  const itemEntryTitle = state.billingReady ? "Final bill requested for this order" : "Select a table before adding items";
   if (usesStructuredItemEntry && !query) {
     items.innerHTML = "";
     return;
   }
   const itemTiles = state.items.filter((item) => (categoryId === "ALL" || item.category_id === categoryId) && (!query || `${item.item_code || ""} ${item.alpha_short_code || ""} ${item.numeric_short_code || ""} ${item.name}`.toLowerCase().includes(query))).map((item) => {
     if (usesStructuredItemEntry) return `
-      <button class="item-tile item-suggestion" data-item="${item.id}" ${state.billingReady ? 'disabled title="Final bill requested for this order"' : ''}>
+      <button class="item-tile item-suggestion" data-item="${item.id}" ${itemEntryDisabled ? `disabled title="${itemEntryTitle}"` : ''}>
         <strong>${esc(displayItemCode(item))} · ${esc(item.name)}</strong>
         <span class="item-price">${money(taxInclusiveUnitPrice(item))}</span>
       </button>`;
@@ -719,7 +751,7 @@ function renderItems(categoryId) {
     const quantity = matchingLines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
     const stateClass = matchingLines.some((line) => line.sentToKitchen) ? "saved" : matchingLines.some((line) => line.savedLocally) ? "pending-save" : quantity > 0 ? "new-item" : "";
     return `
-      <button class="item-tile ${quantity > 0 ? "selected" : ""} ${stateClass}" data-item="${item.id}" ${state.billingReady ? 'disabled title="Final bill requested for this order"' : ''}>
+      <button class="item-tile ${quantity > 0 ? "selected" : ""} ${stateClass}" data-item="${item.id}" ${itemEntryDisabled ? `disabled title="${itemEntryTitle}"` : ''}>
         <strong>${esc(displayItemCode(item))} · ${esc(item.name)}</strong>
         <span class="item-price">${money(taxInclusiveUnitPrice(item))}</span>
         ${quantity > 0 ? `<span class="tile-quantity-controls"><span data-item-minus="${item.id}" role="button">-</span><em>${quantity}</em><span data-item-plus="${item.id}" role="button">+</span></span>` : ""}
@@ -728,14 +760,14 @@ function renderItems(categoryId) {
   }).join("");
   const comboTiles = state.combos.filter((combo) => (categoryId === "ALL" || !combo.category_id || Number(combo.category_id) === Number(categoryId)) && (!query || combo.name.toLowerCase().includes(query))).map((combo) => {
     if (usesStructuredItemEntry) return `
-      <button class="item-tile item-suggestion combo-tile" data-combo="${combo.id}" ${state.billingReady ? 'disabled title="Final bill requested for this order"' : ''}>
+      <button class="item-tile item-suggestion combo-tile" data-combo="${combo.id}" ${itemEntryDisabled ? `disabled title="${itemEntryTitle}"` : ''}>
         <strong>${esc(combo.name)}</strong><span>${money(combo.price)}</span>
       </button>`;
     const matchingLines = state.cart.filter((line) => line.comboId === combo.id);
     const quantity = matchingLines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
     const stateClass = matchingLines.some((line) => line.sentToKitchen) ? "saved" : matchingLines.some((line) => line.savedLocally) ? "pending-save" : quantity > 0 ? "new-item" : "";
     return `
-      <button class="item-tile combo-tile ${quantity > 0 ? "selected" : ""} ${stateClass}" data-combo="${combo.id}" ${state.billingReady ? 'disabled title="Final bill requested for this order"' : ''}>
+      <button class="item-tile combo-tile ${quantity > 0 ? "selected" : ""} ${stateClass}" data-combo="${combo.id}" ${itemEntryDisabled ? `disabled title="${itemEntryTitle}"` : ''}>
         <strong>${esc(combo.name)}</strong>
         <span>${money(combo.price)}</span>
         ${quantity > 0 ? `<span class="tile-quantity-controls"><span data-combo-minus="${combo.id}" role="button">-</span><em>${quantity}</em><span data-combo-plus="${combo.id}" role="button">+</span></span>` : ""}
@@ -775,6 +807,7 @@ function resetParcelItemEntry() {
 
 function commitParcelDraft() {
   if (state.billingReady) return alert("Final bill has been requested for this order. Start a new customer check to add items.");
+  if (isDineIn() && !state.selectedTable) return alert("Select a table before adding items");
   const item = state.parcelDraftItem;
   const quantity = Math.max(Math.trunc(Number(parcelItemQuantity.value || 0)), 0);
   if (!item) return alert("Select an item from the suggestions first");
@@ -846,6 +879,9 @@ function renderCart() {
   if (state.billingReady) {
     kotStatus.textContent = "Final bill requested — this order is locked. Start a new customer check for additional items.";
     kotStatus.className = "success-message";
+  } else if (kotStatus.textContent.startsWith("Final bill requested —")) {
+    kotStatus.textContent = "";
+    kotStatus.className = "";
   }
   paymentAmount.value = amount(payableAmount());
 }
@@ -915,6 +951,7 @@ async function selectTable(tableId, options = {}) {
   state.orderId = null;
   state.linkedParcelMode = false;
   state.orderReference = null;
+  state.billingReady = false;
   state.dirty = false;
   state.kotSubmitted = false;
   refreshCartAndMenu();
@@ -1032,6 +1069,7 @@ function openEditSelectedItem() {
 
 function addItemToCart(menuItem, modifiers, options = {}) {
   if (state.billingReady) return alert("Final bill has been requested for this order. Start a new customer check to add items.");
+  if (isDineIn() && !state.selectedTable) return alert("Select a table before adding items");
   const modifierIds = modifiers.map((modifier) => modifier.id).sort((a, b) => a - b);
   const key = `item-${menuItem.id}-${modifierIds.join(".") || "none"}`;
   const unitPrice = Number(menuItem.price || 0) + modifiers.reduce((sum, modifier) => sum + Number(modifier.price_delta || 0), 0);
@@ -1122,6 +1160,22 @@ async function saveCurrentOrder(force = false) {
   // a submitted line can never be mistaken for a new line on the next save/KOT.
   await reloadCurrentOrderCart();
   return data;
+}
+
+async function fetchJson(url) {
+  const res = await fetch(url);
+  let data;
+  try {
+    data = await res.json();
+  } catch (_error) {
+    data = null;
+  }
+  if (!res.ok || data?.success === false) {
+    const message = data?.message || "Request failed";
+    alert(message);
+    throw new Error(message);
+  }
+  return data || {};
 }
 
 function renderItemNoteEditor() {
@@ -1218,7 +1272,8 @@ async function submitCurrentKot() {
     await loadOpenOrdersForCurrentContext(state.orderId);
     await reloadCurrentOrderCart();
     refreshCartAndMenu();
-    if (cashierDineLayout && new URLSearchParams(location.search).get("returnTo") === "billing") {
+    const returnsToBilling = cashierDineLayout && new URLSearchParams(location.search).get("returnTo") === "billing";
+    if (returnsToBilling || ["PARCEL", "PARTY"].includes(posMode)) {
       location.href = `/billing.html?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(state.orderId)}`;
       return;
     }
@@ -1227,9 +1282,6 @@ async function submitCurrentKot() {
       orderType.value = "DINE_IN";
       await reloadCurrentOrderCart();
       updateOrderTypeView();
-    } else if (["DINE_IN", "PARCEL", "PARTY"].includes(posMode)) {
-      location.href = `/billing.html?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(state.orderId)}`;
-      return;
     }
   }
   alert(data.message || "KOT submitted");
@@ -1282,10 +1334,20 @@ async function settleCurrentOrder(printBill = false) {
 
 async function requestFinalBillAndPrint() {
   if (!state.orderId) return alert("Save the order and submit its KOT first");
-  if (!await askPosConfirmation(`Print the final bill and mark ${state.selectedTable?.table_name || 'this table'} ready for billing?`, "Final bill")) return;
+  if (state.dirty) {
+    const saved = await saveCurrentOrder(true);
+    if (!saved) return;
+  }
+  const readiness = await fetchJson(`/orders/final-bill-readiness?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(state.orderId)}`);
+  const draftItemCount = Number(readiness.draftItemCount || 0);
+  let draftItemAction = null;
+  if (draftItemCount > 0) {
+    draftItemAction = await askFinalBillDraftDecision(draftItemCount);
+    if (draftItemAction === "CANCEL") return;
+  } else if (!await askPosConfirmation(`Print the final bill and mark ${state.selectedTable?.table_name || 'this table'} ready for billing?`, "Final bill")) return;
   finalBillPrintOrder.disabled = true;
   try {
-    const data = await postJson('/orders/final-bill', { orderId: state.orderId });
+    const data = await postJson('/orders/final-bill', { orderId: state.orderId, draftItemAction });
     state.orderDetailsCache.delete(Number(state.orderId));
     state.billingReady = true;
     state.dirty = false;
@@ -1415,6 +1477,7 @@ removeSelectedItem.addEventListener("click", removeSelectedCartItem);
 
 items.addEventListener("click", (event) => {
   if (state.billingReady) return alert("Final bill has been requested for this order. Start a new customer check to add items.");
+  if (isDineIn() && !state.selectedTable) return alert("Select a table before adding items");
   const target = event.target.closest("[data-item-plus], [data-item-minus]");
   if (!target) return;
   event.preventDefault();
@@ -1588,7 +1651,12 @@ saveOrder.addEventListener("click", () => saveCurrentOrder());
 submitKot.addEventListener("click", submitCurrentKot);
 settleOrder.addEventListener("click", settleCurrentOrder);
 settlePrintOrder?.addEventListener("click", () => settleCurrentOrder(true));
-finalBillPrintOrder?.addEventListener("click", requestFinalBillAndPrint);
+finalBillPrintOrder?.addEventListener("click", () => {
+  requestFinalBillAndPrint().catch((error) => {
+    alert(error?.message || "Unable to request the final bill. Please try again.");
+    finalBillPrintOrder.disabled = state.billingReady;
+  });
+});
 moveTableBtn.addEventListener("click", async () => {
   if (!isDineIn() || !state.selectedTable) return alert("Select a dine-in table first");
   const destinations = state.tables

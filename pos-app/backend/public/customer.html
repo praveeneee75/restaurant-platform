@@ -44,6 +44,14 @@
       <button id="refreshCustomers" class="secondary-btn">Refresh</button>
     </header>
 
+    <section id="crmExecutiveSummary" class="crm-executive-summary" aria-label="Customer executive summary"></section>
+
+    <section class="customer-search-panel">
+      <label>Find customers<input id="customerSearch" type="search" placeholder="Search by name, phone or email"></label>
+      <button id="searchCustomers" type="button">Search</button>
+      <button id="clearCustomerSearch" type="button" class="secondary-btn">Clear</button>
+    </section>
+
     <section class="crm-grid">
       <form class="editor-panel" id="customerForm">
         <input type="hidden" id="crmCustomerId">
@@ -54,20 +62,16 @@
         <label>Address<input id="crmAddress"></label>
         <button>Save Customer</button>
       </form>
-      <form class="editor-panel" id="loyaltySettingsForm">
-        <label>Spend amount per point<input id="loyaltyEarnAmount" type="number" step="0.01" min="1"></label>
-        <label>Value per point<input id="loyaltyPointValue" type="number" step="0.01" min="0.01"></label>
-        <button>Save Loyalty Settings</button>
-      </form>
     </section>
 
-    <section class="table-panel">
+    <section class="table-panel customer-directory-panel">
+      <div class="section-heading"><div><h2>Customer directory</h2><p id="customerSearchStatus">All active customers</p></div></div>
       <table><thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Points</th><th></th></tr></thead><tbody id="customersTable"></tbody></table>
     </section>
 
     <section class="crm-grid">
       <article class="report-card">
-        <h2 id="profileTitle">Select a customer</h2>
+        <p class="eyebrow">CUSTOMER 360</p><h2 id="profileTitle">Select a customer</h2>
         <div id="customerProfile"></div>
         <form id="customerNoteForm" class="note-form">
           <input id="customerNote" placeholder="Add note">

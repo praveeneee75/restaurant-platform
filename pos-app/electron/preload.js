@@ -5,5 +5,6 @@ contextBridge.exposeInMainWorld('posDesktop', Object.freeze({
   printHtml: (html) => ipcRenderer.invoke('pos:print-html', html),
   savePdf: (html, fileName) => ipcRenderer.invoke('pos:save-pdf', { html, fileName }),
   testPrinter: (printer) => ipcRenderer.invoke('pos:test-printer', printer || {}),
+  refreshLicense: () => ipcRenderer.invoke('pos:refresh-license'),
   startPrintWorker: (restaurantId) => ipcRenderer.invoke('pos:start-print-worker', String(restaurantId || ''))
 }));

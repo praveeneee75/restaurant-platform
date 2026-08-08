@@ -386,6 +386,64 @@ function calculateOrderTotal(db, orderId) {
   return calculateOrderPricing(db, orderId).payableSubtotal;
 }
 
+function syncLoyaltyProgramDiscount(db, orderId) {
+  if (!tableExists(db, 'loyalty_rules') || !tableExists(db, 'discounts')) return null;
+  db.prepare("DELETE FROM discounts WHERE order_id = ? AND type = 'LOYALTY_PROGRAM'").run(orderId);
+  const order = db.prepare('SELECT customer_id FROM orders WHERE id = ?').get(orderId);
+  if (!order?.customer_id) return null;
+  const today = localIsoDateOnly();
+  const rules = db.prepare(`
+    SELECT * FROM loyalty_rules
+    WHERE active = 1
+      AND (valid_from IS NULL OR valid_from <= ?)
+      AND (valid_to IS NULL OR valid_to >= ?)
+    ORDER BY priority ASC, id ASC
+  `).all(today, today);
+  if (!rules.length) return null;
+  const lines = db.prepare(`
+    SELECT oi.item_id, i.category_id, SUM(oi.quantity) quantity,
+           CASE WHEN SUM(oi.quantity) > 0 THEN SUM(oi.quantity * oi.price) / SUM(oi.quantity) ELSE 0 END unit_price
+    FROM order_items oi JOIN items i ON i.id = oi.item_id
+    WHERE oi.order_id = ?
+    GROUP BY oi.item_id, i.category_id
+  `).all(orderId);
+  const gross = calculateOrderPricing(db, orderId, false).payableSubtotal;
+  const history = db.prepare(`SELECT COUNT(*) visits, COALESCE(SUM(amount),0) spend FROM customer_visits WHERE customer_id = ?`).get(order.customer_id);
+  let best = null;
+  for (const rule of rules) {
+    let discount = 0;
+    const qualifying = lines.filter((line) => (!rule.qualifying_item_id || Number(line.item_id) === Number(rule.qualifying_item_id))
+      && (!rule.qualifying_category_id || Number(line.category_id) === Number(rule.qualifying_category_id)));
+    if (rule.rule_type === 'MILESTONE') {
+      const alreadyRedeemed = tableExists(db, 'loyalty_rule_redemptions') && db.prepare('SELECT id FROM loyalty_rule_redemptions WHERE loyalty_rule_id = ? AND customer_id = ? LIMIT 1').get(rule.id, order.customer_id);
+      if (alreadyRedeemed) continue;
+      if (Number(history?.visits || 0) < Number(rule.minimum_visits || 0) || Number(history?.spend || 0) < Number(rule.minimum_spend || 0)) continue;
+      discount = String(rule.discount_type).toUpperCase() === 'PERCENT' ? gross * Number(rule.discount_value || 0) / 100 : Number(rule.discount_value || 0);
+    } else {
+      const qualifyingQuantity = qualifying.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
+      const rewardItemId = Number(rule.reward_item_id || rule.qualifying_item_id || 0);
+      const rewardLine = lines.find((line) => Number(line.item_id) === rewardItemId);
+      if (!rewardLine) continue;
+      const required = Math.max(1, Number(rule.qualifying_quantity || 1));
+      const rewardQuantity = Math.max(1, Number(rule.reward_quantity || 1));
+      const rewardIsQualifying = qualifying.some((line) => Number(line.item_id) === rewardItemId);
+      const cycleQuantity = required + (rewardIsQualifying ? rewardQuantity : 0);
+      const applications = Math.min(Math.floor(qualifyingQuantity / cycleQuantity), Math.max(1, Number(rule.per_order_limit || 1)));
+      if (!applications) continue;
+      const rewardedQuantity = Math.min(Number(rewardLine.quantity || 0), applications * rewardQuantity);
+      const rewardAmount = rewardedQuantity * Number(rewardLine.unit_price || 0);
+      discount = String(rule.discount_type).toUpperCase() === 'PERCENT' ? rewardAmount * Number(rule.discount_value || 0) / 100 : applications * Number(rule.discount_value || 0);
+    }
+    discount = Math.max(0, Math.min(discount, gross));
+    if (discount > 0.005 && (!best || discount > best.discount)) best = { rule, discount };
+  }
+  if (!best) return null;
+  db.prepare(`INSERT INTO discounts (order_id, type, value, value_type, applied_by, promo_code)
+    VALUES (?, 'LOYALTY_PROGRAM', ?, 'FLAT', 'SYSTEM', ?)`)
+    .run(orderId, best.discount, `LOYALTY_RULE:${best.rule.id}`);
+  return { ruleId: best.rule.id, name: best.rule.name, discount: best.discount };
+}
+
 function getSettingNumber(db, key, fallback) {
   const row = db.prepare('SELECT value FROM system_config WHERE key = ?').get(key)
     || db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
@@ -6187,6 +6245,7 @@ app.post('/orders/save', (req, res) => {
       }
       total += safeDeliveryFee;
       db.prepare('UPDATE orders SET total_amount = ?, customer_id = COALESCE(?, customer_id), delivery_fee = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(total, isPositiveId(customerId) ? customerId : null, safeDeliveryFee, id);
+      syncLoyaltyProgramDiscount(db, id);
       if (DELIVERY_ORDER_TYPES.includes(selectedOrderType)) {
         if (isPositiveId(deliveryPartnerId) && !db.prepare('SELECT id FROM delivery_partners WHERE id = ? AND active = 1').get(deliveryPartnerId)) {
           throw new Error('Delivery partner not found');
@@ -6418,7 +6477,7 @@ app.get('/orders/invoices/:id', (req, res) => {
       FROM order_items oi LEFT JOIN items i ON i.id = oi.item_id
       WHERE oi.order_id = ? ORDER BY oi.id
     `).all(invoiceId);
-    const discounts = tableExists(db) ? db.prepare(`
+    const discounts = tableExists(db, 'discounts') ? db.prepare(`
       SELECT type, value, value_type, promo_code
       FROM discounts WHERE order_id = ? ORDER BY id
     `).all(invoiceId) : [];
@@ -6971,8 +7030,22 @@ app.post('/orders/cancel', (req, res) => {
   }
 });
 
+app.get('/orders/final-bill-readiness', (req, res) => {
+  const { restaurantId, orderId } = req.query;
+  if (!restaurantId || !isPositiveId(orderId)) return res.status(400).json({ success: false, message: 'Order required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const counts = db.prepare(`SELECT
+      COALESCE(SUM(CASE WHEN kot_id IS NULL THEN 1 ELSE 0 END),0) draftItemCount,
+      COALESCE(SUM(CASE WHEN kot_id IS NOT NULL THEN 1 ELSE 0 END),0) submittedItemCount
+      FROM order_items WHERE order_id = ?`).get(orderId);
+    res.json({ success: true, draftItemCount: Number(counts?.draftItemCount || 0), submittedItemCount: Number(counts?.submittedItemCount || 0) });
+  } catch (err) { sendError(res, err); }
+  finally { db.close(); }
+});
+
 app.post('/orders/final-bill', (req, res) => {
-  const { restaurantId, actor, orderId } = req.body;
+  const { restaurantId, actor, orderId, draftItemAction } = req.body;
   if (!restaurantId || !isPositiveId(orderId) || !canSell(actor?.role)) {
     return res.status(400).json({ success: false, message: 'Order and sales permission are required' });
   }
@@ -6987,13 +7060,27 @@ app.post('/orders/final-bill', (req, res) => {
     const pendingKotCount = Number(db.prepare('SELECT COUNT(*) AS total FROM order_items WHERE order_id = ? AND kot_id IS NULL').get(orderId)?.total || 0);
     let submittedKotReference = null;
     if (pendingKotCount > 0) {
-      db.transaction(() => {
-        promoteDraftOrderIdentity(db, actor, orderId);
-        const kotResult = createKotJobs(db, orderId);
-        submittedKotReference = kotResult?.kotReference || null;
-        deductInventoryForOrder(db, actor, orderId, 'KOT_SUBMIT');
-        writeAudit(db, actor, 'SUBMIT_KOT', 'ORDER', orderId, null, { source: 'FINAL_BILL_PRINT', kotReference: submittedKotReference });
-      })();
+      const action = String(draftItemAction || '').toUpperCase();
+      if (!['PROCEED', 'DISCARD'].includes(action)) {
+        return res.status(409).json({ success: false, code: 'DRAFT_ITEMS_REQUIRE_DECISION', draftItemCount: pendingKotCount, message: 'Saved items not submitted to KOT require Proceed, Discard, or Cancel.' });
+      }
+      if (action === 'DISCARD') {
+        db.transaction(() => {
+          const draftIds = db.prepare('SELECT id FROM order_items WHERE order_id = ? AND kot_id IS NULL').all(orderId).map((row) => Number(row.id));
+          if (draftIds.length) db.prepare(`DELETE FROM order_item_modifiers WHERE order_item_id IN (${draftIds.map(() => '?').join(',')})`).run(...draftIds);
+          db.prepare('DELETE FROM order_items WHERE order_id = ? AND kot_id IS NULL').run(orderId);
+          syncLoyaltyProgramDiscount(db, orderId);
+          writeAudit(db, actor, 'DISCARD', 'ORDER_DRAFT_ITEMS', orderId, { itemCount: pendingKotCount }, { source: 'FINAL_BILL_PRINT' });
+        })();
+      } else {
+        db.transaction(() => {
+          promoteDraftOrderIdentity(db, actor, orderId);
+          const kotResult = createKotJobs(db, orderId);
+          submittedKotReference = kotResult?.kotReference || null;
+          deductInventoryForOrder(db, actor, orderId, 'KOT_SUBMIT');
+          writeAudit(db, actor, 'SUBMIT_KOT', 'ORDER', orderId, null, { source: 'FINAL_BILL_PRINT', kotReference: submittedKotReference });
+        })();
+      }
     }
     const promotedOrder = db.prepare('SELECT order_reference FROM orders WHERE id = ?').get(orderId);
     order.order_reference = promotedOrder?.order_reference || order.order_reference;
@@ -7272,6 +7359,12 @@ app.post('/orders/settle', async (req, res) => {
       `).run(payable, taxAmount, serviceCharge, paid, invoiceNo, isInvoice === false ? 0 : 1, linkedCustomerId || null, redeem, loyaltyDiscount, orderId);
       resolveOrderNotifications(db, orderId);
       if (linkedCustomerId) {
+        const appliedLoyaltyRules = db.prepare("SELECT promo_code, value FROM discounts WHERE order_id = ? AND type = 'LOYALTY_PROGRAM'").all(orderId);
+        for (const applied of appliedLoyaltyRules) {
+          const ruleId = Number(String(applied.promo_code || '').split(':')[1] || 0);
+          if (ruleId) db.prepare('INSERT OR IGNORE INTO loyalty_rule_redemptions (loyalty_rule_id, customer_id, order_id, discount_amount) VALUES (?, ?, ?, ?)')
+            .run(ruleId, linkedCustomerId, orderId, Number(applied.value || 0));
+        }
         db.prepare('INSERT INTO customer_visits (customer_id, order_id, amount) VALUES (?, ?, ?)')
           .run(linkedCustomerId, orderId, paid);
         const earnAmount = getSettingNumber(db, 'loyalty_earn_amount', 100);
@@ -8142,6 +8235,85 @@ app.post('/loyalty/settings', (req, res) => {
     db.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('loyalty_point_value', ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP").run(String(Number(pointValue)));
     const newValue = db.prepare("SELECT * FROM settings WHERE key IN ('loyalty_earn_amount', 'loyalty_point_value')").all();
     writeAudit(db, actor, 'UPDATE', 'LOYALTY_SETTINGS', null, oldValue, newValue);
+    res.json({ success: true });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/loyalty/rules', (req, res) => {
+  const { restaurantId } = req.query;
+  if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const rules = db.prepare(`
+      SELECT lr.*, qi.name qualifying_item_name, qc.name qualifying_category_name, ri.name reward_item_name
+      FROM loyalty_rules lr
+      LEFT JOIN items qi ON qi.id = lr.qualifying_item_id
+      LEFT JOIN categories qc ON qc.id = lr.qualifying_category_id
+      LEFT JOIN items ri ON ri.id = lr.reward_item_id
+      ORDER BY lr.priority, lr.id
+    `).all();
+    res.json({ success: true, rules });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/loyalty/rules/save', (req, res) => {
+  const { restaurantId, actor, id, name, ruleType, qualifyingItemId, qualifyingCategoryId, rewardItemId,
+    qualifyingQuantity, rewardQuantity, discountType, discountValue, minimumVisits, minimumSpend,
+    validFrom, validTo, priority, perOrderLimit, active } = req.body;
+  const cleanType = String(ruleType || '').toUpperCase();
+  const cleanDiscountType = String(discountType || '').toUpperCase();
+  if (!restaurantId || !hasText(name) || !['PRODUCT_REWARD', 'MILESTONE'].includes(cleanType)
+    || !['PERCENT', 'FLAT'].includes(cleanDiscountType) || !isPositiveNumber(discountValue)) {
+    return res.status(400).json({ success: false, message: 'Enter a valid loyalty rule' });
+  }
+  if (cleanDiscountType === 'PERCENT' && Number(discountValue) > 100) return res.status(400).json({ success: false, message: 'Percentage cannot exceed 100' });
+  if (cleanType === 'PRODUCT_REWARD' && !isPositiveId(qualifyingItemId) && !isPositiveId(qualifyingCategoryId)) {
+    return res.status(400).json({ success: false, message: 'Choose a qualifying item or category' });
+  }
+  if (cleanType === 'PRODUCT_REWARD' && !isPositiveId(rewardItemId) && !isPositiveId(qualifyingItemId)) {
+    return res.status(400).json({ success: false, message: 'Choose a reward item' });
+  }
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'admin.settings.manage', 'Settings permission required');
+    const values = [normaliseText(name), cleanType, isPositiveId(qualifyingItemId) ? Number(qualifyingItemId) : null,
+      isPositiveId(qualifyingCategoryId) ? Number(qualifyingCategoryId) : null, isPositiveId(rewardItemId) ? Number(rewardItemId) : null,
+      Math.max(1, Number(qualifyingQuantity || 1)), Math.max(1, Number(rewardQuantity || 1)), cleanDiscountType,
+      Number(discountValue), Math.max(0, Number(minimumVisits || 0)), Math.max(0, Number(minimumSpend || 0)),
+      hasText(validFrom) ? validFrom : null, hasText(validTo) ? validTo : null, Math.max(1, Number(priority || 100)),
+      Math.max(1, Number(perOrderLimit || 1)), active === false ? 0 : 1];
+    const oldValue = isPositiveId(id) ? db.prepare('SELECT * FROM loyalty_rules WHERE id = ?').get(id) : null;
+    const result = isPositiveId(id)
+      ? db.prepare(`UPDATE loyalty_rules SET name=?, rule_type=?, qualifying_item_id=?, qualifying_category_id=?, reward_item_id=?, qualifying_quantity=?, reward_quantity=?, discount_type=?, discount_value=?, minimum_visits=?, minimum_spend=?, valid_from=?, valid_to=?, priority=?, per_order_limit=?, active=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(...values, Number(id))
+      : db.prepare(`INSERT INTO loyalty_rules (name, rule_type, qualifying_item_id, qualifying_category_id, reward_item_id, qualifying_quantity, reward_quantity, discount_type, discount_value, minimum_visits, minimum_spend, valid_from, valid_to, priority, per_order_limit, active) VALUES (${values.map(() => '?').join(',')})`).run(...values);
+    const ruleId = isPositiveId(id) ? Number(id) : Number(result.lastInsertRowid);
+    const newValue = db.prepare('SELECT * FROM loyalty_rules WHERE id = ?').get(ruleId);
+    writeAudit(db, actor, oldValue ? 'UPDATE' : 'CREATE', 'LOYALTY_RULE', ruleId, oldValue, newValue);
+    res.json({ success: true, rule: newValue });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/loyalty/rules/delete', (req, res) => {
+  const { restaurantId, actor, id } = req.body;
+  if (!restaurantId || !isPositiveId(id)) return res.status(400).json({ success: false, message: 'Rule required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'admin.settings.manage', 'Settings permission required');
+    const oldValue = db.prepare('SELECT * FROM loyalty_rules WHERE id = ?').get(id);
+    db.prepare('UPDATE loyalty_rules SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+    writeAudit(db, actor, 'DELETE', 'LOYALTY_RULE', Number(id), oldValue, { ...oldValue, active: 0 });
     res.json({ success: true });
   } catch (err) {
     sendError(res, err);

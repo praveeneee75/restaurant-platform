@@ -128,12 +128,16 @@ async function showSubmittedOrder(orderId) {
   const pricing = d.pricing || {};
   const grossTotal = Number(pricing.payableSubtotal ?? listedTotal);
   const persistedAdjustments = d.adjustments || {};
+  const displayedDiscount = Math.max(Number(persistedAdjustments.discountAmount || 0), 0);
+  const displayedServiceCharge = Math.max(Number(persistedAdjustments.serviceCharge || 0), 0);
+  const displayedRoundOff = Number(persistedAdjustments.roundOff || 0);
   const submittedTotal = Number(persistedAdjustments.netPayable ?? grossTotal);
   const persistedPromo = (d.discounts || []).find((discount) => String(discount.type || '').toUpperCase() === 'PROMO');
   const persistedManual = (d.discounts || []).find((discount) => String(discount.type || '').toUpperCase() === 'MANUAL');
   const enabled = (key) => !['0', 0, false, 'false'].includes(state.billingSettings[key] ?? '1');
   const cashierUrl = `/pos-live.html?mode=DINE_IN&layout=cashier&returnTo=billing&restaurantId=${encodeURIComponent(restaurantId)}&tableId=${encodeURIComponent(d.order.table_id || '')}&orderId=${encodeURIComponent(d.order.id)}`;
-  billingDetail.innerHTML = `<header><div><h2>${esc(d.order.order_reference || `Order ${d.order.id}`)}</h2><p>${esc(d.order.table_no || d.order.order_type)} · ${esc(d.customer?.name || 'No customer')}</p></div><div class="billing-detail-actions"><button type="button" class="secondary-btn" id="billingSplitBill">Split Bill</button><a class="primary-btn" href="${cashierUrl}">Open POS</a></div></header><div class="bill-lines">${kotSections || '<p>No submitted items</p>'}</div><div class="bill-total"><span>Payable total (including tax)</span><strong>${money(submittedTotal)}</strong></div><div class="billing-payment"><h3>Payment</h3><p class="billing-hint">Only KOT-submitted items are billed.</p><select id="billingPaymentMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></select><input id="billingPaymentAmount" type="number" step="0.01" value="${submittedTotal.toFixed(2)}"><div class="billing-settlement-actions">${enabled('billing_show_settle_print') ? `<button id="settlePrintBilling" class="primary-btn" data-action-shortcut="F12" data-settlement-mode="PRINT" data-settle-order="${d.order.id}">Settle &amp; Print</button>` : ''}${enabled('billing_show_settle_invoice') ? `<button id="settleBilling" class="primary-btn" data-action-shortcut="F11" data-settlement-mode="INVOICE" data-settle-order="${d.order.id}">Settle &amp; Create Invoice</button>` : ''}${enabled('billing_show_settle_only') ? `<button id="settleWithoutInvoice" class="primary-btn" data-settlement-mode="NO_INVOICE" data-settle-order="${d.order.id}">Settle</button>` : ''}</div></div>`;
+  const adjustmentRows = `${displayedDiscount > 0 ? `<div class="bill-adjustment-row discount"><span>Discount applied</span><strong>-${money(displayedDiscount)}</strong></div>` : ''}${displayedServiceCharge > 0 ? `<div class="bill-adjustment-row"><span>Service charge</span><strong>${money(displayedServiceCharge)}</strong></div>` : ''}${Math.abs(displayedRoundOff) >= 0.005 ? `<div class="bill-adjustment-row"><span>Round off</span><strong>${displayedRoundOff < 0 ? '-' : ''}${money(Math.abs(displayedRoundOff))}</strong></div>` : ''}`;
+  billingDetail.innerHTML = `<header><div><h2>${esc(d.order.order_reference || `Order ${d.order.id}`)}</h2><p>${esc(d.order.table_no || d.order.order_type)} · ${esc(d.customer?.name || 'No customer')}</p></div><div class="billing-detail-actions"><button type="button" class="secondary-btn" id="billingSplitBill">Split Bill</button><a class="primary-btn" href="${cashierUrl}">Open POS</a></div></header><div class="bill-lines">${kotSections || '<p>No submitted items</p>'}</div><div class="billing-total-breakdown"><div class="bill-adjustment-row"><span>Subtotal (including tax)</span><strong>${money(grossTotal)}</strong></div>${adjustmentRows}<div class="bill-total"><span>Payable total (including tax)</span><strong>${money(submittedTotal)}</strong></div></div><div class="billing-payment"><h3>Payment</h3><p class="billing-hint">Only KOT-submitted items are billed.</p><select id="billingPaymentMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></select><input id="billingPaymentAmount" type="number" step="0.01" value="${submittedTotal.toFixed(2)}"><div class="billing-settlement-actions">${enabled('billing_show_settle_print') ? `<button id="settlePrintBilling" class="primary-btn" data-action-shortcut="F12" data-settlement-mode="PRINT" data-settle-order="${d.order.id}">Settle &amp; Print</button>` : ''}${enabled('billing_show_settle_invoice') ? `<button id="settleBilling" class="primary-btn" data-action-shortcut="F11" data-settlement-mode="INVOICE" data-settle-order="${d.order.id}">Settle &amp; Create Invoice</button>` : ''}${enabled('billing_show_settle_only') ? `<button id="settleWithoutInvoice" class="primary-btn" data-settlement-mode="NO_INVOICE" data-settle-order="${d.order.id}">Settle</button>` : ''}</div></div>`;
   document.getElementById('billingSplitBill')?.addEventListener('click', () => openBillingSplit(d, items));
   const adjustments = document.createElement('section');
   adjustments.className = 'billing-adjustments';
@@ -156,7 +160,7 @@ async function showSubmittedOrder(orderId) {
   if (persistedPromo || persistedManual) {
     const parts = [];
     if (persistedPromo) parts.push(`Promocode ${persistedPromo.promo_code || ''} applied`);
-    if (persistedManual) parts.push(`cash discount ${money(persistedManual.amount || 0)} applied`);
+    if (persistedManual) parts.push(`discount ${money(displayedDiscount)} applied`);
     adjustmentStatus.textContent = `${parts.join('; ')}. Payable: ${money(submittedTotal)}.`;
   }
   if (document.getElementById('settlePrintBilling')) document.getElementById('settlePrintBilling').hidden = !canSettleAndPrint;
@@ -170,6 +174,7 @@ async function showSubmittedOrder(orderId) {
       if (!response.ok || result.success === false) throw Error(result.message || 'Promocode could not be applied');
       document.getElementById('billingPaymentAmount').value = Number(result.netPayable).toFixed(2);
       status.textContent = `Promocode applied. Discount: ${money(result.discountAmount)}.`;
+      await showSubmittedOrder(d.order.id);
     } catch (error) { status.textContent = error.message; }
   });
   document.getElementById('applyBillingCashDiscount')?.addEventListener('click', async () => {
@@ -182,6 +187,7 @@ async function showSubmittedOrder(orderId) {
       if (!response.ok || result.success === false) throw Error(result.message || 'Cash discount could not be applied');
       document.getElementById('billingPaymentAmount').value = Number(result.netPayable).toFixed(2);
       status.textContent = `Cash discount applied: ${money(result.discountAmount)}.`;
+      await showSubmittedOrder(d.order.id);
     } catch (error) { status.textContent = error.message; }
   });
   document.getElementById('applyBillingPercentageDiscount')?.addEventListener('click', async () => {
@@ -194,6 +200,7 @@ async function showSubmittedOrder(orderId) {
       if (!response.ok || result.success === false) throw Error(result.message || 'Percentage discount could not be applied');
       document.getElementById('billingPaymentAmount').value = Number(result.netPayable).toFixed(2);
       status.textContent = `Percentage discount applied: ${value.toFixed(2)}%.`;
+      await showSubmittedOrder(d.order.id);
     } catch (error) { status.textContent = error.message; }
   });
   document.getElementById('applyBillingRedeemPoints')?.addEventListener('click', () => {
