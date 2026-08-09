@@ -3927,7 +3927,7 @@ app.get('/admin/bootstrap', (req, res) => {
         ORDER BY c.name
       `).all(),
       items: db.prepare(`
-        SELECT i.id, i.name, i.category_id, i.price, i.alpha_short_code, i.numeric_short_code, i.tax_mode,
+        SELECT i.id, printf('%04d', i.id) AS item_code, i.name, i.category_id, i.price, i.alpha_short_code, i.numeric_short_code, i.tax_mode,
                i.is_veg, i.allow_dine_in, i.allow_parcel, i.allow_party_order, i.active,
                i.image_url, i.online_description, i.online_enabled,
                c.name AS category_name, k.name AS kitchen_name
@@ -4257,6 +4257,7 @@ app.get('/reports/profit-dashboard', (req, res) => {
   if (!restaurantId || !fromDate || !toDate || !['OWNER', 'MANAGER_2'].includes(role)) {
     return res.status(403).json({ success: false, message: 'OWNER or MANAGER_2 required' });
   }
+  try { validateReportDateRange(fromDate, toDate); } catch (error) { return res.status(400).json({ success:false, message:error.message }); }
   const db = openRestaurantDatabase(restaurantId);
   try {
     res.json({ success: true, fromDate, toDate, ...profitDashboard(db, fromDate, toDate) });
@@ -4272,6 +4273,7 @@ app.get('/reports/profit/export', (req, res) => {
   if (!restaurantId || !fromDate || !toDate || !['OWNER', 'MANAGER_2'].includes(role)) {
     return res.status(403).json({ success: false, message: 'OWNER or MANAGER_2 required' });
   }
+  try { validateReportDateRange(fromDate, toDate); } catch (error) { return res.status(400).json({ success:false, message:error.message }); }
   const db = openRestaurantDatabase(restaurantId);
   try {
     const report = profitDashboard(db, fromDate, toDate);
@@ -6129,7 +6131,7 @@ app.post('/orders/save', (req, res) => {
     requireClockInIfConfigured(db, actor);
     const saved = db.transaction(() => {
       let total = 0;
-      const isLinkedFulfillment = Boolean(orderId && linkedFulfillment);
+      const isLinkedFulfillment = Boolean(linkedFulfillment && isPositiveId(tableId));
       const safeDeliveryFee = selectedOrderType === 'DELIVERY' ? Number(deliveryFee || 0) : 0;
       const safeTableId = selectedOrderType === 'DINE_IN' || isLinkedFulfillment ? tableId : null;
       const safeTableName = selectedOrderType === 'DINE_IN' || isLinkedFulfillment ? tableName : selectedOrderType.replace(/_/g, ' ');
@@ -7444,6 +7446,7 @@ app.post('/orders/settle', async (req, res) => {
         serviceCharge,
         roundOff,
         payable,
+        taxAmount,
         taxName: getConfigValue(db, 'tax_name', 'GST'),
         taxRate: getNumberConfig(db, 'tax_rate', getConfigValue(db, 'gstin', '') ? 5 : 0),
         paymentMode: payments?.[0]?.method || payments?.[0]?.paymentMethod || 'CASH',
@@ -7929,8 +7932,13 @@ app.post('/kds/item-status', (req, res) => {
     if (!canUseKdsWithDb(db, actor?.role)) {
       return res.status(403).json({ success: false, message: 'KDS access denied' });
     }
-    const oldValue = db.prepare('SELECT * FROM order_items WHERE id = ?').get(orderItemId);
+    const oldValue = db.prepare(`SELECT oi.*, o.status AS order_status, o.payment_status
+      FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.id = ?`).get(orderItemId);
     if (!oldValue) throw new Error('Order item not found');
+    if (!oldValue.kot_id) return res.status(409).json({ success:false, message:'Only KOT-submitted items can be updated in KDS' });
+    if (String(oldValue.payment_status || '').toUpperCase() === 'PAID' || String(oldValue.order_status || '').toUpperCase() === 'PAID') {
+      return res.status(409).json({ success:false, message:'This order is already settled and cannot be changed in KDS' });
+    }
     const timestampColumn = kdsTimestampColumn(status);
     if (timestampColumn) {
       db.prepare(`UPDATE order_items SET status = ?, ${timestampColumn} = CURRENT_TIMESTAMP WHERE id = ?`).run(status, orderItemId);
@@ -7992,17 +8000,30 @@ app.post('/kds/order-status', (req, res) => {
     if (!canUseKdsWithDb(db, actor?.role)) {
       return res.status(403).json({ success: false, message: 'KDS access denied' });
     }
-    const oldValue = db.prepare('SELECT id, order_id, status, kitchen_id FROM order_items WHERE order_id = ?').all(orderId);
+    const order = db.prepare('SELECT id, status, payment_status FROM orders WHERE id = ?').get(orderId);
+    if (!order) throw new Error('Order not found');
+    if (String(order.payment_status || '').toUpperCase() === 'PAID' || String(order.status || '').toUpperCase() === 'PAID') {
+      return res.status(409).json({ success:false, message:'This order is already settled and cannot be changed in KDS' });
+    }
+    const oldValue = db.prepare('SELECT id, order_id, status, kitchen_id FROM order_items WHERE order_id = ? AND kot_id IS NOT NULL').all(orderId);
+    if (!oldValue.length) return res.status(409).json({ success:false, message:'Only orders submitted to KOT can be updated in KDS' });
     const timestampColumn = kdsTimestampColumn(status);
     const params = [status === 'PENDING' ? 'PLACED' : status, orderId];
     let sql = 'UPDATE order_items SET status = ?';
     if (timestampColumn) sql += `, ${timestampColumn} = CURRENT_TIMESTAMP`;
-    sql += ' WHERE order_id = ?';
+    sql += ' WHERE order_id = ? AND kot_id IS NOT NULL';
     if (isPositiveId(kitchenId)) {
       sql += ' AND kitchen_id = ?';
       params.push(kitchenId);
     }
     db.prepare(sql).run(...params);
+    if (status === 'CANCELLED') {
+      const cancelParams = [orderId];
+      let cancelSql = 'UPDATE order_items SET price = 0 WHERE order_id = ? AND kot_id IS NOT NULL';
+      if (isPositiveId(kitchenId)) { cancelSql += ' AND kitchen_id = ?'; cancelParams.push(kitchenId); }
+      db.prepare(cancelSql).run(...cancelParams);
+      db.prepare(`UPDATE orders SET total_amount = COALESCE((SELECT SUM(quantity * price) FROM order_items WHERE order_id = orders.id),0), updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(orderId);
+    }
     const newValue = db.prepare('SELECT id, order_id, status, kitchen_id FROM order_items WHERE order_id = ?').all(orderId);
     writeAudit(db, actor, 'UPDATE', 'KDS_ORDER', orderId, oldValue, newValue);
     trackModuleUsage(restaurantId, 'KDS', 'ORDER_STATUS_UPDATED').catch(() => {});
@@ -8322,23 +8343,31 @@ app.post('/loyalty/rules/delete', (req, res) => {
   }
 });
 
+function validateReportDateRange(from, to) {
+  const valid = /^\d{4}-\d{2}-\d{2}$/;
+  if (!valid.test(String(from || '')) || !valid.test(String(to || ''))) throw new Error('Valid From date and To date are required');
+  if (String(to) < String(from)) throw new Error('To date cannot be earlier than From date');
+}
+
 function buildExecutiveSalesSummary(db, from, to, invoiceOnly) {
   const invoiceClause = invoiceOnly ? ' AND COALESCE(o.is_invoice,0)=1' : '';
   const paidOrders = safeAll(db, `SELECT o.* FROM orders o WHERE o.payment_status='PAID'
     AND DATE(COALESCE(o.settled_at,o.updated_at,o.created_at)) BETWEEN DATE(?) AND DATE(?)${invoiceClause}`, [from, to]);
   const paid = paidOrders.reduce((summary, order) => {
     const pricing = calculateOrderPricing(db, order.id);
-    const gross = Number(pricing.payableSubtotal || 0);
+    let gross = Number(pricing.payableSubtotal || 0);
     const discounts = safeAll(db, 'SELECT value, value_type FROM discounts WHERE order_id=?', [order.id]);
-    const manualDiscount = discounts.reduce((sum, discount) => sum + (
-      String(discount.value_type || '').toUpperCase() === 'PERCENT'
-        ? gross * Number(discount.value || 0) / 100
-        : Number(discount.value || 0)
-    ), 0);
     const loyaltyDiscount = Number(order.loyalty_discount || 0);
     const serviceCharge = Number(order.service_charge_amount || 0);
     const deliveryCharge = Number(order.delivery_fee || 0);
-    const grandTotal = Number(order.total_amount || 0);
+    const paymentTotal = Number(safeGet(db, 'SELECT COALESCE(SUM(amount),0) total FROM payments WHERE order_id=?', [order.id]).total || 0);
+    const grandTotal = Number(order.total_amount || 0) > 0 ? Number(order.total_amount) : paymentTotal;
+    if (gross <= 0 && grandTotal > 0) {
+      const flat = discounts.filter((row) => String(row.value_type || '').toUpperCase() !== 'PERCENT').reduce((sum,row)=>sum+Number(row.value || 0),0);
+      const percent = Math.min(discounts.filter((row) => String(row.value_type || '').toUpperCase() === 'PERCENT').reduce((sum,row)=>sum+Number(row.value || 0),0), 99.99) / 100;
+      gross = Math.max((grandTotal - serviceCharge - deliveryCharge + flat + loyaltyDiscount) / (1 - percent), 0);
+    }
+    const manualDiscount = discounts.reduce((sum, discount) => sum + (String(discount.value_type || '').toUpperCase() === 'PERCENT' ? gross * Number(discount.value || 0) / 100 : Number(discount.value || 0)), 0);
     const preRoundTotal = Math.max(gross + serviceCharge + deliveryCharge - manualDiscount - loyaltyDiscount, 0);
     summary.count += 1;
     summary.sub_total += gross;
@@ -8357,7 +8386,7 @@ function buildExecutiveSalesSummary(db, from, to, invoiceOnly) {
   return {
     paid,
     cancelled: safeGet(db, `SELECT COUNT(*) count, COALESCE(SUM(total_amount),0) amount FROM orders o WHERE UPPER(status)='CANCELLED' AND DATE(COALESCE(cancelled_at,updated_at,created_at)) BETWEEN DATE(?) AND DATE(?)${invoiceClause}`, [from,to]),
-    orderTypes: safeAll(db, `SELECT REPLACE(UPPER(order_type),'_',' ') label, COUNT(*) count, COALESCE(SUM(total_amount),0) total FROM orders o WHERE payment_status='PAID' AND DATE(COALESCE(settled_at,updated_at,created_at)) BETWEEN DATE(?) AND DATE(?)${invoiceClause} GROUP BY order_type ORDER BY total DESC`, [from,to]),
+    orderTypes: safeAll(db, `SELECT REPLACE(UPPER(order_type),'_',' ') label, COUNT(*) count, COALESCE(SUM(CASE WHEN COALESCE(total_amount,0)>0 THEN total_amount ELSE COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.order_id=o.id),0) END),0) total FROM orders o WHERE payment_status='PAID' AND DATE(COALESCE(settled_at,updated_at,created_at)) BETWEEN DATE(?) AND DATE(?)${invoiceClause} GROUP BY order_type ORDER BY total DESC`, [from,to]),
     payments: safeAll(db, `SELECT UPPER(COALESCE(p.payment_mode,'OTHER')) label, COUNT(DISTINCT p.order_id) count, COALESCE(SUM(p.amount),0) total FROM payments p JOIN orders o ON o.id=p.order_id WHERE o.payment_status='PAID' AND DATE(COALESCE(o.settled_at,o.updated_at,o.created_at)) BETWEEN DATE(?) AND DATE(?)${invoiceClause} GROUP BY p.payment_mode ORDER BY total DESC`, [from,to]),
     complimentary: safeGet(db, `SELECT COUNT(*) count, COALESCE(SUM(total_amount),0) amount FROM orders o WHERE UPPER(status)='COMPLIMENTARY' AND DATE(COALESCE(settled_at,updated_at,created_at)) BETWEEN DATE(?) AND DATE(?)${invoiceClause}`, [from,to]),
     returns: safeGet(db, `SELECT COUNT(*) count, COALESCE(SUM(r.amount),0) amount FROM refunds r JOIN orders o ON o.id=r.order_id WHERE DATE(r.created_at) BETWEEN DATE(?) AND DATE(?)${invoiceClause}`, [from,to]),
@@ -8373,6 +8402,7 @@ app.get('/reports/dashboard', (req, res) => {
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
   const from = fromDate || localIsoDateOnly();
   const to = toDate || from;
+  try { validateReportDateRange(from, to); } catch (error) { return res.status(400).json({ success:false, message:error.message }); }
 
   const db = openRestaurantDatabase(restaurantId);
   try {
@@ -8447,6 +8477,7 @@ app.get('/reports/sales-detail', (req, res) => {
   if (!restaurantId) return res.status(400).json({ success:false, message:'restaurantId required' });
   const from = fromDate || localIsoDateOnly();
   const to = toDate || from;
+  try { validateReportDateRange(from, to); } catch (error) { return res.status(400).json({ success:false, message:error.message }); }
   const db = openRestaurantDatabase(restaurantId);
   try {
     if (role) requirePermission(db, role, canRole(db, role, 'reports.view_all') ? 'reports.view_all' : 'reports.view_invoice_only', 'Reports permission required');
@@ -8456,7 +8487,7 @@ app.get('/reports/sales-detail', (req, res) => {
         o.order_type, COALESCE(o.total_amount,0) AS total_amount,
         COALESCE(o.tax_amount,0) AS tax_amount,
         COALESCE(o.service_charge_amount,0) AS additional_charge,
-        COALESCE((SELECT SUM(CASE WHEN UPPER(d.value_type)='PERCENT' THEN COALESCE(o.total_amount,0)*d.value/100.0 ELSE d.value END) FROM discounts d WHERE d.order_id=o.id),0) AS discount_amount,
+        COALESCE((SELECT SUM(CASE WHEN UPPER(d.value_type)='PERCENT' THEN COALESCE((SELECT SUM(oi.quantity*oi.price) FROM order_items oi WHERE oi.order_id=o.id AND oi.kot_id IS NOT NULL),0)*d.value/100.0 ELSE d.value END) FROM discounts d WHERE d.order_id=o.id),0) AS discount_amount,
         MAX(COALESCE(o.total_amount,0)-COALESCE(o.tax_amount,0)-COALESCE(o.service_charge_amount,0),0) AS net_amount,
         COALESCE(u.name, u.username, '') AS assigned_to
       FROM orders o LEFT JOIN users u ON u.id=o.created_by
@@ -8472,6 +8503,7 @@ app.get('/reports/operational-summary', (req, res) => {
   if (!restaurantId) return res.status(400).json({ success:false, message:'restaurantId required' });
   const from = fromDate || localIsoDateOnly();
   const to = toDate || from;
+  try { validateReportDateRange(from, to); } catch (error) { return res.status(400).json({ success:false, message:error.message }); }
   const db = openRestaurantDatabase(restaurantId);
   try {
     if (role) requirePermission(db, role, canRole(db, role, 'reports.view_all') ? 'reports.view_all' : 'reports.view_invoice_only', 'Reports permission required');
@@ -8489,7 +8521,7 @@ app.get('/reports/operational-summary', (req, res) => {
           SELECT o.id order_id, c.name category, i.name item, printf('ITM-%04d', i.id) code,
             oi.quantity, COALESCE(oi.price,i.price,0)*oi.quantity line_total,
             COALESCE(o.tax_amount,0) order_tax, COALESCE(o.total_amount,0) order_total,
-            COALESCE((SELECT SUM(CASE WHEN UPPER(d.value_type)='PERCENT' THEN COALESCE(o.total_amount,0)*d.value/100.0 ELSE d.value END) FROM discounts d WHERE d.order_id=o.id),0) order_discount
+            COALESCE((SELECT SUM(CASE WHEN UPPER(d.value_type)='PERCENT' THEN COALESCE((SELECT SUM(doi.quantity*doi.price) FROM order_items doi WHERE doi.order_id=o.id AND doi.kot_id IS NOT NULL),0)*d.value/100.0 ELSE d.value END) FROM discounts d WHERE d.order_id=o.id),0) order_discount
           FROM orders o JOIN order_items oi ON oi.order_id=o.id JOIN items i ON i.id=oi.item_id JOIN categories c ON c.id=i.category_id
           WHERE o.payment_status='PAID' AND oi.kot_id IS NOT NULL AND ${dateFilter}
         ), totals AS (SELECT *, SUM(line_total) OVER (PARTITION BY order_id) order_lines FROM paid_lines)
@@ -8533,7 +8565,7 @@ app.get('/reports/operational-summary', (req, res) => {
       columns = [['order_reference','Order'],['settled_at','Date'],['order_type','Order type'],['net_amount','Net amount'],['discount_amount','Discount'],['additional_charge','Additional charge'],['tax_amount','Tax'],['total_amount','Total'],['assigned_to','Assigned to']];
       rows = db.prepare(`SELECT COALESCE(o.order_reference,CAST(o.id AS TEXT)) order_reference, COALESCE(o.settled_at,o.updated_at,o.created_at) settled_at,
         o.order_type, ROUND(MAX(COALESCE(o.total_amount,0)-COALESCE(o.tax_amount,0)-COALESCE(o.service_charge_amount,0),0),2) net_amount,
-        COALESCE((SELECT SUM(CASE WHEN UPPER(d.value_type)='PERCENT' THEN COALESCE(o.total_amount,0)*d.value/100.0 ELSE d.value END) FROM discounts d WHERE d.order_id=o.id),0) discount_amount,
+        COALESCE((SELECT SUM(CASE WHEN UPPER(d.value_type)='PERCENT' THEN COALESCE((SELECT SUM(oi.quantity*oi.price) FROM order_items oi WHERE oi.order_id=o.id AND oi.kot_id IS NOT NULL),0)*d.value/100.0 ELSE d.value END) FROM discounts d WHERE d.order_id=o.id),0) discount_amount,
         COALESCE(o.service_charge_amount,0) additional_charge, COALESCE(o.tax_amount,0) tax_amount, COALESCE(o.total_amount,0) total_amount,
         COALESCE(u.name,u.username,'-') assigned_to FROM orders o LEFT JOIN users u ON u.id=o.created_by
         WHERE o.payment_status='PAID' AND ${dateFilter} ORDER BY COALESCE(o.settled_at,o.updated_at,o.created_at) DESC`).all(from, to);
@@ -8547,6 +8579,7 @@ app.post('/reports/print', (req, res) => {
   if (!restaurantId || !['sales', 'items'].includes(type)) return res.status(400).json({ success:false, message:'Sales Summary or Item Summary is required' });
   const from = fromDate || localIsoDateOnly();
   const to = toDate || from;
+  try { validateReportDateRange(from, to); } catch (error) { return res.status(400).json({ success:false, message:error.message }); }
   const db = openRestaurantDatabase(restaurantId);
   try {
     requirePermission(db, actor?.role, canRole(db, actor?.role, 'reports.view_all') ? 'reports.view_all' : 'reports.view_invoice_only', 'Reports permission required');

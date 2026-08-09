@@ -322,7 +322,7 @@ function renderAdmin() {
     });
   });
   if (itemFilterCount) itemFilterCount.textContent = `${visibleItems.length}/${items.length}`;
-  itemsTable.innerHTML = visibleItems.map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.alpha_short_code || "—")}</td><td>${esc(i.numeric_short_code || "—")}</td><td>${esc(String(i.tax_mode || "INCLUSIVE").toUpperCase() === "EXCLUSIVE" ? "Exclusive" : "Inclusive")}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td>${[['allow_dine_in','Dine In'],['allow_parcel','Parcel'],['allow_party_order','Party'],['online_enabled','Online'],['active','Active']].map(([field,label]) => `<td><label class="availability-toggle" title="${label}"><input type="checkbox" data-item-channel="${field}" data-item-id="${i.id}" ${Number(i[field] ?? 1) === 1 ? 'checked' : ''}><span>${label}</span></label></td>`).join('')}<td>${actions("item", i.id)}</td></tr>`).join("");
+  itemsTable.innerHTML = visibleItems.map((i) => `<tr><td><strong>${esc(i.item_code || String(i.id).padStart(4, "0"))}</strong></td><td>${esc(i.name)}</td><td>${esc(i.alpha_short_code || "—")}</td><td>${esc(String(i.tax_mode || "INCLUSIVE").toUpperCase() === "EXCLUSIVE" ? "Exclusive" : "Inclusive")}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td>${[['allow_dine_in','Dine In'],['allow_parcel','Parcel'],['allow_party_order','Party'],['online_enabled','Online'],['active','Active']].map(([field,label]) => `<td><label class="availability-toggle" title="${label}"><input type="checkbox" data-item-channel="${field}" data-item-id="${i.id}" ${Number(i[field] ?? 1) === 1 ? 'checked' : ''}><span>${label}</span></label></td>`).join('')}<td>${actions("item", i.id)}</td></tr>`).join("");
   usersTable.innerHTML = users.map((u) => {
     const canUnlock = isFutureDate(u.locked_until) || u.unlock_requested_at || Number(u.failed_login_attempts || 0) > 0;
     return `<tr>
@@ -566,9 +566,11 @@ async function showInvoiceDetail(invoiceId) {
   const discounts = data.discounts || [];
   const payments = data.payments || [];
   const invoiceGrossTotal = items.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
-  const discountTotal = discounts.reduce((sum, row) => sum + (String(row.value_type || '').toUpperCase() === 'PERCENT'
+  const manualDiscountTotal = discounts.reduce((sum, row) => sum + (String(row.value_type || '').toUpperCase() === 'PERCENT'
     ? invoiceGrossTotal * Number(row.value || 0) / 100
     : Number(row.value || 0)), 0);
+  const rewardDiscount = Math.max(Number(invoice.loyalty_discount || 0), 0);
+  const discountTotal = manualDiscountTotal + rewardDiscount;
   const refundedAmount = Number(invoice.refunded_amount || 0);
   const remainingPaid = Math.max(Number(invoice.paid_amount || 0), 0);
   const hasInvoice = Boolean(invoice.is_invoice && invoice.invoice_no);
@@ -577,8 +579,14 @@ async function showInvoiceDetail(invoiceId) {
   if (discountTotal > 0) {
     const discountSummary = document.createElement('div');
     discountSummary.className = 'invoice-discount-summary';
-    const label = discounts.length === 1 && discounts[0].promo_code ? `Discount applied (${esc(discounts[0].promo_code)})` : 'Discount applied';
-    discountSummary.innerHTML = `<div class="invoice-detail-total"><span>${label}</span><strong>-${money(discountTotal)}</strong></div>`;
+    const details = discounts.map((discount) => {
+      const type = String(discount.type || '').toUpperCase();
+      const amount = String(discount.value_type || '').toUpperCase() === 'PERCENT' ? invoiceGrossTotal * Number(discount.value || 0) / 100 : Number(discount.value || 0);
+      const label = type === 'PROMO' ? `Promocode${discount.promo_code ? ` · ${discount.promo_code}` : ''}` : type === 'LOYALTY_PROGRAM' ? `Loyalty program${discount.promo_code ? ` · ${discount.promo_code}` : ''}` : type === 'MANUAL' ? `Manual ${String(discount.value_type || '').toUpperCase() === 'PERCENT' ? 'percentage' : 'cash'} discount` : (type.replaceAll('_', ' ').toLowerCase() || 'Discount');
+      return `<div class="invoice-detail-total"><span>${esc(label)}</span><strong>-${money(amount)}</strong></div>`;
+    }).join('');
+    const reward = rewardDiscount > 0 ? `<div class="invoice-detail-total"><span>Reward points${Number(invoice.redeemed_points || 0) ? ` · ${Number(invoice.redeemed_points)} points` : ''}</span><strong>-${money(rewardDiscount)}</strong></div>` : '';
+    discountSummary.innerHTML = details + reward;
     const invoiceTotalRows = panel.querySelectorAll('.invoice-detail-total');
     invoiceTotalRows[invoiceTotalRows.length - 1]?.before(discountSummary);
   }
@@ -865,11 +873,11 @@ function editItem(id) {
   if (!row) return;
   showView("items");
   itemId.value = row.id;
+  itemCode.value = row.item_code || String(row.id).padStart(4, "0");
   itemName.value = row.name || "";
   itemCategory.value = row.category_id || "";
   itemPrice.value = row.price ?? 0;
   itemAlphaShortCode.value = row.alpha_short_code || "";
-  itemNumericShortCode.value = row.numeric_short_code || "";
   itemTaxMode.value = String(row.tax_mode || "INCLUSIVE").toUpperCase() === "EXCLUSIVE" ? "EXCLUSIVE" : "INCLUSIVE";
   itemOnlineDescription.value = row.online_description || "";
   itemImageUrl.value = row.image_url || "";
@@ -1572,19 +1580,17 @@ itemForm.addEventListener("submit", async (e) => {
   const currentId = String(itemId.value || "");
   const name = itemName.value.trim().toLowerCase();
   const alpha = itemAlphaShortCode.value.trim().replace(/\s+/g, " ").toUpperCase();
-  const numeric = itemNumericShortCode.value.trim();
   const duplicate = (state.admin.items || []).find((item) => String(item.id) !== currentId && (
     String(item.name || "").trim().toLowerCase() === name
     || (alpha && String(item.alpha_short_code || "").trim().toUpperCase() === alpha)
-    || (numeric && String(item.numeric_short_code || "").trim() === numeric)
   ));
   if (duplicate) {
-    const field = String(duplicate.name || "").trim().toLowerCase() === name ? "item name" : (alpha && String(duplicate.alpha_short_code || "").trim().toUpperCase() === alpha ? "alphabetic short code" : "numeric short code");
+    const field = String(duplicate.name || "").trim().toLowerCase() === name ? "item name" : "alphabetic short code";
     itemValidationStatus.textContent = `This ${field} is already used by ${duplicate.name}. Enter a unique value.`;
     return;
   }
   try {
-    await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, alphaShortCode: itemAlphaShortCode.value, numericShortCode: itemNumericShortCode.value, taxMode: itemTaxMode.value, onlineDescription: itemOnlineDescription.value, imageUrl: itemImageUrl.value, isVeg: itemVeg.checked, allowDineIn: itemDineIn.checked, allowParcel: itemParcel.checked, allowPartyOrder: itemPartyOrder.checked, onlineEnabled: itemOnlineEnabled.checked, active: itemActive.checked });
+    await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, alphaShortCode: itemAlphaShortCode.value, numericShortCode: "", taxMode: itemTaxMode.value, onlineDescription: itemOnlineDescription.value, imageUrl: itemImageUrl.value, isVeg: itemVeg.checked, allowDineIn: itemDineIn.checked, allowParcel: itemParcel.checked, allowPartyOrder: itemPartyOrder.checked, onlineEnabled: itemOnlineEnabled.checked, active: itemActive.checked });
     itemForm.reset(); itemDineIn.checked = true; itemParcel.checked = true; itemPartyOrder.checked = true; itemActive.checked = true; itemOnlineEnabled.checked = true; itemTaxMode.value = "INCLUSIVE";
     await loadAdmin();
   } catch (error) {
@@ -1894,8 +1900,14 @@ document.addEventListener("click", async (event) => {
   }
 });
 
+function validateReportDates() {
+  if (!reportFrom.value || !reportTo.value) throw new Error("Select both From date and To date");
+  if (reportTo.value < reportFrom.value) throw new Error("To date cannot be earlier than From date");
+}
+
 loadReports.addEventListener("click", async () => {
   try {
+    validateReportDates();
     reportStatus.textContent = "Loading reports...";
     const data = activeReportType === "sales"
       ? await fetchJson(`/reports/dashboard?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`)
@@ -1925,6 +1937,7 @@ printOperationalReport.addEventListener("click", async () => {
     return;
   }
   try {
+    validateReportDates();
     printOperationalReport.disabled = true;
     reportStatus.textContent = 'Queuing report to the configured BILL printer...';
     const queued = await postJson('/reports/print', {
@@ -1964,6 +1977,7 @@ expenseForm.addEventListener("submit", async (event) => {
 });
 
 async function refreshProfitDashboard() {
+  validateReportDates();
   if (!["OWNER", "MANAGER_2"].includes(actor.role)) {
     profitDashboard.textContent = "OWNER or MANAGER_2 required";
     return;
@@ -1981,6 +1995,7 @@ async function refreshProfitDashboard() {
 
 loadProfitDashboard.addEventListener("click", () => refreshProfitDashboard().catch((err) => alert(err.message)));
 exportProfitCsv.addEventListener("click", () => {
+  try { validateReportDates(); } catch (error) { alert(error.message); return; }
   window.location.href = `/reports/profit/export?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${reportFrom.value}&toDate=${reportTo.value}`;
 });
 document.getElementById("loadReservations").addEventListener("click", () => loadReservations().catch((err) => alert(err.message)));
@@ -2023,6 +2038,8 @@ loadInventoryReports.addEventListener("click", async () => {
 
 reportFrom.value ||= todayIso();
 reportTo.value ||= todayIso();
+reportTo.min = reportFrom.value;
+reportFrom.addEventListener("change", () => { reportTo.min = reportFrom.value; });
 reservationFrom.value ||= todayIso();
 reservationTo.value ||= todayIso();
 expenseDate.value ||= todayIso();

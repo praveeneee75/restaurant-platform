@@ -79,10 +79,12 @@ for (const paperWidth of [58, 80]) {
   assert.strictEqual(visualBill.physicalWidth, paperWidth === 80 ? 42 : 32);
   const titleRow = visualBill.rows.find((row) => row.text === 'FINAL BILL');
   assert(titleRow && titleRow.alignment === 'CENTER', `${paperWidth} mm bill title must be exactly centered`);
-  for (const label of ['Taxable value', 'CGST @ 2.50%', 'SGST @ 2.50%', 'GRAND TOTAL']) {
+  for (const label of ['Total (tax', 'Tax included in', 'CGST @ 2.50%', 'SGST @ 2.50%', 'GRAND TOTAL']) {
     const row = visualBill.rows.find((candidate) => candidate.text.startsWith(label));
     assert(row && row.alignment === 'LEFT' && /INR\s+[0-9]+\.[0-9]{2}$/.test(row.text), `${paperWidth} mm ${label} must use full width with a right-aligned amount`);
   }
+  assert(visualBill.text.includes('inclusive)'), `${paperWidth} mm inclusive total label must remain readable when wrapped`);
+  assert(visualBill.text.includes('included'), `${paperWidth} mm tax rows must say tax is included`);
 }
 
 const mixedItems = [
@@ -94,6 +96,10 @@ const inclusiveMixed = buildThermalPreview({ ...mixedBase, payload: { ...mixedBa
 const exclusiveMixed = buildThermalPreview({ ...mixedBase, payload: { ...mixedBase.payload, taxDisplayMode: 'EXCLUSIVE' } }, (items) => items);
 assert(inclusiveMixed.text.includes('105.00'), 'Inclusive print mode must gross-up tax-exclusive item prices');
 assert(exclusiveMixed.text.includes('100.00'), 'Exclusive print mode must remove tax from tax-inclusive item prices');
+assert(inclusiveMixed.text.includes('Total (tax inclusive)'), 'Inclusive bills must identify the item total as tax inclusive');
+assert(inclusiveMixed.text.includes('Total GST included'), 'Inclusive bills must state that GST is included in item prices');
+assert(exclusiveMixed.text.includes('Subtotal (tax exclusive)'), 'Exclusive bills must identify the item subtotal as tax exclusive');
+assert(exclusiveMixed.text.includes('Taxable value'), 'Exclusive bills must show the taxable value before GST');
 
 const itemReport = buildThermalPreview({ type:'REPORT', paper_width_mm:80, payload:{ reportType:'items', fromDate:'2026-08-04', restaurantProfile:{gstin:'33ABCDE1234F1Z5'}, rows:[{category:'Biryani',item:'Chicken Biryani',quantity:5,total_sales:1095.25},{category:'Biryani',item:'Mutton Biryani',quantity:2,total_sales:520},{category:'Breads',item:'Chapati',quantity:6,total_sales:210}] } }, (items)=>items);
 for (const marker of ['GSTIN:33ABCDE1234F1Z5','Item Report','Category / Item','Biryani','Chicken Biryani','Mutton Biryani','Breads','Chapati','Sub Total','Total']) assert(itemReport.text.includes(marker), `item report missing ${marker}`);

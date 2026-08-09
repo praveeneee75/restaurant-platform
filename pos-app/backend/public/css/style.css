@@ -1100,6 +1100,10 @@ button:hover,
   .parcel-bill-header, .parcel-cart-row { grid-template-columns:minmax(120px,1.5fr) minmax(100px,1fr) 45px 75px 85px; font-size:12px; }
 }
 
+.table-tile { display:grid; grid-template-rows:auto auto; align-content:center; justify-items:center; gap:6px; text-align:center; }
+.table-tile strong,
+.table-tile span { display:block; width:100%; margin:0; white-space:normal; overflow-wrap:anywhere; }
+
 @media (max-width: 800px) {
   .pos-mode-parcel .parcel-intake { order: 1; width: 100%; }
   .pos-mode-parcel .pos-menu { order: 2; }
@@ -1292,7 +1296,7 @@ button:hover,
   .app-home-nav a,
   .app-home-nav button { font-size: clamp(11px, .85vw, 14px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .table-tile strong,
-  .table-tile span { display: inline; margin: 0; }
+  .table-tile span { display:block; margin:0; white-space:normal; text-overflow:clip; }
 }
 
 .middle-cart-items {

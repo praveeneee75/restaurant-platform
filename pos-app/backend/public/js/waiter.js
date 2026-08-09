@@ -151,7 +151,7 @@ function renderOrderControls() {
     ? `${state.fulfillmentType === "TAKEAWAY" ? "Parcel" : "Dine In"} check selected${state.customer?.name ? ` for ${state.customer.name}` : ""}`
     : `${state.fulfillmentType === "TAKEAWAY" ? "New parcel" : "New customer"} check selected`;
   continueWaiterMenu.disabled = !state.selectedTable || !state.lock;
-  parcelWaiterCheck.hidden = !state.orderId || state.fulfillmentType !== "DINE_IN";
+  parcelWaiterCheck.hidden = !state.selectedTable || state.fulfillmentType !== "DINE_IN";
   const hasUnsentItems = state.cart.some((item) => !item.sentToKitchen);
   submitWaiterKot.disabled = state.billingReady || !state.selectedTable || !state.lock || !hasUnsentItems;
   finalWaiterCheck.hidden = state.settings.showFinalBillPrintDineIn === false;
@@ -320,6 +320,7 @@ async function submitKot() {
 
 async function requestFinalCheck() {
   if (!state.orderId || state.cart.some((item) => !item.sentToKitchen)) await saveOrder();
+  if (!await requestFinalCheckReview()) return;
   const readiness = await fetchJson(`/orders/final-bill-readiness?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(state.orderId)}`);
   let draftItemAction = null;
   if (Number(readiness.draftItemCount || 0) > 0) {
@@ -333,6 +334,33 @@ async function requestFinalCheck() {
   const message = result.message;
   await returnToTables();
   waiterStatus.textContent = message;
+}
+
+async function requestFinalCheckReview() {
+  const open = await fetchJson(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(state.orderId)}`);
+  const allItems = open.items || [];
+  const groups = [
+    ["Dine In", allItems.filter((item) => String(item.fulfillment_type || "DINE_IN").toUpperCase() !== "TAKEAWAY")],
+    ["Parcel", allItems.filter((item) => String(item.fulfillment_type || "DINE_IN").toUpperCase() === "TAKEAWAY")]
+  ].filter(([, items]) => items.length);
+  finalCheckReviewItems.innerHTML = groups.map(([label, items]) => {
+    const total = items.reduce((sum, item) => sum + taxInclusiveUnitPrice(item) * Number(item.quantity || 0), 0);
+    return `<section class="final-check-review-group"><h3>${esc(label)}</h3>${items.map((item) => `<div class="final-check-review-line"><span>${Number(item.quantity || 0)} × ${esc(item.name)}${item.notes ? `<small> · ${esc(item.notes)}</small>` : ""}</span><strong>INR ${money(taxInclusiveUnitPrice(item) * Number(item.quantity || 0))}</strong></div>`).join("")}<div class="final-check-review-total">${esc(label)} total: INR ${money(total)}</div></section>`;
+  }).join("") || '<p>No items are available to review.</p>';
+  return new Promise((resolve) => {
+    const finish = (confirmed) => {
+      backFinalCheckReview.onclick = null;
+      confirmFinalCheckReview.onclick = null;
+      finalCheckReviewDialog.oncancel = null;
+      finalCheckReviewDialog.close();
+      resolve(confirmed);
+    };
+    backFinalCheckReview.onclick = () => finish(false);
+    confirmFinalCheckReview.onclick = () => finish(true);
+    finalCheckReviewDialog.oncancel = (event) => { event.preventDefault(); finish(false); };
+    finalCheckReviewDialog.showModal();
+    backFinalCheckReview.focus();
+  });
 }
 
 function requestFinalBillDraftDecision(draftItemCount) {
@@ -390,7 +418,16 @@ async function startNewWaiterCheck() {
 
 async function startParcelWaiterCheck() {
   if (!state.selectedTable) throw new Error("Select a table first");
-  if (!state.orderId || state.fulfillmentType !== "DINE_IN") throw new Error("Select an existing Dine In customer check before adding its parcel check");
+  if (state.fulfillmentType !== "DINE_IN") throw new Error("Return to the Dine In check before opening another parcel check");
+  if (!state.orderId || state.billingReady) {
+    const locked = await postJson("/orders/lock", { tableId: state.selectedTable.id });
+    state.lock = locked.lock;
+    state.orderId = null;
+    state.customer = null;
+    state.cart = [];
+    state.latestUpdatedAt = null;
+    state.billingReady = false;
+  }
   state.fulfillmentType = "TAKEAWAY";
   state.cart = state.cart.filter((item) => item.fulfillmentType === "TAKEAWAY");
   renderAll();

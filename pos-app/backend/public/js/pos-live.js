@@ -1706,17 +1706,26 @@ parcelCheckBtn.addEventListener("click", async () => {
   if (posMode !== "DINE_IN") return alert("Use the current POS mode for this order");
   if (!state.selectedTable) return alert("Select the customer's table first");
   if (state.cart.length && state.dirty && !state.billingReady) await saveCurrentOrder();
-  if (!state.orderId) return alert("Add and save the dine-in order before opening its parcel check");
+  const startsNewParcelCheck = !state.orderId || state.billingReady;
   state.parcelTableId = state.selectedTable.id;
   state.linkedParcelMode = true;
+  if (startsNewParcelCheck) {
+    state.orderId = null;
+    state.orderReference = null;
+    state.billingReady = false;
+    state.customer = null;
+    state.kotSubmitted = false;
+    state.reviewBaselineQuantities = {};
+  }
   state.cart = [];
   state.selectedCartKey = null;
   state.dirty = false;
-  customerPhone.value = state.customer?.phone || "";
-  customerName.value = state.customer?.name || "";
+  customerPhone.value = startsNewParcelCheck ? "" : (state.customer?.phone || "");
+  customerName.value = startsNewParcelCheck ? "" : (state.customer?.name || "");
   orderType.value = "TAKEAWAY";
-  await reloadCurrentOrderCart();
-  kotStatus.textContent = "Parcel items for this dine-in order";
+  if (state.orderId) await reloadCurrentOrderCart();
+  else renderCart();
+  kotStatus.textContent = startsNewParcelCheck ? "New parcel customer check started for this table" : "Parcel items for this dine-in order";
   updateOrderTypeView();
 });
 closeSplitBillModal.addEventListener("click", () => {

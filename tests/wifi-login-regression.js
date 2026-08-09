@@ -62,7 +62,8 @@ const { PREFERRED_POS_PORT, findAvailablePort } = require(path.join(root, 'pos-a
   assert.match(waiter, /class="review-bottom-actions"[\s\S]*class="transfer-panel"[\s\S]*class="actions"/, 'mobile Review must group transfer and order actions into one bottom control area');
   assert.match(waiterCss, /\.cart-panel\.mobile-active \.review-bottom-actions \{ position:fixed;[\s\S]*bottom:0/, 'mobile Review transfer and order actions must remain anchored to the bottom safe area');
   assert.match(waiterCss, /\.customer-controls \{ grid-template-columns:minmax\(0,1fr\) auto; align-items:end; \}/, 'mobile Review customer fields and action buttons must share aligned rows');
-  assert.match(waiterJs, /parcelWaiterCheck\.hidden = !state\.orderId \|\| state\.fulfillmentType !== "DINE_IN"/, 'captain parcel must only be shown for an existing Dine In customer check');
+  assert.match(waiterJs, /parcelWaiterCheck\.hidden = !state\.selectedTable \|\| state\.fulfillmentType !== "DINE_IN"/, 'captain parcel must be available for a selected table even when its earlier customer check is final-bill locked');
+  assert.match(waiterJs, /if \(!state\.orderId \|\| state\.billingReady\) \{[\s\S]*state\.orderId = null;[\s\S]*state\.billingReady = false;/, 'captain parcel must start an independent check instead of inheriting a final-bill lock');
   assert.match(waiterJs, /const user = userFromMobileParams\(\) \|\| JSON\.parse/, 'the current authenticated mobile session must override stale waiter-page storage');
   assert.match(waiterJs, /waiterOrderSelectorLabel\.hidden = state\.openOrders\.length <= 1/, 'the customer-check dropdown must only appear when multiple checks require a choice');
   assert.match(waiterJs, /state\.openOrders\.length === 1[\s\S]*loadWaiterOrder\(onlyOrderId\)/, 'a single existing customer check must be selected automatically');

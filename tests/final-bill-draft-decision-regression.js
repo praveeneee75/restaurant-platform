@@ -68,12 +68,21 @@ async function main() {
   const proceeded = await ok('GET', `/orders/open?restaurantId=${restaurantId}&orderId=${proceedOrder}`);
   if (proceeded.items.length !== 2 || proceeded.items.some((item) => !item.kot_id) || Number(proceeded.order.billing_ready) !== 1) throw new Error('Proceed did not submit the draft and lock the complete order');
 
+  const newParcel = await ok('POST', '/orders/save', { restaurantId, actor, orderType:'TAKEAWAY', linkedFulfillment:true,
+    tableId:tables[0].id, tableName:tables[0].table_name, items:[{ itemId:items[0].id, quantity:1, modifiers:[] }] });
+  if (Number(newParcel.orderId) === Number(proceedOrder)) throw new Error('new parcel customer reused the final-bill-locked check');
+  await ok('POST', '/orders/submit-kot', { restaurantId, actor, orderId:newParcel.orderId, fulfillmentType:'TAKEAWAY' });
+  const parcelOpen = await ok('GET', `/orders/open?restaurantId=${restaurantId}&orderId=${newParcel.orderId}`);
+  if (Number(parcelOpen.order.billing_ready) !== 0 || parcelOpen.order.table_no !== tables[0].table_name || !parcelOpen.items.every((item)=>item.kot_id && item.fulfillment_type === 'TAKEAWAY')) {
+    throw new Error('independent parcel check on a final-bill table was not submitted correctly');
+  }
+
   const discardOrder = await mixedOrder(tables[1], items[0], items[1]);
   await ok('POST', '/orders/final-bill', { restaurantId, actor, orderId: discardOrder, draftItemAction: 'DISCARD' });
   const discarded = await ok('GET', `/orders/open?restaurantId=${restaurantId}&orderId=${discardOrder}`);
   if (discarded.items.length !== 1 || discarded.items.some((item) => !item.kot_id) || Number(discarded.order.billing_ready) !== 1) throw new Error('Discard did not remove only the unsent draft and lock the submitted order');
 
-  console.log('Final Bill draft decision regression passed: readiness, mandatory choice, Proceed and Discard.');
+  console.log('Final Bill regression passed: readiness, Proceed, Discard, and independent table parcel KOT after final bill.');
 }
 
 main().then(() => process.exit(0)).catch((error) => { console.error(error.stack || error.message); process.exit(1); });
