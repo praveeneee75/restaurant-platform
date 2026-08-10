@@ -71,6 +71,7 @@ async function login() {
     }
 
     localStorage.setItem("user", JSON.stringify(data.user));
+    localStorage.setItem("lastUsername", username);
 
     if (data.forcePasswordChange) {
       window.location.href = "/change-pin.html";
@@ -120,5 +121,7 @@ document.getElementById("requestUnlockButton").addEventListener("click", request
 document.getElementById("pin").addEventListener("keydown", (event) => {
   if (event.key === "Enter") login();
 });
+
+document.getElementById("username").value = localStorage.getItem("lastUsername") || "";
 
 syncActivationStatus();

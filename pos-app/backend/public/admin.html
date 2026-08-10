@@ -27,6 +27,7 @@
         <button type="button" class="admin-category-btn" data-nav-category="rewards">Reward Management</button>
         <button type="button" class="admin-category-btn" data-nav-category="business">Business</button>
         <button type="button" class="admin-category-btn" data-nav-category="printing">Printer Configuration</button>
+        <button type="button" class="admin-category-btn" data-nav-category="kds">KDS</button>
         <button type="button" class="admin-category-btn" data-nav-category="settings">Settings</button>
         <button type="button" class="admin-category-btn" data-nav-category="reports">Reports</button>
         <button type="button" class="admin-category-btn" data-nav-category="links">Quick Links</button>
@@ -80,6 +81,11 @@
         <button class="nav-btn" data-view="printers">Printers</button>
         <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="kot">KOT Configuration</button>
         <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="bill-print">Bill Configuration</button>
+      </div>
+
+      <div class="nav-group" data-nav-group="kds" hidden>
+        <p class="nav-group-title">KDS</p>
+        <button class="nav-btn" data-view="settings" data-settings-section="kds">Business Day Cleanup</button>
       </div>
 
       <div class="nav-group" data-nav-group="settings" hidden>
@@ -609,6 +615,13 @@
             <label>Preview paper width<select id="settingKotPreviewPaperWidth"><option value="58">58 mm</option><option value="80">80 mm</option></select></label>
             <div class="print-preview-actions"><button type="button" class="secondary-btn" id="testKotLayoutPrint">Test Print</button><button type="button" class="secondary-btn" id="saveKotLayoutPdf">Save as PDF</button></div>
             <div id="kotTemplatePreview" class="bill-template-preview" aria-label="KOT template preview"></div>
+          </article>
+
+          <article class="settings-section" data-settings-panel="kds" hidden>
+            <h3>KDS Business Day Cleanup</h3>
+            <p class="settings-help">At the first POS login of a new business day, settled KOTs can be removed from the KDS display after the POS has been offline for the configured period. This archives KDS display entries only; orders, settlements, payments and invoices are never changed.</p>
+            <label class="check-row"><input id="settingKdsClearSettledOnNewBusinessDay" type="checkbox"> Clear settled KDS orders on a new business day</label>
+            <label>Minimum POS offline time before cleanup (hours)<input id="settingKdsOfflineClearHours" type="number" min="1" max="168" step="1" value="8"></label>
           </article>
 
           <article class="settings-section" data-settings-panel="reward-points" hidden>

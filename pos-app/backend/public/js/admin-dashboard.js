@@ -1046,6 +1046,8 @@ function renderSettings() {
   setChecked(settingRequireManagerPinForRefund, settings.require_manager_pin_for_refund);
   setChecked(settingRequireManagerPinForVoid, settings.require_manager_pin_for_void);
   setChecked(settingRequireClockInBeforeOrder, settings.require_clock_in_before_order);
+  setChecked(settingKdsClearSettledOnNewBusinessDay, settings.kds_clear_settled_on_new_business_day);
+  settingKdsOfflineClearHours.value = settings.kds_offline_clear_hours || '8';
   const legacyFinalBillVisibility = settings.pos_show_final_bill_print === undefined ? true : settings.pos_show_final_bill_print;
   setChecked(settingPosShowFinalBillPrintDineIn, settings.pos_show_final_bill_print_dine_in ?? legacyFinalBillVisibility);
   setChecked(settingPosShowFinalBillPrintParcel, settings.pos_show_final_bill_print_parcel ?? legacyFinalBillVisibility);
@@ -1169,6 +1171,8 @@ function collectSettings() {
     require_manager_pin_for_refund: checkedValue(settingRequireManagerPinForRefund),
     require_manager_pin_for_void: checkedValue(settingRequireManagerPinForVoid),
     require_clock_in_before_order: checkedValue(settingRequireClockInBeforeOrder),
+    kds_clear_settled_on_new_business_day: checkedValue(settingKdsClearSettledOnNewBusinessDay),
+    kds_offline_clear_hours: settingKdsOfflineClearHours.value || '8',
     pos_show_final_bill_print_dine_in: checkedValue(settingPosShowFinalBillPrintDineIn),
     pos_show_final_bill_print_parcel: checkedValue(settingPosShowFinalBillPrintParcel),
     pos_show_final_bill_print_party: checkedValue(settingPosShowFinalBillPrintParty),
@@ -1266,6 +1270,7 @@ const SETTINGS_KEYS_BY_SECTION = {
   billing: ["invoice_prefix", "invoice_reset_frequency", "show_tax_on_bill", "tax_name", "tax_rate", "sac_code", "show_qr_on_bill", "qr_require_table_pin", "qr_session_minutes", "qr_ordering_enabled", "qr_pending_order_limit", "upi_id", "service_charge_enabled", "service_charge_percent", "round_off_enabled", "billing_show_promocode", "billing_show_reward_points", "billing_show_cash_discount", "billing_show_percentage_discount", "billing_show_settle_print", "billing_show_settle_invoice", "billing_show_settle_only"],
   "bill-print": ["bill_template", "bill_print_contact", "bill_print_kot_references", "bill_compact_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text", "bill_tax_display_dine_in", "bill_tax_display_parcel", "bill_tax_display_party", ...BILL_LINE_OPTIONS.map(([key])=>`bill_line_${key}`), "bill_invoice_number_format", "bill_left_margin_dots", "bill_trailing_feed_lines", "bill_cut_mode", "bill_print_width_58", "bill_print_width_80", "bill_font_type", "bill_font_size", "bill_line_spacing_dots", "bill_details_layout", ...Object.keys(flatPrintStyles('bill'))],
   kot: ["auto_print_kot", "print_kot_on_save", "print_kot_on_submit", "allow_kot_reprint", "kot_header_text", "kot_footer_text", "kot_template", "kot_print_table", "kot_print_customer", "kot_print_kitchen", "kot_compact_spacing", "kot_left_margin_dots", "kot_trailing_feed_lines", "kot_cut_mode", "kot_print_width_58", "kot_print_width_80", "kot_font_type", "kot_font_size", "kot_line_spacing_dots", ...Object.keys(flatPrintStyles('kot'))],
+  kds: ["kds_clear_settled_on_new_business_day", "kds_offline_clear_hours"],
   online: ["mobile_app_enabled", "online_order_enabled", "online_storefront_slug", "online_theme", "online_primary_color", "online_accent_color", "online_logo_path", "online_payment_methods", "online_require_otp", "online_allow_loyalty_credit", "online_delivery_enabled", "online_takeaway_enabled", "online_min_order_amount"]
 };
 
@@ -1280,6 +1285,15 @@ function clearSettingsFieldError(input) {
 }
 
 function validateSettingsSection(section) {
+  if (section === "kds") {
+    const hours = Number(settingKdsOfflineClearHours.value);
+    if (!Number.isInteger(hours) || hours < 1 || hours > 168) {
+      settingsStatus.textContent = "KDS offline time must be a whole number between 1 and 168 hours";
+      settingKdsOfflineClearHours.focus();
+      return false;
+    }
+    return true;
+  }
   if (section !== "profile") return true;
   const checks = [
     [settingGstin, (value) => !value || /^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z0-9]Z[A-Z0-9]$/.test(value.toUpperCase()), "GSTIN must be a valid 15-character registration number"],
@@ -1318,6 +1332,7 @@ function showSettingsSection(section = "profile") {
     "loyalty-program": "Loyalty Program",
     pos: "POS Behaviour",
     kot: "Kitchen / KOT",
+    kds: "KDS Business Day Cleanup",
     "bill-print": "Bill Configuration",
     online: "Online Ordering"
   };

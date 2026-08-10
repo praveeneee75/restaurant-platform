@@ -15,6 +15,7 @@ const posJs = read('pos-app/backend/public/js/pos-live.js');
 const customerJs = read('pos-app/backend/public/js/customer.js');
 const preload = read('pos-app/electron/preload.js');
 const electron = read('pos-app/electron/main.js');
+const loginJs = read('pos-app/backend/public/js/login.js');
 
 const cases = [
   [adminJs.includes('await window.appConfirm(`Refund ${money(amount)}') && adminJs.includes('amount > remainingPaid') && !adminJs.includes('window.confirm(`Refund'), 'invoice refund uses focus-safe confirmation and the remaining refundable balance'],
@@ -26,7 +27,7 @@ const cases = [
   [schema.includes('CREATE TABLE IF NOT EXISTS loyalty_rules') && schema.includes('CREATE TABLE IF NOT EXISTS loyalty_rule_redemptions') && adminHtml.includes('id="saveLoyaltyRule"') && adminJs.includes('async function loadLoyaltyRules()'), 'Loyalty Program provides persisted rule management rather than design guidance'],
   [adminJs.includes('(state.admin?.items || [])') && adminJs.includes('(state.admin?.categories || [])') && !adminJs.includes('const itemOptions = (state.items || [])'), 'loyalty product and category selectors use the populated Admin bootstrap state'],
   [server.includes('function syncLoyaltyProgramDiscount') && server.includes("type = 'LOYALTY_PROGRAM'") && server.includes("syncLoyaltyProgramDiscount(db, id)") && server.includes('INSERT OR IGNORE INTO loyalty_rule_redemptions'), 'eligible loyalty benefits apply automatically and milestone use is recorded at settlement'],
-  [waiterHtml.includes('id="cancelOrderDialog"') && waiterJs.includes('requestCancellationPin()') && waiterJs.includes('forcePin: true') && server.includes("app.post('/orders/cancel'"), 'submitted mobile KOT cancellation uses an in-app six-digit PIN dialog and the audited cancellation API'],
+  [waiterHtml.includes('id="cancelOrderDialog"') && waiterJs.includes('requestCancellationPin()') && waiterJs.includes('forcePin: true') && server.includes("UPPER(role) IN ('OWNER', 'ADMIN', 'MANAGER', 'MANAGER_1', 'MANAGER_2')") && !server.includes("configure the six-digit cancellation PIN first"), 'submitted mobile KOT cancellation uses an owner or manager login PIN rather than the unrelated invoice-reprint PIN'],
   [waiterJs.includes('const customerDraft = { phone: waiterCustomerPhone.value, name: waiterCustomerName.value };') && waiterJs.includes('waiterCustomerPhone.value = customerDraft.phone;'), 'mobile refresh preserves unsaved customer phone and name drafts'],
   [waiterHtml.includes('id="lockStatus" hidden aria-hidden="true"'), 'internal table-lock expiry is hidden from waiter users'],
   [(waiterJs.match(/waiterItemSearch\.value = "";/g) || []).length >= 2, 'item search is cleared when starting or returning from an order'],
@@ -43,6 +44,11 @@ const cases = [
   ,[customerHtml.includes('id="customerSearch"') && customerHtml.includes('id="searchCustomers"') && customerJs.includes('function filteredCustomers()') && customerJs.includes('searchCustomers.addEventListener'), 'Customer CRM provides explicit name, phone and email search']
   ,[customerHtml.includes('id="crmExecutiveSummary"') && customerHtml.includes('CUSTOMER 360') && customerJs.includes('function renderExecutiveSummary()') && customerJs.includes('Loyalty Ledger') && customerJs.includes('Earned / redeemed'), 'Customer CRM provides executive KPIs and an individual loyalty view']
   ,[posJs.includes('const startsNewParcelCheck = !state.orderId || state.billingReady;') && posJs.includes('New parcel customer check started for this table') && server.includes('Boolean(linkedFulfillment && isPositiveId(tableId))'), 'desktop Dine In starts an independent parcel check when the selected table check is final-bill locked']
+  ,[server.includes("app.post('/orders/merge-bills'") && server.includes("app.post('/orders/unlock-billing'") && server.includes("status = 'MERGED'") && schema.includes("addColumn(db, 'orders', 'merge_parent_id INTEGER')"), 'billing provides persisted merge relationships and ready-order unlock']
+  ,[adminHtml.includes('data-nav-category="kds"') && adminHtml.includes('id="settingKdsClearSettledOnNewBusinessDay"') && adminHtml.includes('id="settingKdsOfflineClearHours"') && schema.includes("addColumn(db, 'kots', 'archived_at DATETIME')"), 'Admin KDS provides configurable new-business-day settled-order cleanup']
+  ,[server.includes("ksub.archived_at IS NULL") && server.includes("'ARCHIVE', 'KDS_BUSINESS_DAY'") && server.includes("SELECT id FROM orders WHERE payment_status = 'PAID' OR status = 'PAID'"), 'KDS cleanup archives only display KOTs for settled orders without changing financial orders']
+  ,[loginJs.includes('localStorage.setItem("lastUsername", username)') && loginJs.includes('localStorage.getItem("lastUsername")'), 'successful desktop login remembers and restores the last username']
+  ,[server.includes('Number(sourceOrder.billing_ready || 0)') && server.includes('billing_ready = ?, updated_at = CURRENT_TIMESTAMP'), 'split bills inherit the parent ready-for-billing state']
   ,[waiterJs.includes('if (!state.orderId || state.billingReady) {') && waiterJs.includes('state.fulfillmentType = "TAKEAWAY";') && waiterJs.includes('postJson("/orders/lock", { tableId: state.selectedTable.id })'), 'mobile Dine In starts an independent parcel check when the selected table check is final-bill locked']
   ,[(posJs.match(/if \(isDineIn\(\) && !state\.selectedTable\) return alert\("Select a table before adding items"\);/g) || []).length >= 3 && posJs.includes('const itemEntryDisabled = state.billingReady || (isDineIn() && !state.selectedTable);'), 'Dine In disables item tiles and centrally rejects item entry until a table is selected']
 ];

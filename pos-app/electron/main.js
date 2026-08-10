@@ -34,6 +34,7 @@ let printWorkerTimer;
 let activePrintRestaurantId = '';
 let printWorkerBusy = false;
 let backendStarted = false;
+let quitLogoutRecorded = false;
 const desktopIconPath = path.join(__dirname, '..', 'build', 'icon.png');
 const preloadPath = path.join(__dirname, 'preload.js');
 
@@ -502,6 +503,15 @@ app.on('window-all-closed', () => {
   clearInterval(licenseTimer);
   clearInterval(printWorkerTimer);
   app.quit();
+});
+
+app.on('before-quit', (event) => {
+  if (quitLogoutRecorded || !backendStarted || !activePrintRestaurantId) return;
+  event.preventDefault();
+  quitLogoutRecorded = true;
+  backendRequest('POST', '/session/logout', { restaurantId:activePrintRestaurantId, actor:{ role:'SYSTEM', name:'POS Desktop shutdown' } })
+    .catch(() => undefined)
+    .finally(() => app.quit());
 });
 
 app.on('activate', () => {

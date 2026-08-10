@@ -878,6 +878,7 @@ const SETTINGS_BOOLEAN_KEYS = new Set([
   'print_kot_on_save',
   'print_kot_on_submit',
   'allow_kot_reprint',
+  'kds_clear_settled_on_new_business_day',
   'kot_print_table',
   'kot_print_customer',
   'kot_print_kitchen',
@@ -949,6 +950,12 @@ function normaliseSettingsInput(input) {
         throw new Error('QR PIN validity must be a whole number between 5 and 240 minutes');
       }
       output[key] = String(minutes);
+      return;
+    }
+    if (key === 'kds_offline_clear_hours') {
+      const hours = Number(value);
+      if (!Number.isInteger(hours) || hours < 1 || hours > 168) throw new Error('KDS offline time must be a whole number between 1 and 168 hours');
+      output[key] = String(hours);
       return;
     }
     if (key === 'qr_pending_order_limit') {
@@ -1102,6 +1109,43 @@ function invoiceNumberForOrder(db, orderId) {
   `).get(periodKey);
   if (!sequence?.last_number) throw new Error(`Unable to allocate invoice number for order ${orderId}`);
   return `${prefix}-${today.replace(/-/g, '')}-${String(sequence.last_number).padStart(5, '0')}`;
+}
+
+function businessDateInTimezone(date, timezone) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone || 'Asia/Kolkata', year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(date);
+    const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${value.year}-${value.month}-${value.day}`;
+  } catch (_) {
+    return date.toISOString().slice(0, 10);
+  }
+}
+
+function processPosBusinessDayLogin(db, actor) {
+  const now = new Date();
+  const timezone = getConfigValue(db, 'timezone', 'Asia/Kolkata');
+  const currentBusinessDate = businessDateInTimezone(now, timezone);
+  const previousLoginAt = getConfigValue(db, 'pos_last_login_at', '');
+  const previousLogoutAt = getConfigValue(db, 'pos_last_logout_at', '');
+  const previousBusinessDate = previousLoginAt ? businessDateInTimezone(new Date(previousLoginAt), timezone) : '';
+  const offlineHours = previousLogoutAt ? Math.max((now.getTime() - new Date(previousLogoutAt).getTime()) / 3600000, 0) : 0;
+  const thresholdHours = Math.max(1, Math.min(168, getNumberConfig(db, 'kds_offline_clear_hours', 8)));
+  let archivedKotCount = 0;
+  if (getBooleanConfig(db, 'kds_clear_settled_on_new_business_day', false)
+      && previousBusinessDate && previousBusinessDate !== currentBusinessDate
+      && previousLogoutAt && offlineHours >= thresholdHours) {
+    archivedKotCount = db.prepare(`
+      UPDATE kots SET archived_at = CURRENT_TIMESTAMP
+      WHERE archived_at IS NULL AND order_id IN (
+        SELECT id FROM orders WHERE payment_status = 'PAID' OR status = 'PAID'
+      )
+    `).run().changes;
+    writeAudit(db, actor, 'ARCHIVE', 'KDS_BUSINESS_DAY', null, null, {
+      previousBusinessDate, currentBusinessDate, previousLogoutAt, offlineHours, thresholdHours, archivedKotCount
+    });
+  }
+  setConfigValues(db, { pos_last_login_at: now.toISOString() });
+  return { archivedKotCount, currentBusinessDate, offlineHours };
 }
 
 function localIsoDateOnly(value = new Date()) {
@@ -1783,10 +1827,12 @@ app.post('/login', async (req, res) => {
     if (String(username).includes('@')) {
       const auth = await authenticateCloudOwner(restaurantId, username, pin);
       if (!auth.ok) return res.status(auth.status || 401).json({ success: false, message: auth.message });
+      const kdsBusinessDay = processPosBusinessDayLogin(db, auth.user);
       return res.json({
         success: true,
         forcePasswordChange: false,
         user: auth.user,
+        kdsBusinessDay,
         restaurant: auth.restaurant || {
           id: db.__restaurantId || restaurantId,
           name: getConfigValue(db, 'restaurant_display_name', db.__restaurantId || restaurantId)
@@ -1796,10 +1842,12 @@ app.post('/login', async (req, res) => {
 
     const auth = authenticateUserWithPin(db, restaurantId, username, pin, req);
     if (!auth.ok) return res.status(auth.status || 401).json({ success: false, message: auth.message, locked: auth.locked, remainingAttempts: auth.remainingAttempts });
+    const kdsBusinessDay = processPosBusinessDayLogin(db, auth.user);
     res.json({
       success: true,
       forcePasswordChange: auth.forcePasswordChange,
       user: auth.user,
+      kdsBusinessDay,
       restaurant: {
         id: db.__restaurantId || restaurantId,
         name: getConfigValue(db, 'restaurant_display_name', db.__restaurantId || restaurantId)
@@ -4955,6 +5003,18 @@ app.post('/admin/items/save', (req, res) => {
   }
 });
 
+app.post('/session/logout', (req, res) => {
+  const { restaurantId, actor } = req.body || {};
+  if (!restaurantId) return res.status(400).json({ success:false, message:'Restaurant is required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const loggedOutAt = new Date().toISOString();
+    setConfigValues(db, { pos_last_logout_at: loggedOutAt });
+    writeAudit(db, actor || { role:'SYSTEM' }, 'LOGOUT', 'POS_SESSION', null, null, { loggedOutAt });
+    res.json({ success:true, loggedOutAt });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
+});
+
 app.post('/admin/printers/layout-preview', (req, res) => {
   const { restaurantId, actor, kind, paperWidthMm, layout = {}, template } = req.body || {};
   if (!restaurantId || !canManage(actor?.role)) {
@@ -6662,8 +6722,8 @@ app.post('/orders/split-check', (req, res) => {
       const splitNumber = Math.max(0, ...priorSplits.map((row) => Number(String(row.order_reference || '').split('#').pop()) || 0)) + 1;
       const splitReference = `${baseReference}#${splitNumber}`;
       const newOrderResult = db.prepare(`
-        INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, created_by, customer_id, delivery_fee, order_source, order_sequence, customer_ref, order_reference)
-        VALUES (?, ?, ?, 'OPEN', 0, 'UNPAID', ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, created_by, customer_id, delivery_fee, order_source, order_sequence, customer_ref, order_reference, billing_ready)
+        VALUES (?, ?, ?, 'OPEN', 0, 'UNPAID', ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         sourceOrder.order_type,
         sourceOrder.table_id,
@@ -6674,7 +6734,8 @@ app.post('/orders/split-check', (req, res) => {
         'SPLIT',
         identity.orderSequence,
         identity.customerRef,
-        splitReference
+        splitReference,
+        Number(sourceOrder.billing_ready || 0)
       );
       const newOrderId = newOrderResult.lastInsertRowid;
       let sourceTotal = Number(sourceOrder.total_amount || 0);
@@ -6699,7 +6760,7 @@ app.post('/orders/split-check', (req, res) => {
         sourceTotal -= Number(item.price || 0) * Number(item.quantity || 0);
       });
       db.prepare('UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(Math.max(sourceTotal, 0), orderId);
-      db.prepare('UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(Math.max(splitTotal, 0), newOrderId);
+      db.prepare('UPDATE orders SET total_amount = ?, billing_ready = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(Math.max(splitTotal, 0), Number(sourceOrder.billing_ready || 0), newOrderId);
       writeOrderStatusHistory(db, actor, newOrderId, 'OPEN', 'ORDER', `Split from order #${orderId}${checkName ? ` (${normaliseText(checkName)})` : ''}`);
       writeAudit(db, actor, 'SPLIT', 'ORDER', newOrderId, sourceOrder, { sourceOrderId: orderId, itemKeys });
       res.json({ success: true, orderId: newOrderId, orderReference: splitReference });
@@ -7009,21 +7070,32 @@ app.post('/orders/cancel', (req, res) => {
     const privileged = ['OWNER', 'ADMIN', 'MANAGER', 'MANAGER_1', 'MANAGER_2'].includes(role);
     if (privileged) requirePermission(db, actor?.role, 'orders.cancel', 'Order cancel permission required');
     if (forcePin || !privileged) {
-      const security = db.prepare('SELECT invoice_reprint_pin_hash FROM printer_security WHERE id = 1').get();
-      if (!security?.invoice_reprint_pin_hash) throw new Error('An owner or manager must configure the six-digit cancellation PIN first');
-      if (!/^\d{6}$/.test(String(pin || '')) || !bcrypt.compareSync(String(pin), security.invoice_reprint_pin_hash)) throw new Error('The cancellation PIN is incorrect');
+      if (!/^\d{6}$/.test(String(pin || ''))) throw new Error('Enter a valid six-digit owner or manager approval PIN');
+      const approvers = db.prepare(`
+        SELECT id, pin, pin_hash, role FROM users
+        WHERE active = 1 AND UPPER(role) IN ('OWNER', 'ADMIN', 'MANAGER', 'MANAGER_1', 'MANAGER_2')
+      `).all();
+      const approver = approvers.find((user) => (
+        (user.pin_hash && bcrypt.compareSync(String(pin), user.pin_hash)) ||
+        (!user.pin_hash && String(user.pin || '') === String(pin))
+      ));
+      if (!approver) throw new Error('The owner or manager approval PIN is incorrect');
+      requirePermission(db, approver.role, 'orders.cancel', 'Approver does not have order cancellation permission');
     }
     if (!getBooleanConfig(db, 'allow_order_cancel', true)) throw new Error('Order cancellation is disabled in settings');
-    const oldValue = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
-    const order = db.prepare('SELECT table_id FROM orders WHERE id = ?').get(orderId);
-    db.prepare("UPDATE orders SET status = 'CANCELLED', cancelled_at = CURRENT_TIMESTAMP WHERE id = ?").run(orderId);
-    db.prepare("UPDATE delivery_orders SET delivery_status = 'CANCELLED' WHERE order_id = ?").run(orderId);
-    if (order?.table_id) db.prepare("UPDATE tables SET status = 'AVAILABLE' WHERE id = ?").run(order.table_id);
-    writeOrderStatusHistory(db, actor, orderId, 'CANCELLED', 'ORDER', 'Order cancelled');
-    const newValue = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
-    writeAudit(db, actor, 'DELETE', 'ORDER', orderId, oldValue, newValue);
-    writeCompliance(db, 'VOIDED_BILL', 'HIGH', `Order cancelled #${orderId}`, 'ORDER', orderId);
-    createFraudAlert(db, 'VOIDED_BILL', 'HIGH', 'ORDER', orderId, `Order cancelled #${orderId}`);
+    const oldValue = db.prepare("SELECT * FROM orders WHERE id = ? AND payment_status != 'PAID' AND status NOT IN ('PAID', 'CANCELLED', 'MERGED')").get(orderId);
+    if (!oldValue) throw new Error('Only an open, unsettled order can be cancelled');
+    db.transaction(() => {
+      db.prepare("UPDATE orders SET status = 'CANCELLED', cancelled_at = CURRENT_TIMESTAMP WHERE id = ?").run(orderId);
+      db.prepare("UPDATE delivery_orders SET delivery_status = 'CANCELLED' WHERE order_id = ?").run(orderId);
+      reverseInventoryDeductionForOrder(db, actor, orderId);
+      if (oldValue.table_id) syncTableStatus(db, oldValue.table_id);
+      writeOrderStatusHistory(db, actor, orderId, 'CANCELLED', 'ORDER', 'Order cancelled');
+      const newValue = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+      writeAudit(db, actor, 'DELETE', 'ORDER', orderId, oldValue, newValue);
+      writeCompliance(db, 'VOIDED_BILL', 'HIGH', `Order cancelled #${orderId}`, 'ORDER', orderId);
+      createFraudAlert(db, 'VOIDED_BILL', 'HIGH', 'ORDER', orderId, `Order cancelled #${orderId}`);
+    })();
     res.json({ success: true });
   } catch (err) {
     sendError(res, err);
@@ -7044,6 +7116,70 @@ app.get('/orders/final-bill-readiness', (req, res) => {
     res.json({ success: true, draftItemCount: Number(counts?.draftItemCount || 0), submittedItemCount: Number(counts?.submittedItemCount || 0) });
   } catch (err) { sendError(res, err); }
   finally { db.close(); }
+});
+
+app.post('/orders/unlock-billing', (req, res) => {
+  const { restaurantId, actor, orderId } = req.body;
+  if (!restaurantId || !isPositiveId(orderId)) return res.status(400).json({ success: false, message: 'Order is required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'billing.settle', 'Billing permission required');
+    const order = db.prepare("SELECT * FROM orders WHERE id = ? AND status = 'OPEN' AND payment_status != 'PAID'").get(orderId);
+    if (!order) throw new Error('Open order not found');
+    if (Number(order.billing_ready) !== 1) throw new Error('Only an order ready for billing can be unlocked');
+    db.prepare('UPDATE orders SET billing_ready = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(orderId);
+    resolveOrderNotifications(db, orderId);
+    writeOrderStatusHistory(db, actor, orderId, 'OPEN', 'ORDER', 'Billing unlocked for additional items');
+    writeAudit(db, actor, 'UNLOCK', 'ORDER_BILLING', orderId, { billingReady: 1 }, { billingReady: 0 });
+    res.json({ success: true, message: 'Order unlocked. Additional items can now be added from POS.' });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
+});
+
+app.post('/orders/merge-bills', (req, res) => {
+  const { restaurantId, actor, orderIds } = req.body;
+  const ids = [...new Set((Array.isArray(orderIds) ? orderIds : []).map(Number).filter(isPositiveId))];
+  if (!restaurantId || ids.length < 2) return res.status(400).json({ success: false, message: 'Select at least two bills to merge' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'billing.settle', 'Billing permission required');
+    const placeholders = ids.map(() => '?').join(',');
+    const orders = db.prepare(`SELECT * FROM orders WHERE id IN (${placeholders}) ORDER BY id`).all(...ids);
+    if (orders.length !== ids.length) throw new Error('One or more selected bills no longer exist');
+    if (orders.some((order) => order.status !== 'OPEN' || order.payment_status === 'PAID' || Number(order.billing_ready) !== 1 || order.merge_parent_id)) {
+      throw new Error('Only independent open bills ready for billing can be merged');
+    }
+    if (orders.some((order) => !db.prepare('SELECT 1 FROM order_items WHERE order_id = ? AND kot_id IS NOT NULL LIMIT 1').get(order.id))) {
+      throw new Error('Every selected bill must contain a submitted KOT');
+    }
+    const primary = orders[0];
+    const children = orders.slice(1);
+    const references = orders.map((order) => order.order_reference || String(order.id));
+    db.transaction(() => {
+      if (tableExists(db, 'discounts')) {
+        for (const selectedOrder of orders) {
+          const sourceGross = calculateOrderPricing(db, selectedOrder.id).payableSubtotal;
+          db.prepare(`
+            UPDATE discounts
+            SET value = ? * value / 100.0, value_type = 'FLAT'
+            WHERE order_id = ? AND UPPER(COALESCE(value_type, '')) = 'PERCENT'
+          `).run(sourceGross, selectedOrder.id);
+        }
+      }
+      for (const child of children) {
+        db.prepare('UPDATE order_items SET order_id = ? WHERE order_id = ?').run(primary.id, child.id);
+        db.prepare('UPDATE kots SET order_id = ? WHERE order_id = ?').run(primary.id, child.id);
+        if (tableExists(db, 'discounts')) db.prepare('UPDATE discounts SET order_id = ? WHERE order_id = ?').run(primary.id, child.id);
+        db.prepare("UPDATE orders SET status = 'MERGED', payment_status = 'MERGED', billing_ready = 0, merge_parent_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(primary.id, child.id);
+        resolveOrderNotifications(db, child.id);
+        writeOrderStatusHistory(db, actor, child.id, 'MERGED', 'ORDER', `Merged into ${references.join(' & ')}`);
+      }
+      const pricing = calculateOrderPricing(db, primary.id);
+      db.prepare('UPDATE orders SET order_reference = ?, merged_order_refs = ?, total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(references.join(' & '), JSON.stringify(references), pricing.payableSubtotal, primary.id);
+      writeAudit(db, actor, 'MERGE', 'ORDER', primary.id, { orderIds: ids }, { orderReference: references.join(' & '), sourceOrderIds: ids });
+    })();
+    res.json({ success: true, orderId: primary.id, orderReference: references.join(' & '), sourceOrderIds: ids });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
 });
 
 app.post('/orders/final-bill', (req, res) => {
@@ -7381,6 +7517,8 @@ app.post('/orders/settle', async (req, res) => {
       }
       deductInventoryForOrder(db, actor, orderId, 'BILL_SETTLE');
       if (order.table_id) syncTableStatus(db, order.table_id);
+      db.prepare('SELECT DISTINCT table_id FROM orders WHERE merge_parent_id = ? AND table_id IS NOT NULL').all(orderId)
+        .forEach((mergedOrder) => syncTableStatus(db, mergedOrder.table_id));
       if (DELIVERY_ORDER_TYPES.includes(order.order_type)) {
         writeOrderStatusHistory(db, actor, orderId, 'PAID', 'ORDER', 'Bill settled');
       }
@@ -7644,7 +7782,7 @@ app.get('/orders/live', (req, res) => {
       LEFT JOIN delivery_orders d ON d.order_id = o.id
       LEFT JOIN delivery_partners dp ON dp.id = d.delivery_partner_id
       WHERE o.payment_status != 'PAID'
-        AND o.status NOT IN ('CANCELLED', 'PAID')
+        AND o.status NOT IN ('CANCELLED', 'PAID', 'MERGED')
         AND EXISTS (SELECT 1 FROM order_items live_items WHERE live_items.order_id = o.id AND live_items.kot_id IS NOT NULL)
       ORDER BY o.created_at DESC
       LIMIT 100
@@ -7847,6 +7985,7 @@ app.get('/kds/orders', (req, res) => {
       JOIN kots ksub ON ksub.id = oi.kot_id
       WHERE oi.kitchen_id IN (${selectedKitchenIds.map(() => '?').join(',')})
         AND oi.kot_id IS NOT NULL
+        AND ksub.archived_at IS NULL
         AND o.status != 'CANCELLED'
         AND COALESCE(oi.status, 'PLACED') NOT IN ('SERVED', 'CANCELLED')
       ORDER BY o.created_at, oi.id
@@ -7936,7 +8075,9 @@ app.post('/kds/item-status', (req, res) => {
       FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.id = ?`).get(orderItemId);
     if (!oldValue) throw new Error('Order item not found');
     if (!oldValue.kot_id) return res.status(409).json({ success:false, message:'Only KOT-submitted items can be updated in KDS' });
-    if (String(oldValue.payment_status || '').toUpperCase() === 'PAID' || String(oldValue.order_status || '').toUpperCase() === 'PAID') {
+    const settled = String(oldValue.payment_status || '').toUpperCase() === 'PAID' || String(oldValue.order_status || '').toUpperCase() === 'PAID';
+    const settledParcelProgress = settled && String(oldValue.fulfillment_type || oldValue.order_type || '').toUpperCase() === 'TAKEAWAY' && status !== 'CANCELLED';
+    if (settled && !settledParcelProgress) {
       return res.status(409).json({ success:false, message:'This order is already settled and cannot be changed in KDS' });
     }
     const timestampColumn = kdsTimestampColumn(status);
@@ -8000,9 +8141,11 @@ app.post('/kds/order-status', (req, res) => {
     if (!canUseKdsWithDb(db, actor?.role)) {
       return res.status(403).json({ success: false, message: 'KDS access denied' });
     }
-    const order = db.prepare('SELECT id, status, payment_status FROM orders WHERE id = ?').get(orderId);
+    const order = db.prepare('SELECT id, status, payment_status, order_type FROM orders WHERE id = ?').get(orderId);
     if (!order) throw new Error('Order not found');
-    if (String(order.payment_status || '').toUpperCase() === 'PAID' || String(order.status || '').toUpperCase() === 'PAID') {
+    const settled = String(order.payment_status || '').toUpperCase() === 'PAID' || String(order.status || '').toUpperCase() === 'PAID';
+    const settledParcelProgress = settled && String(order.order_type || '').toUpperCase() === 'TAKEAWAY' && status !== 'CANCELLED';
+    if (settled && !settledParcelProgress) {
       return res.status(409).json({ success:false, message:'This order is already settled and cannot be changed in KDS' });
     }
     const oldValue = db.prepare('SELECT id, order_id, status, kitchen_id FROM order_items WHERE order_id = ? AND kot_id IS NOT NULL').all(orderId);

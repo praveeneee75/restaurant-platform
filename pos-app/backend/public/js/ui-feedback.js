@@ -120,3 +120,11 @@
     target.click();
   });
 }());
+document.addEventListener('click', (event) => {
+  if (!event.target.closest('[data-logout]')) return;
+  const restaurantId = localStorage.getItem('restaurantId');
+  if (!restaurantId) return;
+  let actor = null;
+  try { actor = JSON.parse(localStorage.getItem('user') || 'null'); } catch (_) {}
+  navigator.sendBeacon('/session/logout', new Blob([JSON.stringify({ restaurantId, actor })], { type:'application/json' }));
+}, true);

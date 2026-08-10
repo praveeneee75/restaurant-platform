@@ -148,8 +148,18 @@ async function showSubmittedOrder(orderId) {
   const rewardDiscount = Math.max(Number(d.order.loyalty_discount || 0), 0);
   const rewardDetail = rewardDiscount > 0 ? `<div class="bill-adjustment-row discount"><span>Reward points${Number(d.order.redeemed_points || 0) ? ` · ${Number(d.order.redeemed_points)} points` : ''}</span><strong>-${money(rewardDiscount)}</strong></div>` : '';
   const adjustmentRows = `${discountDetails || rewardDetail ? discountDetails + rewardDetail : (displayedDiscount > 0 ? `<div class="bill-adjustment-row discount"><span>Discount applied</span><strong>-${money(displayedDiscount)}</strong></div>` : '')}${displayedServiceCharge > 0 ? `<div class="bill-adjustment-row"><span>Service charge</span><strong>${money(displayedServiceCharge)}</strong></div>` : ''}${Math.abs(displayedRoundOff) >= 0.005 ? `<div class="bill-adjustment-row"><span>Round off</span><strong>${displayedRoundOff < 0 ? '-' : ''}${money(Math.abs(displayedRoundOff))}</strong></div>` : ''}`;
-  billingDetail.innerHTML = `<header><div><h2>${esc(d.order.order_reference || `Order ${d.order.id}`)}</h2><p>${esc(d.order.table_no || d.order.order_type)} · ${esc(d.customer?.name || 'No customer')}</p></div><div class="billing-detail-actions"><button type="button" class="secondary-btn" id="billingSplitBill">Split Bill</button><a class="primary-btn" href="${cashierUrl}">Open POS</a></div></header><div class="bill-lines">${kotSections || '<p>No submitted items</p>'}</div><div class="billing-total-breakdown"><div class="bill-adjustment-row"><span>Subtotal (including tax)</span><strong>${money(grossTotal)}</strong></div>${adjustmentRows}<div class="bill-total"><span>Payable total (including tax)</span><strong>${money(submittedTotal)}</strong></div></div><div class="billing-payment"><h3>Payment</h3><p class="billing-hint">Only KOT-submitted items are billed.</p><select id="billingPaymentMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></select><input id="billingPaymentAmount" type="number" step="0.01" value="${submittedTotal.toFixed(2)}"><div class="billing-settlement-actions">${enabled('billing_show_settle_print') ? `<button id="settlePrintBilling" class="primary-btn" data-action-shortcut="F12" data-settlement-mode="PRINT" data-settle-order="${d.order.id}">Settle &amp; Print</button>` : ''}${enabled('billing_show_settle_invoice') ? `<button id="settleBilling" class="primary-btn" data-action-shortcut="F11" data-settlement-mode="INVOICE" data-settle-order="${d.order.id}">Settle &amp; Create Invoice</button>` : ''}${enabled('billing_show_settle_only') ? `<button id="settleWithoutInvoice" class="primary-btn" data-settlement-mode="NO_INVOICE" data-settle-order="${d.order.id}">Settle</button>` : ''}</div></div>`;
+  billingDetail.innerHTML = `<header><div><h2>${esc(d.order.order_reference || `Order ${d.order.id}`)}</h2><p>${esc(d.order.table_no || d.order.order_type)} · ${esc(d.customer?.name || 'No customer')}</p></div><div class="billing-detail-actions"><button type="button" class="secondary-btn" id="billingSplitBill">Split Bill</button><button type="button" class="secondary-btn" id="billingMergeBill">Merge Bill</button>${Number(d.order.billing_ready) === 1 ? '<button type="button" class="secondary-btn" id="billingUnlockBill">Unlock</button>' : ''}<a class="primary-btn" href="${cashierUrl}">Open POS</a></div></header><div class="bill-lines">${kotSections || '<p>No submitted items</p>'}</div><div class="billing-total-breakdown"><div class="bill-adjustment-row"><span>Subtotal (including tax)</span><strong>${money(grossTotal)}</strong></div>${adjustmentRows}<div class="bill-total"><span>Payable total (including tax)</span><strong>${money(submittedTotal)}</strong></div></div><div class="billing-payment"><h3>Payment</h3><p class="billing-hint">Only KOT-submitted items are billed.</p><select id="billingPaymentMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></select><input id="billingPaymentAmount" type="number" step="0.01" value="${submittedTotal.toFixed(2)}"><div class="billing-settlement-actions">${enabled('billing_show_settle_print') ? `<button id="settlePrintBilling" class="primary-btn" data-action-shortcut="F12" data-settlement-mode="PRINT" data-settle-order="${d.order.id}">Settle &amp; Print</button>` : ''}${enabled('billing_show_settle_invoice') ? `<button id="settleBilling" class="primary-btn" data-action-shortcut="F11" data-settlement-mode="INVOICE" data-settle-order="${d.order.id}">Settle &amp; Create Invoice</button>` : ''}${enabled('billing_show_settle_only') ? `<button id="settleWithoutInvoice" class="primary-btn" data-settlement-mode="NO_INVOICE" data-settle-order="${d.order.id}">Settle</button>` : ''}</div></div>`;
   document.getElementById('billingSplitBill')?.addEventListener('click', () => openBillingSplit(d, items));
+  document.getElementById('billingMergeBill')?.addEventListener('click', () => openBillingMerge(d));
+  document.getElementById('billingUnlockBill')?.addEventListener('click', async () => {
+    if (!confirm('Unlock this bill so POS can accept additional items?')) return;
+    const response = await fetch('/orders/unlock-billing', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ restaurantId, actor:{id:sessionUser.id,role:sessionUser.role}, orderId:d.order.id }) });
+    const result = await response.json();
+    if (!response.ok || result.success === false) return alert(result.message || 'Unable to unlock bill');
+    alert(result.message);
+    await load();
+    await showSubmittedOrder(d.order.id);
+  });
   const adjustments = document.createElement('section');
   adjustments.className = 'billing-adjustments';
   adjustments.hidden = !['billing_show_promocode', 'billing_show_reward_points', 'billing_show_cash_discount', 'billing_show_percentage_discount'].some(enabled);
@@ -249,6 +259,35 @@ function openBillingSplit(data, submittedItems) {
       await load();
       await showSubmittedOrder(result.orderId);
     } catch (error) { alert(error.message); }
+  };
+}
+
+function openBillingMerge(data) {
+  const candidates = state.orders.filter((order) => Number(order.id) !== Number(data.order.id) && Number(order.billing_ready) === 1 && order.payment_status !== 'PAID' && order.has_submitted_kot);
+  if (Number(data.order.billing_ready) !== 1) return alert('Mark this order ready for billing before merging it');
+  if (!candidates.length) return alert('There are no other bills ready for billing');
+  document.querySelector('.modifier-modal-backdrop[data-billing-merge]')?.remove();
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modifier-modal-backdrop';
+  backdrop.dataset.billingMerge = 'true';
+  backdrop.innerHTML = `<div class="modifier-modal"><header><h2>Merge Bill</h2><button type="button" class="secondary-btn" data-close-merge>Close</button></header><p>Select bills to combine with <strong>${esc(data.order.order_reference || data.order.id)}</strong>. The combined bill will be previewed before settlement.</p><div class="split-item-list">${candidates.map((order) => `<label><input type="checkbox" value="${order.id}"><span><strong>${esc(order.order_reference || `Order ${order.id}`)}</strong> · ${esc(order.table_no || order.order_type)} · ${money(billingAmount(order))}</span></label>`).join('')}</div><div class="cart-actions"><button type="button" class="primary-btn" data-create-merge>Merge Bill</button></div></div>`;
+  document.body.appendChild(backdrop);
+  backdrop.querySelector('input')?.focus();
+  backdrop.querySelector('[data-close-merge]').onclick = () => backdrop.remove();
+  backdrop.addEventListener('click', (event) => { if (event.target === backdrop) backdrop.remove(); });
+  backdrop.querySelector('[data-create-merge]').onclick = async () => {
+    const selected = [...backdrop.querySelectorAll('input:checked')].map((input) => Number(input.value));
+    if (!selected.length) return alert('Select at least one additional bill');
+    const button = backdrop.querySelector('[data-create-merge]');
+    button.disabled = true;
+    try {
+      const response = await fetch('/orders/merge-bills', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ restaurantId, actor:{id:sessionUser.id,role:sessionUser.role}, orderIds:[Number(data.order.id), ...selected] }) });
+      const result = await response.json();
+      if (!response.ok || result.success === false) throw Error(result.message || 'Merge bill failed');
+      backdrop.remove();
+      await load();
+      await showSubmittedOrder(result.orderId);
+    } catch (error) { alert(error.message); button.disabled = false; }
   };
 }
 showOrder = showSubmittedOrder;

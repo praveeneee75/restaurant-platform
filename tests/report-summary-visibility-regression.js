@@ -10,6 +10,6 @@ if (!js.includes('function renderOperationalReportRows') || !js.includes('report
 for (const section of ['Billing (Success)','Billing (Cancel)','Order Type','Payment Mode','Complimentary Orders','Sales Return Orders','Virtual Wallet Summary','Expenses Summary','Withdrawal Summary','Cash Top-Up Summary','Online Orders']) if (!html.includes(section)) throw new Error(`Sales Summary is missing ${section}`);
 if (!js.includes('function renderExecutiveSalesSummary') || !js.includes('operationalReportPanel.hidden = activeReportType === "sales"')) throw new Error('Sales Summary does not use the executive print-style desktop view');
 if (!server.includes('function buildExecutiveSalesSummary') || (server.match(/buildExecutiveSalesSummary\(db, from, to, invoiceOnly\)/g) || []).length < 2) throw new Error('Display and print do not share one authoritative Sales Summary calculation');
-if (!server.includes("String(discount.value_type || '').toUpperCase() === 'PERCENT'\n        ? gross * Number(discount.value || 0) / 100")) throw new Error('Percentage discount is not calculated from order gross');
+if (!/String\(discount\.value_type \|\| ''\)\.toUpperCase\(\) === 'PERCENT'\s*\? gross \* Number\(discount\.value \|\| 0\) \/ 100/.test(server)) throw new Error('Percentage discount is not calculated from order gross');
 if (!server.includes("!['OWNER', 'ADMIN', 'MANAGER_2'].includes")) throw new Error('Invoice-only report visibility rule is missing');
 console.log('Report summary visibility regression passed.');

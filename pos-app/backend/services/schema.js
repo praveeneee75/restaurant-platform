@@ -91,6 +91,8 @@ const DEFAULT_SYSTEM_SETTINGS = {
   print_kot_on_save: '0',
   print_kot_on_submit: '1',
   allow_kot_reprint: '1',
+  kds_clear_settled_on_new_business_day: '0',
+  kds_offline_clear_hours: '8',
   kot_header_text: '',
   kot_footer_text: '',
   kot_template: 'CLASSIC',
@@ -232,6 +234,8 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'orders', 'customer_ref TEXT');
   addColumn(db, 'orders', 'order_reference TEXT');
   addColumn(db, 'orders', 'billing_ready INTEGER DEFAULT 0');
+  addColumn(db, 'orders', 'merge_parent_id INTEGER');
+  addColumn(db, 'orders', 'merged_order_refs TEXT');
 
   addColumn(db, 'order_items', 'price REAL DEFAULT 0');
   addColumn(db, 'order_items', "status TEXT DEFAULT 'PLACED'");
@@ -289,6 +293,7 @@ function ensureRestaurantSchema(db) {
   `);
 
   addColumn(db, 'kots', 'suborder_no INTEGER');
+  addColumn(db, 'kots', 'archived_at DATETIME');
 
   addColumn(db, 'audit_logs', 'actor_user_id INTEGER');
   addColumn(db, 'audit_logs', 'actor_role TEXT');
