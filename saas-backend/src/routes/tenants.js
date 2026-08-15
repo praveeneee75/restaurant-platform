@@ -116,21 +116,19 @@ router.post('/create', authenticate, async (req, res) => {
     );
     let owner = existingOwner.rows[0];
     let temporaryPassword = null;
-    if (addBranch && !owner) throw new Error('No active owner account uses this email. Create the first restaurant before adding a branch.');
-    if (owner && !owner.active) {
-      throw new Error('An inactive owner account already uses this email. Reactivate it before creating the customer.');
+    if (owner) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ success: false, message: 'Email ID is already in use. Enter a new email ID.' });
     }
-    if (!owner) {
-      temporaryPassword = `Km!${crypto.randomBytes(8).toString('hex')}`;
-      const passwordHash = await bcrypt.hash(temporaryPassword, 10);
-      const createdOwner = await client.query(
-        `INSERT INTO owner_users (name, email, password_hash, active, reset_required)
-         VALUES ($1, $2, $3, true, true)
-         RETURNING id, name, email`,
-        [String(ownerName).trim(), normalizedEmail, passwordHash]
-      );
-      owner = createdOwner.rows[0];
-    }
+    temporaryPassword = `Km!${crypto.randomBytes(8).toString('hex')}`;
+    const passwordHash = await bcrypt.hash(temporaryPassword, 10);
+    const createdOwner = await client.query(
+      `INSERT INTO owner_users (name, email, password_hash, active, reset_required)
+       VALUES ($1, $2, $3, true, true)
+       RETURNING id, name, email`,
+      [String(ownerName).trim(), normalizedEmail, passwordHash]
+    );
+    owner = createdOwner.rows[0];
     await client.query(
       `INSERT INTO restaurant_owners (owner_user_id, tenant_id, active)
        VALUES ($1, $2, true)
@@ -172,6 +170,9 @@ router.post('/create', authenticate, async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     console.error('TENANT CREATE ERROR:', err.message);
+    if (err.code === '23505' && /owner_users|email/i.test(`${err.constraint || ''} ${err.detail || ''}`)) {
+      return res.status(409).json({ success: false, message: 'Email ID is already in use. Enter a new email ID.' });
+    }
     res.status(500).json({ success: false, message: publicError(err) });
   } finally {
     client.release();
