@@ -16,5 +16,9 @@ assert(ui.includes('availability.online === false') && ui.includes('Bring the PO
 assert(html.includes('Stored daily totals received from POS remain available when the POS is offline'), 'cloud history explains why historical sales remain visible offline');
 assert(ui.includes('Last cloud snapshot:') && ui.includes("data.salesStorageMode === 'LOCAL_ONLY'"), 'history wording distinguishes cloud storage from local-only live retrieval');
 assert(ui.includes('One or more selected POS apps are offline. Their live operations are hidden.'), 'multi-branch view hides stale operations for offline branches');
+assert(ui.includes('const dashboards=[];const warnings=[];') && ui.includes('dashboards.push(data)'), 'multi-restaurant loading isolates each branch instead of failing the entire dashboard');
+assert(ui.includes('POS service offline: ${esc(warning.name)}') && ui.includes('serviceWarnings'), 'offline warning identifies each affected restaurant POS service');
+assert(ui.includes('render(aggregateDashboards(dashboards.length?dashboards:cloudDashboards))'), 'available restaurant data continues rendering when another POS is unreachable');
+assert(html.includes('id="serviceWarnings"') && html.includes('partial-branch-availability'), 'owner control includes a cache-busted named service warning region');
 
 console.log('Owner offline visibility regression passed');

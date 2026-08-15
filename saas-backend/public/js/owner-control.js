@@ -402,20 +402,28 @@ async function load(){
   const ids=selectedRestaurantIds();
   if(!ids.length)return;
   $('status').innerHTML='<span class="sync-pill">Loading cloud snapshot…</span>';
+  $('serviceWarnings').hidden=true;$('serviceWarnings').innerHTML='';
   $('refreshButton').disabled=true;
   try {
     const cloudDashboards=await Promise.all(ids.map((id)=>api(`/owner-control/owner/dashboard?restaurantId=${encodeURIComponent(id)}`)));
-    const dashboards=await Promise.all(cloudDashboards.map(async(data)=>{
-      if(data.salesStorageMode!=='LOCAL_ONLY')return data;
-      if(!data.posUrl)throw new Error(`${data.restaurant?.name||'Restaurant'} stores sales locally. Bring the POS online to retrieve sales data.`);
+    const dashboards=[];const warnings=[];
+    for(const data of cloudDashboards){
+      const name=data.restaurant?.name||data.restaurant?.code||'Restaurant';
+      if(data.salesStorageMode!=='LOCAL_ONLY'){
+        dashboards.push(data);
+        if(data.liveOperationsAvailability?.online===false)warnings.push({name,message:'The POS service is offline. Stored cloud sales remain visible, but live operations are unavailable until the POS reconnects.'});
+        continue;
+      }
+      if(!data.posUrl){warnings.push({name,message:'The POS service is offline or has no reachable address. Sales are stored locally; bring the POS online to retrieve them.'});continue;}
       try{
         const base=String(data.posUrl).replace(/\/$/,'');
         const response=await fetch(`${base}/owner-direct/dashboard?restaurantId=${encodeURIComponent(data.restaurant.code)}&fromDate=${encodeURIComponent(selectedDate())}&toDate=${encodeURIComponent(localDate())}`,{headers:{Authorization:`Bearer ${token}`}});
         const live=await response.json();if(!response.ok||!live.success)throw new Error(live.message||'Live POS report failed');
-        return {...data,...live,configurationSnapshot:data.configurationSnapshot,capabilities:data.capabilities,alerts:data.alerts,commands:data.commands,pendingApprovals:data.pendingApprovals};
-      }catch(_){throw new Error(`${data.restaurant?.name||'Restaurant'} stores sales locally. Bring the POS online and ensure this device can reach the POS to retrieve sales data.`);}
-    }));
-    render(aggregateDashboards(dashboards));
+        dashboards.push({...data,...live,configurationSnapshot:data.configurationSnapshot,capabilities:data.capabilities,alerts:data.alerts,commands:data.commands,pendingApprovals:data.pendingApprovals});
+      }catch(_){warnings.push({name,message:'The POS service is offline or unreachable. Sales are stored locally; bring the POS online and ensure this device can reach it.'});}
+    }
+    render(aggregateDashboards(dashboards.length?dashboards:cloudDashboards));
+    if(warnings.length){$('serviceWarnings').hidden=false;$('serviceWarnings').innerHTML=warnings.map(warning=>`<div class="service-warning"><strong>POS service offline: ${esc(warning.name)}</strong>${esc(warning.message)}</div>`).join('');}
   } catch(error) {
     $('status').innerHTML=`<div class="od-error">${esc(error.message)}</div>`;
     $('salesChart').innerHTML='<div class="chart-empty">Cloud data unavailable. Request POS sync and retry.</div>';
