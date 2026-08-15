@@ -62,16 +62,11 @@
       <div id="waiterCart" class="cart-list"></div>
       <strong id="waiterTotal">Total: 0.00</strong>
       <div class="review-bottom-actions">
-        <div class="transfer-panel">
-          <label>Transfer to table
-            <select id="transferTable"></select>
-          </label>
-          <button id="transferTableButton" type="button">Transfer Table</button>
-        </div>
-        <div class="actions">
-          <button id="cancelWaiterOrder" class="cancel-order-button" type="button">Cancel order</button>
-          <button id="saveWaiterOrder" type="button">Save Order</button>
-          <button id="submitWaiterKot" type="button">Submit KOT</button>
+        <div class="actions review-icon-actions" aria-label="Order actions">
+          <button id="transferTableButton" type="button" class="secondary-button icon-action" aria-label="Transfer KOT, item or table" title="Transfer KOT, item or table"><span aria-hidden="true">⇄</span><span class="action-label">Transfer KOT / Item / Table</span></button>
+          <button id="cancelWaiterOrder" class="cancel-order-button icon-action" type="button" aria-label="Cancel order" title="Cancel order"><span aria-hidden="true">×</span><span class="action-label">Cancel order</span></button>
+          <button id="saveWaiterOrder" type="button" class="icon-action" aria-label="Save order" title="Save order"><span aria-hidden="true">✓</span><span class="action-label">Save Order</span></button>
+          <button id="submitWaiterKot" type="button" class="icon-action" aria-label="Submit KOT" title="Submit KOT"><span aria-hidden="true">↗</span><span class="action-label">Submit KOT</span></button>
         </div>
       </div>
     </section>
@@ -101,6 +96,17 @@
       <p>Review every item before sending Final Check, Bill &amp; Print.</p>
       <div id="finalCheckReviewItems" class="final-check-review-items"></div>
       <div class="final-check-review-actions"><button id="backFinalCheckReview" type="button" class="secondary-button">Go back</button><button id="confirmFinalCheckReview" type="button">Confirm &amp; continue</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="orderTransferDialog" class="waiter-dialog order-transfer-dialog">
+    <form id="orderTransferForm">
+      <header><div><h2>Transfer KOT / Item / Table</h2><p id="orderTransferSource"></p></div><button id="closeOrderTransfer" type="button" class="secondary-button" aria-label="Close">×</button></header>
+      <div class="transfer-mode-tabs" role="tablist"><button type="button" data-transfer-mode="TABLE" class="active">Table</button><button type="button" data-transfer-mode="KOT">KOT</button><button type="button" data-transfer-mode="ITEM">Item</button></div>
+      <div id="orderTransferChoices" class="order-transfer-choices"></div>
+      <label>Destination table<select id="transferTable" required></select></label>
+      <p id="orderTransferStatus" class="dialog-status" role="alert"></p>
+      <div><button id="cancelOrderTransfer" type="button" class="secondary-button">Cancel</button><button id="confirmOrderTransfer" type="submit">Transfer</button></div>
     </form>
   </dialog>
 

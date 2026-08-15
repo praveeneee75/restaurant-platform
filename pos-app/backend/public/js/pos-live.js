@@ -159,7 +159,7 @@ function applyRoleAndModeUI() {
     link.hidden = !["CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role) && mode !== "DINE_IN";
   });
   const canBilling = ["CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role);
-  const canMove = ["CAPTAIN", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role) && posMode === "DINE_IN";
+  const canMove = ["CAPTAIN", "CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role) && posMode === "DINE_IN";
   const canSettle = ["CAPTAIN", "CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role);
   const canSettleAndPrint = ["CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role);
   document.querySelectorAll('[data-role-nav="billing"]').forEach((el) => { el.hidden = !canBilling; });
@@ -211,7 +211,7 @@ function applyRoleAndModeUI() {
   }
   if (finalBillPrintOrder) finalBillPrintOrder.hidden = !["DINE_IN", "PARCEL", "PARTY"].includes(posMode);
   if (posMode === "DINE_IN") {
-    moveTableBtn.hidden = true;
+    moveTableBtn.hidden = !canMove;
     settleOrder.hidden = true;
     settlePrintOrder.hidden = true;
   }
@@ -1162,6 +1162,49 @@ async function saveCurrentOrder(force = false) {
   return data;
 }
 
+async function openPosOrderTransfer() {
+  if (!isDineIn() || !state.selectedTable || !state.orderId) return alert("Select a dine-in customer check first");
+  const preview = await postJson("/orders/transfer-preview", { orderId: state.orderId });
+  document.querySelector('.modifier-modal-backdrop[data-order-transfer]')?.remove();
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modifier-modal-backdrop';
+  backdrop.dataset.orderTransfer = 'true';
+  const tableOptions = (preview.tables || []).map((table) => `<option value="${table.id}">${esc(table.table_name)} (${esc(table.status)})</option>`).join('');
+  backdrop.innerHTML = `<div class="modifier-modal order-transfer-modal"><header><div><h2>Transfer KOT / Item / Table</h2><p>${esc(preview.order.table_no)} · ${esc(preview.order.order_reference || preview.order.id)}</p></div><button type="button" class="secondary-btn" data-close-transfer>Close</button></header><div class="transfer-mode-tabs"><button type="button" class="active" data-mode="TABLE">Table Wise</button><button type="button" data-mode="KOT">KOT Wise</button><button type="button" data-mode="ITEM">Item Wise</button></div><div data-transfer-choices></div><label>Destination table<select data-target-table><option value="">Choose target table</option>${tableOptions}</select></label><p data-transfer-status class="status-message"></p><div class="cart-actions"><button type="button" data-confirm-transfer>Transfer</button></div></div>`;
+  document.body.appendChild(backdrop);
+  let mode = 'TABLE';
+  const grouped = (preview.items || []).reduce((result, item) => { (result[item.kot_id] ||= []).push(item); return result; }, {});
+  const renderChoices = () => {
+    backdrop.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode));
+    const choices = backdrop.querySelector('[data-transfer-choices]');
+    if (mode === 'TABLE') return choices.innerHTML = '<p>The complete customer check will move together. The destination must not have another open check.</p>';
+    choices.innerHTML = `<div class="split-item-list">${Object.entries(grouped).map(([kotId, items]) => mode === 'KOT'
+      ? `<label><input type="checkbox" name="transferKot" value="${kotId}"><span><strong>KOT ${esc(items[0].suborder_no || kotId)}</strong> · ${items.length} item line(s) · ${esc(items[0].kitchen_name || 'Kitchen')}</span></label>`
+      : items.map((item) => `<label><input type="checkbox" name="transferItem" value="${item.id}"><span>${esc(item.name)} × ${item.quantity} · KOT ${esc(item.suborder_no || kotId)}</span></label>`).join('')).join('')}</div>`;
+  };
+  renderChoices();
+  backdrop.querySelectorAll('[data-mode]').forEach((button) => button.onclick = () => { mode = button.dataset.mode; renderChoices(); });
+  backdrop.querySelector('[data-close-transfer]').onclick = () => backdrop.remove();
+  backdrop.addEventListener('click', (event) => { if (event.target === backdrop) backdrop.remove(); });
+  backdrop.querySelector('[data-confirm-transfer]').onclick = async () => {
+    const status = backdrop.querySelector('[data-transfer-status]');
+    const toTableId = Number(backdrop.querySelector('[data-target-table]').value || 0);
+    if (!toTableId) return status.textContent = 'Choose a destination table.';
+    try {
+      const result = await postJson('/orders/transfer', {
+        orderId: state.orderId,
+        toTableId,
+        mode,
+        kotIds: [...backdrop.querySelectorAll('input[name="transferKot"]:checked')].map((input) => Number(input.value)),
+        itemIds: [...backdrop.querySelectorAll('input[name="transferItem"]:checked')].map((input) => Number(input.value))
+      });
+      backdrop.remove();
+      alert(result.message);
+      window.location.reload();
+    } catch (error) { status.textContent = error.message; }
+  };
+}
+
 async function fetchJson(url) {
   const res = await fetch(url);
   let data;
@@ -1657,24 +1700,7 @@ finalBillPrintOrder?.addEventListener("click", () => {
     finalBillPrintOrder.disabled = state.billingReady;
   });
 });
-moveTableBtn.addEventListener("click", async () => {
-  if (!isDineIn() || !state.selectedTable) return alert("Select a dine-in table first");
-  const destinations = state.tables
-    .filter((table) => Number(table.id) !== Number(state.selectedTable.id))
-    .map((table) => `${table.table_name} [${table.status || "AVAILABLE"}]`)
-    .join("\n");
-  if (!destinations) return alert("No destination tables are available");
-  const targetTableName = await askPosInput(`Choose the destination table by entering its name:\n\n${destinations}`, "Move table");
-  if (!targetTableName) return;
-  const targetName = targetTableName.trim().replace(/\s*\[.*\]$/, "").trim().toLowerCase();
-  const targetTable = state.tables.find((table) => table.table_name.toLowerCase() === targetName && Number(table.id) !== Number(state.selectedTable.id));
-  if (!targetTable) return alert("Target table not found");
-  try {
-    await moveOrderToTable(targetTable.id);
-  } catch (error) {
-    alert(error.message || "The order could not be moved. Choose another destination table.");
-  }
-});
+moveTableBtn.addEventListener("click", () => openPosOrderTransfer().catch((error) => alert(error.message)));
 splitBillBtn?.addEventListener("click", openSplitBillModal);
 async function startNewCheck() {
   if (posMode === "DINE_IN" && !state.selectedTable) return alert("Select a table first");

@@ -38,6 +38,8 @@ const state = {
   permissions: [],
   settings: {}
 };
+let transferPreview = null;
+let transferMode = "TABLE";
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 const money = (value) => Number(value || 0).toFixed(2);
@@ -211,7 +213,7 @@ function renderCart() {
 
 function renderTransferOptions() {
   const selectedId = Number(state.selectedTable?.id || 0);
-  const availableTables = state.tables.filter((table) => Number(table.id) !== selectedId && table.status !== "OCCUPIED" && table.status !== "INACTIVE");
+  const availableTables = state.tables.filter((table) => Number(table.id) !== selectedId && table.status !== "INACTIVE");
   transferTable.innerHTML = `<option value="">Choose target table</option>` + availableTables.map((table) => (
     `<option value="${table.id}">${esc(table.table_name)} (${esc(table.status)})</option>`
   )).join("");
@@ -452,16 +454,48 @@ async function createWaiterCustomerFromForm() {
   renderOrderControls();
 }
 
-async function transferSelectedTable() {
+function renderOrderTransferChoices() {
+  document.querySelectorAll("[data-transfer-mode]").forEach((button) => button.classList.toggle("active", button.dataset.transferMode === transferMode));
+  if (transferMode === "TABLE") {
+    orderTransferChoices.innerHTML = '<p>The complete customer check, all submitted KOTs and saved items will move together. Choose a table without another open check.</p>';
+    return;
+  }
+  const grouped = (transferPreview?.items || []).reduce((result, item) => {
+    const key = String(item.kot_id);
+    result[key] ||= [];
+    result[key].push(item);
+    return result;
+  }, {});
+  orderTransferChoices.innerHTML = Object.entries(grouped).map(([kotId, items]) => `
+    <section class="order-transfer-group"><h3>KOT ${esc(items[0].suborder_no || kotId)} · ${esc(items[0].kitchen_name || 'Kitchen')}</h3>
+      ${transferMode === "KOT" ? `<label class="order-transfer-choice"><input type="checkbox" name="transferKot" value="${kotId}"><span>Complete KOT</span><small>${items.length} line(s)</small></label>` : items.map((item) => `<label class="order-transfer-choice"><input type="checkbox" name="transferItem" value="${item.id}"><span>${esc(item.name)}</span><small>× ${item.quantity}</small></label>`).join("")}
+    </section>`).join("") || '<p>No submitted KOT items are available to transfer.</p>';
+}
+
+async function openOrderTransferDialog() {
   if (!can("orders.transfer_table")) throw new Error("Table transfer permission required");
   if (!state.selectedTable || !state.orderId || !state.lock) throw new Error("Select and lock a table with an open order first");
+  transferPreview = await postJson("/orders/transfer-preview", { orderId: state.orderId });
+  transferMode = "TABLE";
+  orderTransferSource.textContent = `${state.selectedTable.table_name} · ${transferPreview.order.order_reference || `Order ${state.orderId}`}`;
+  orderTransferStatus.textContent = "";
+  renderTransferOptions();
+  renderOrderTransferChoices();
+  orderTransferDialog.showModal();
+}
+
+async function transferSelectedOrder(event) {
+  event?.preventDefault();
   if (!transferTable.value) throw new Error("Choose a target table");
-  const moved = await postJson("/orders/transfer-table", {
+  const moved = await postJson("/orders/transfer", {
     orderId: state.orderId,
-    fromTableId: state.selectedTable.id,
     toTableId: transferTable.value,
-    lockId: state.lock.id
+    lockId: state.lock.id,
+    mode: transferMode,
+    kotIds: [...document.querySelectorAll('input[name="transferKot"]:checked')].map((input) => Number(input.value)),
+    itemIds: [...document.querySelectorAll('input[name="transferItem"]:checked')].map((input) => Number(input.value))
   });
+  orderTransferDialog.close();
   waiterStatus.textContent = moved.message || "Table transferred";
   state.selectedTable = null;
   state.lock = null;
@@ -616,7 +650,11 @@ waiterOrderSelector.addEventListener("change", async () => {
 });
 searchWaiterCustomer.addEventListener("click", () => searchWaiterCustomerByPhone().catch((err) => alert(err.message)));
 createWaiterCustomer.addEventListener("click", () => createWaiterCustomerFromForm().catch((err) => alert(err.message)));
-transferTableButton.addEventListener("click", () => transferSelectedTable().catch((err) => alert(err.message)));
+transferTableButton.addEventListener("click", () => openOrderTransferDialog().catch((err) => alert(err.message)));
+document.querySelectorAll("[data-transfer-mode]").forEach((button) => button.addEventListener("click", () => { transferMode = button.dataset.transferMode; renderOrderTransferChoices(); }));
+closeOrderTransfer.addEventListener("click", () => orderTransferDialog.close());
+cancelOrderTransfer.addEventListener("click", () => orderTransferDialog.close());
+orderTransferForm.addEventListener("submit", (event) => transferSelectedOrder(event).catch((err) => { orderTransferStatus.textContent = err.message; }));
 cancelWaiterOrder.addEventListener("click", () => cancelSelectedOrder().catch((err) => alert(err.message)));
 refreshWaiter.addEventListener("click", () => loadBootstrap().catch((err) => alert(err.message)));
 logoutWaiter.addEventListener("click", () => window.parent.postMessage({ type: "KMASTER_MOBILE_LOGOUT" }, "*"));

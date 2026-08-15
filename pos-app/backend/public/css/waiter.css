@@ -147,6 +147,9 @@ button {
   gap: 8px;
   margin-top: 12px;
 }
+.review-icon-actions { grid-template-columns:repeat(4,minmax(0,1fr)); }
+.icon-action { display:flex; align-items:center; justify-content:center; gap:7px; min-width:0; }
+.icon-action > span[aria-hidden="true"] { font-size:20px; font-weight:900; line-height:1; }
 .transfer-panel {
   display: grid;
   gap: 8px;
@@ -189,6 +192,19 @@ button {
 .final-check-review-line span { overflow-wrap:anywhere; }
 .final-check-review-total { padding-top:8px; border-top:1px solid var(--border); font-weight:800; text-align:right; }
 .waiter-dialog form > .final-check-review-actions { grid-template-columns:1fr 1.3fr; }
+.order-transfer-dialog { width:min(94vw,620px); }
+.order-transfer-dialog form > header { display:flex; align-items:start; justify-content:space-between; gap:12px; }
+.order-transfer-dialog form > header p { color:#536071; }
+.order-transfer-dialog form > header button { min-width:42px; }
+.transfer-mode-tabs { display:grid!important; grid-template-columns:repeat(3,minmax(0,1fr))!important; gap:6px!important; }
+.transfer-mode-tabs button { background:#e8f3f1; color:#134e4a; }
+.transfer-mode-tabs button.active { background:var(--primary); color:#fff; }
+.order-transfer-choices { display:grid!important; grid-template-columns:1fr!important; gap:8px!important; max-height:42vh; overflow:auto; }
+.order-transfer-group { display:grid; gap:7px; padding:10px; border:1px solid var(--border); border-radius:11px; background:#f8fafc; }
+.order-transfer-group h3 { margin:0; font-size:14px; color:#155e75; }
+.order-transfer-choice { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:9px; align-items:center; padding:7px; border-radius:8px; background:#fff; }
+.order-transfer-choice small { color:#64748b; }
+.order-transfer-dialog select { width:100%; min-height:44px; padding:9px 10px; border:1px solid var(--border); border-radius:10px; background:#fff; font:inherit; }
 @media (min-width: 860px) {
   .waiter-layout { grid-template-columns: 260px 1fr 320px; }
   .actions { grid-template-columns: 1fr 1fr; }
@@ -243,9 +259,11 @@ button {
   .item-row { grid-template-columns:minmax(0,1fr) auto; min-height:58px; }
   .customer-controls { grid-template-columns:minmax(0,1fr) auto; align-items:end; }
   .customer-controls button { min-height:42px; align-self:end; white-space:nowrap; }
-  .cart-panel.mobile-active { padding-bottom:230px; }
-  .cart-panel.mobile-active .review-bottom-actions { position:fixed; left:8px; right:8px; bottom:0; z-index:8; padding:10px 12px max(22px,env(safe-area-inset-bottom)); border:1px solid var(--border); border-bottom:0; border-radius:14px 14px 0 0; background:#fff; box-shadow:0 -8px 24px rgba(15,23,42,.12); }
-  .cart-panel.mobile-active .transfer-panel { margin-top:0; }
+  .cart-panel.mobile-active { padding-right:68px; padding-bottom:max(18px,env(safe-area-inset-bottom)); }
+  .cart-panel.mobile-active .review-bottom-actions { position:fixed; right:8px; bottom:0; z-index:8; width:52px; padding:6px 6px max(22px,env(safe-area-inset-bottom)); border:1px solid var(--border); border-radius:14px 14px 0 0; background:#fff; box-shadow:0 8px 24px rgba(15,23,42,.16); }
+  .review-icon-actions { grid-template-columns:1fr; gap:6px; margin:0; }
+  .review-icon-actions .icon-action { width:40px; min-height:40px; padding:6px; border-radius:10px; }
+  .review-icon-actions .action-label { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
   .check-panel.mobile-active { padding-bottom:160px; }
   .check-panel.mobile-active .check-bottom-actions { position:fixed; left:8px; right:8px; bottom:0; z-index:8; padding:10px 12px max(22px,env(safe-area-inset-bottom)); border:1px solid var(--border); border-bottom:0; border-radius:14px 14px 0 0; background:#fff; box-shadow:0 -8px 24px rgba(15,23,42,.12); }
   [data-waiter-panel="menu"].mobile-active { padding-bottom:92px; }

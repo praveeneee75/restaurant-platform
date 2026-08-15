@@ -77,7 +77,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'kitchen.kds.view',
     'kitchen.status.update'
   ],
-  CASHIER: ['orders.create', 'billing.settle', 'inventory.view'],
+  CASHIER: ['orders.create', 'orders.transfer_table', 'billing.settle', 'inventory.view'],
   CAPTAIN: ['orders.create', 'orders.transfer_table', 'inventory.view'],
   WAITER: ['orders.create'],
   KITCHEN: ['kitchen.kds.view', 'kitchen.status.update']
@@ -143,7 +143,7 @@ function seedDefaultPermissions(db) {
     WHERE role_id = (SELECT id FROM roles WHERE name = ?)
       AND permission_id IN (SELECT id FROM permissions WHERE code = ?)
   `);
-  [['MANAGER_1', 'billing.settle'], ['MANAGER_1', 'billing.non_invoice'], ['CASHIER', 'inventory.view'], ['CAPTAIN', 'inventory.view']]
+  [['MANAGER_1', 'billing.settle'], ['MANAGER_1', 'billing.non_invoice'], ['CASHIER', 'inventory.view'], ['CASHIER', 'orders.transfer_table'], ['CAPTAIN', 'inventory.view']]
     .forEach(([role, code]) => grantPilotRole.run(role, code));
   seededPermissionDbs.add(db);
 }

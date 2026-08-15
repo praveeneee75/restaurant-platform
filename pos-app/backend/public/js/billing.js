@@ -91,6 +91,7 @@ document.addEventListener('click', async e => {
 });
 billingSearch.addEventListener('input', () => { renderTables(); renderRecent(); });
 refreshBilling.addEventListener('click', () => Promise.all([load(), loadBillingQrSettings()]).catch(e => billingStatus.textContent = e.message));
+transferBillingOrder.addEventListener('click', () => openBillingOrderTransfer().catch((error) => { billingStatus.textContent = error.message; }));
 saveBillingQrSettings.addEventListener('click', async () => {
   const limit = Number(billingQrPendingLimit.value);
   if (!Number.isInteger(limit) || limit < 1 || limit > 500) { billingQrSettingsStatus.textContent = 'Enter a maximum between 1 and 500.'; billingQrPendingLimit.focus(); return; }
@@ -113,6 +114,8 @@ setInterval(() => load().catch(e => { billingStatus.textContent = e.message; }),
 // Billing must show only kitchen-submitted lines; saved draft lines stay in POS.
 async function showSubmittedOrder(orderId) {
   const d = await getJson(`/orders/open?restaurantId=${encodeURIComponent(restaurantId)}&orderId=${encodeURIComponent(orderId)}`);
+  state.selected = d.order;
+  transferBillingOrder.disabled = !d.order?.id || d.order.payment_status === 'PAID';
   const items = (d.items || []).filter(item => item.kot_id);
   const kotGroups = items.reduce((groups, item) => {
     const sequence = item.kot_sequence || item.kot_id;
@@ -233,6 +236,50 @@ async function showSubmittedOrder(orderId) {
     if (value > balance) { status.textContent = `Only ${balance} reward points are available.`; return; }
     status.textContent = value ? `${value} reward point${value === 1 ? '' : 's'} selected. Apply settlement to confirm.` : 'No reward points selected.';
   });
+}
+
+async function openBillingOrderTransfer() {
+  if (!state.selected?.id) return alert('Select an open bill first');
+  const response = await fetch('/orders/transfer-preview', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ restaurantId, actor:{id:sessionUser.id,role:sessionUser.role}, orderId:state.selected.id }) });
+  const preview = await response.json();
+  if (!response.ok || preview.success === false) throw Error(preview.message || 'Unable to load transfer details');
+  document.querySelector('.modifier-modal-backdrop[data-order-transfer]')?.remove();
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modifier-modal-backdrop';
+  backdrop.dataset.orderTransfer = 'true';
+  const tableOptions = (preview.tables || []).map((table) => `<option value="${table.id}">${esc(table.table_name)} (${esc(table.status)})</option>`).join('');
+  backdrop.innerHTML = `<div class="modifier-modal order-transfer-modal"><header><div><h2>Transfer KOT / Item / Table</h2><p>${esc(preview.order.table_no)} · ${esc(preview.order.order_reference || preview.order.id)}</p></div><button type="button" class="secondary-btn" data-close-transfer>Close</button></header><div class="transfer-mode-tabs"><button type="button" class="active" data-mode="TABLE">Table Wise</button><button type="button" data-mode="KOT">KOT Wise</button><button type="button" data-mode="ITEM">Item Wise</button></div><div data-transfer-choices></div><label>Destination table<select data-target-table><option value="">Choose target table</option>${tableOptions}</select></label><p data-transfer-status class="status-message"></p><div class="cart-actions"><button type="button" data-confirm-transfer>Transfer</button></div></div>`;
+  document.body.appendChild(backdrop);
+  let mode = 'TABLE';
+  const grouped = (preview.items || []).reduce((result, item) => { (result[item.kot_id] ||= []).push(item); return result; }, {});
+  const renderChoices = () => {
+    backdrop.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode));
+    const choices = backdrop.querySelector('[data-transfer-choices]');
+    if (mode === 'TABLE') return choices.innerHTML = '<p>The complete customer check will move together. The destination must not have another open check.</p>';
+    choices.innerHTML = `<div class="split-item-list">${Object.entries(grouped).map(([kotId, items]) => mode === 'KOT'
+      ? `<label><input type="checkbox" name="transferKot" value="${kotId}"><span><strong>KOT ${esc(items[0].suborder_no || kotId)}</strong> · ${items.length} item line(s) · ${esc(items[0].kitchen_name || 'Kitchen')}</span></label>`
+      : items.map((item) => `<label><input type="checkbox" name="transferItem" value="${item.id}"><span>${esc(item.name)} × ${item.quantity} · KOT ${esc(item.suborder_no || kotId)}</span></label>`).join('')).join('')}</div>`;
+  };
+  renderChoices();
+  backdrop.querySelectorAll('[data-mode]').forEach((button) => button.onclick = () => { mode = button.dataset.mode; renderChoices(); });
+  backdrop.querySelector('[data-close-transfer]').onclick = () => backdrop.remove();
+  backdrop.addEventListener('click', (event) => { if (event.target === backdrop) backdrop.remove(); });
+  backdrop.querySelector('[data-confirm-transfer]').onclick = async () => {
+    const status = backdrop.querySelector('[data-transfer-status]');
+    const toTableId = Number(backdrop.querySelector('[data-target-table]').value || 0);
+    if (!toTableId) return status.textContent = 'Choose a destination table.';
+    try {
+      const transferResponse = await fetch('/orders/transfer', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ restaurantId, actor:{id:sessionUser.id,role:sessionUser.role}, orderId:state.selected.id, toTableId, mode, kotIds:[...backdrop.querySelectorAll('input[name="transferKot"]:checked')].map((input) => Number(input.value)), itemIds:[...backdrop.querySelectorAll('input[name="transferItem"]:checked')].map((input) => Number(input.value)) }) });
+      const result = await transferResponse.json();
+      if (!transferResponse.ok || result.success === false) throw Error(result.message || 'Transfer failed');
+      backdrop.remove();
+      billingStatus.textContent = result.message;
+      state.selected = null;
+      transferBillingOrder.disabled = true;
+      await load();
+      if (result.targetOrderId) await showSubmittedOrder(result.targetOrderId);
+    } catch (error) { status.textContent = error.message; }
+  };
 }
 
 function openBillingSplit(data, submittedItems) {

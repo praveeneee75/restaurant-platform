@@ -7118,6 +7118,170 @@ app.get('/orders/final-bill-readiness', (req, res) => {
   finally { db.close(); }
 });
 
+function queueOrderTransferPrintJobs(db, sourceOrder, targetOrder, movedItemIds, actor) {
+  if (!movedItemIds.length) return 0;
+  const rows = db.prepare(`
+    SELECT oi.id AS order_item_id, oi.quantity, oi.notes, oi.kot_id, i.name,
+           k.id AS kitchen_id, k.name AS kitchen_name, COALESCE(k.printer_id, 1) AS printer_id
+    FROM order_items oi
+    JOIN items i ON i.id = oi.item_id
+    JOIN categories c ON c.id = i.category_id
+    JOIN kitchens k ON k.id = c.kitchen_id
+    WHERE oi.id IN (${movedItemIds.map(() => '?').join(',')})
+    ORDER BY k.id, oi.id
+  `).all(...movedItemIds);
+  const grouped = rows.reduce((result, row) => {
+    result[row.kitchen_id] ||= { ...row, items: [] };
+    result[row.kitchen_id].items.push(row);
+    return result;
+  }, {});
+  Object.values(grouped).forEach((group) => {
+    const kotReferences = [...new Set(group.items.map((item) => item.kot_id).filter(Boolean))].join(', ');
+    const payload = {
+      headerText: `Shifted From Table No ${sourceOrder.table_no || '-'} To ${targetOrder.table_no || '-'}`,
+      footerText: `Transferred by ${actor?.name || actor?.username || actor?.role || 'POS user'}`,
+      kotReference: kotReferences || targetOrder.order_reference || targetOrder.id,
+      orderId: targetOrder.id,
+      orderType: 'DINE_IN',
+      tableName: targetOrder.table_no,
+      kitchen: group.kitchen_name,
+      printTable: true,
+      printKitchen: true,
+      compactSpacing: true,
+      items: group.items.map((item) => ({ name: item.name, quantity: item.quantity, notes: item.notes || '--' }))
+    };
+    db.prepare("INSERT INTO print_jobs (type, ref_id, kitchen_id, printer_id, payload, status) VALUES ('KOT', ?, ?, ?, ?, 'PENDING')")
+      .run(targetOrder.id, group.kitchen_id, group.printer_id, JSON.stringify(payload));
+    insertElectronicJournal(db, 'KOT_TRANSFER', targetOrder.id, payload);
+  });
+  return Object.keys(grouped).length;
+}
+
+app.post('/orders/transfer-preview', (req, res) => {
+  const { restaurantId, actor, orderId } = req.body;
+  if (!restaurantId || !isPositiveId(orderId)) return res.status(400).json({ success: false, message: 'Order is required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'orders.transfer_table', 'Order transfer permission required');
+    const order = db.prepare("SELECT * FROM orders WHERE id = ? AND status = 'OPEN' AND payment_status != 'PAID'").get(orderId);
+    if (!order) throw new Error('Open unpaid order not found');
+    const items = db.prepare(`
+      SELECT oi.id, oi.kot_id, oi.quantity, oi.notes, oi.status, i.name,
+             k.suborder_no, kt.name AS kitchen_name
+      FROM order_items oi
+      JOIN items i ON i.id = oi.item_id
+      LEFT JOIN kots k ON k.id = oi.kot_id
+      LEFT JOIN categories c ON c.id = i.category_id
+      LEFT JOIN kitchens kt ON kt.id = c.kitchen_id
+      WHERE oi.order_id = ? AND oi.kot_id IS NOT NULL
+      ORDER BY COALESCE(k.suborder_no, k.id), oi.id
+    `).all(orderId);
+    const tables = db.prepare("SELECT id, table_name, status FROM tables WHERE active = 1 AND id != ? ORDER BY table_name").all(order.table_id || 0);
+    res.json({ success: true, order, items, tables });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
+app.post('/orders/transfer', (req, res) => {
+  const { restaurantId, actor, orderId, toTableId, mode, kotIds = [], itemIds = [], lockId } = req.body;
+  const safeMode = String(mode || '').toUpperCase();
+  if (!restaurantId || !isPositiveId(orderId) || !isPositiveId(toTableId) || !['TABLE', 'KOT', 'ITEM'].includes(safeMode)) {
+    return res.status(400).json({ success: false, message: 'Order, target table and transfer mode are required' });
+  }
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'orders.transfer_table', 'Order transfer permission required');
+    const source = db.prepare("SELECT * FROM orders WHERE id = ? AND status = 'OPEN' AND payment_status != 'PAID'").get(orderId);
+    if (!source) throw new Error('Open unpaid order not found');
+    if (Number(source.table_id) === Number(toTableId)) throw new Error('Choose a different target table');
+    if (lockId) verifyOrderLock(db, actor, source.table_id, orderId, lockId);
+    const targetTable = db.prepare("SELECT id, table_name, status FROM tables WHERE id = ? AND active = 1").get(toTableId);
+    if (!targetTable) throw new Error('Target table not found');
+
+    if (safeMode === 'TABLE') {
+      const existing = db.prepare("SELECT id FROM orders WHERE table_id = ? AND status = 'OPEN' AND payment_status != 'PAID' LIMIT 1").get(toTableId);
+      if (existing) throw new Error('Whole-check transfer requires a table without an open check');
+      db.transaction(() => {
+        db.prepare('UPDATE orders SET table_id = ?, table_no = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(toTableId, targetTable.table_name, orderId);
+        syncTableStatus(db, source.table_id);
+        syncTableStatus(db, toTableId);
+        if (lockId) db.prepare(`UPDATE order_locks SET table_id = ?, locked_at = CURRENT_TIMESTAMP, expires_at = ${lockExpirySql()} WHERE id = ?`).run(toTableId, lockId);
+        const movedIds = db.prepare('SELECT id FROM order_items WHERE order_id = ? AND kot_id IS NOT NULL').all(orderId).map((row) => Number(row.id));
+        const targetOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+        queueOrderTransferPrintJobs(db, source, targetOrder, movedIds, actor);
+        writeOrderStatusHistory(db, actor, orderId, 'TRANSFERRED', 'ORDER', `Whole check moved from ${source.table_no} to ${targetTable.table_name}`);
+        writeAudit(db, actor, 'TRANSFER_TABLE', 'ORDER', orderId, source, { ...source, table_id: toTableId, table_no: targetTable.table_name });
+      })();
+      return res.json({ success: true, mode: safeMode, orderId, message: `Check moved to ${targetTable.table_name}` });
+    }
+
+    const discountState = db.prepare('SELECT COUNT(*) AS count FROM discounts WHERE order_id = ?').get(orderId);
+    if (Number(discountState?.count || 0) || Number(source.redeemed_points || 0) || Number(source.loyalty_discount || 0)) {
+      throw new Error('Remove applied discounts or rewards before transferring individual KOTs or items');
+    }
+    const selectedIds = safeMode === 'KOT'
+      ? [...new Set(kotIds.map(Number).filter(Number.isInteger))]
+      : [...new Set(itemIds.map(Number).filter(Number.isInteger))];
+    if (!selectedIds.length) throw new Error(`Select at least one ${safeMode === 'KOT' ? 'KOT' : 'item'}`);
+    const selectedItems = safeMode === 'KOT'
+      ? db.prepare(`SELECT id, kot_id FROM order_items WHERE order_id = ? AND kot_id IN (${selectedIds.map(() => '?').join(',')})`).all(orderId, ...selectedIds)
+      : db.prepare(`SELECT id, kot_id FROM order_items WHERE order_id = ? AND kot_id IS NOT NULL AND id IN (${selectedIds.map(() => '?').join(',')})`).all(orderId, ...selectedIds);
+    if (!selectedItems.length) throw new Error('The selected submitted KOT items are no longer available');
+    if (safeMode === 'ITEM' && selectedItems.length !== selectedIds.length) throw new Error('One or more selected items are invalid or not submitted to KOT');
+
+    const result = db.transaction(() => {
+      reverseInventoryDeductionForOrder(db, actor, orderId);
+      const identity = nextOrderIdentity(db, toTableId);
+      const inserted = db.prepare(`
+        INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, created_by, customer_id, order_source, order_sequence, customer_ref, order_reference)
+        VALUES ('DINE_IN', ?, ?, 'OPEN', 0, 'UNPAID', ?, ?, 'TRANSFER', ?, ?, ?)
+      `).run(toTableId, targetTable.table_name, actor?.id || null, source.customer_id || null, identity.orderSequence, identity.customerRef, identity.orderReference);
+      const targetOrderId = Number(inserted.lastInsertRowid);
+      const movedItemIds = selectedItems.map((item) => Number(item.id));
+      db.prepare(`UPDATE order_items SET order_id = ? WHERE id IN (${movedItemIds.map(() => '?').join(',')})`).run(targetOrderId, ...movedItemIds);
+
+      const affectedKots = [...new Set(selectedItems.map((item) => Number(item.kot_id)))];
+      affectedKots.forEach((kotId) => {
+        const remaining = Number(db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE order_id = ? AND kot_id = ?').get(orderId, kotId)?.count || 0);
+        if (!remaining) {
+          db.prepare('UPDATE kots SET order_id = ? WHERE id = ?').run(targetOrderId, kotId);
+          return;
+        }
+        const movedForKot = selectedItems.filter((item) => Number(item.kot_id) === kotId).map((item) => Number(item.id));
+        const oldKot = db.prepare('SELECT kitchen_id, status FROM kots WHERE id = ?').get(kotId);
+        const nextSuborder = Number(db.prepare('SELECT COALESCE(MAX(suborder_no), 0) + 1 AS next FROM kots WHERE order_id = ?').get(targetOrderId)?.next || 1);
+        const newKot = db.prepare('INSERT INTO kots (order_id, kitchen_id, status, suborder_no) VALUES (?, ?, ?, ?)').run(targetOrderId, oldKot.kitchen_id, oldKot.status || 'CREATED', nextSuborder);
+        db.prepare(`UPDATE order_items SET kot_id = ? WHERE id IN (${movedForKot.map(() => '?').join(',')})`).run(newKot.lastInsertRowid, ...movedForKot);
+      });
+
+      const sourceTotal = calculateOrderPricing(db, orderId, false).payableSubtotal;
+      const targetTotal = calculateOrderPricing(db, targetOrderId, false).payableSubtotal;
+      db.prepare('UPDATE orders SET total_amount = ?, billing_ready = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(sourceTotal, orderId);
+      db.prepare('UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(targetTotal, targetOrderId);
+      deductInventoryForOrder(db, actor, orderId, 'KOT_TRANSFER_REBALANCE');
+      deductInventoryForOrder(db, actor, targetOrderId, 'KOT_TRANSFER_REBALANCE');
+      const sourceItemCount = Number(db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE order_id = ?').get(orderId)?.count || 0);
+      if (!sourceItemCount) db.prepare("UPDATE orders SET status = 'TRANSFERRED', billing_ready = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(orderId);
+      syncTableStatus(db, source.table_id);
+      syncTableStatus(db, toTableId);
+      const targetOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(targetOrderId);
+      const printJobs = queueOrderTransferPrintJobs(db, source, targetOrder, movedItemIds, actor);
+      writeOrderStatusHistory(db, actor, orderId, 'TRANSFERRED_OUT', 'ORDER', `${safeMode} moved to ${targetTable.table_name} as ${identity.orderReference}`);
+      writeOrderStatusHistory(db, actor, targetOrderId, 'TRANSFERRED_IN', 'ORDER', `${safeMode} moved from ${source.table_no}`);
+      writeAudit(db, actor, `TRANSFER_${safeMode}`, safeMode === 'KOT' ? 'KOT' : 'ORDER_ITEM', targetOrderId, null, { sourceOrderId: orderId, targetOrderId, movedItemIds, printJobs });
+      return { targetOrderId, targetReference: identity.orderReference, movedItemCount: movedItemIds.length, printJobs };
+    })();
+    res.json({ success: true, mode: safeMode, ...result, message: `${safeMode === 'KOT' ? 'KOT' : 'Item'} transfer completed to ${targetTable.table_name}; ${result.printJobs} kitchen notice(s) queued` });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
 app.post('/orders/unlock-billing', (req, res) => {
   const { restaurantId, actor, orderId } = req.body;
   if (!restaurantId || !isPositiveId(orderId)) return res.status(400).json({ success: false, message: 'Order is required' });
