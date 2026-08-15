@@ -105,6 +105,7 @@ async function loadBranchProfiles() {
           ${branchField(code,'phone','Branch phone',branch.phone || '')}${branchField(code,'email','Branch email',branch.email || '','email')}
           ${branchField(code,'currency','Currency',branch.currency || 'INR')}${branchField(code,'timezone','Timezone',branch.timezone || 'Asia/Kolkata')}
           ${branchField(code,'taxRate','GST rate (%)',branch.tax_rate ?? '5','number')}
+          <label>Sales data storage<select id="branch-salesStorageMode-${code}"><option value="LOCAL_AND_ONLINE" ${branch.sales_storage_mode !== 'LOCAL_ONLY' ? 'selected' : ''}>Local + Online</option><option value="LOCAL_ONLY" ${branch.sales_storage_mode === 'LOCAL_ONLY' ? 'selected' : ''}>Local only</option></select></label>
         </div><button type="button" data-save-branch="${branchEsc(code)}">Save branch profile</button>
         </div>
       </details>`;
@@ -139,7 +140,7 @@ branchProfiles.addEventListener('click', async (event) => {
   branchProfileMsg.innerText = 'Saving branch profile...'; button.disabled = true;
   try {
     const data = await ownerApi(`/owners/branch-profiles/${encodeURIComponent(code)}`, { method:'PUT', body:JSON.stringify({
-      name:value('name'), legalName:value('legalName'), gstin:value('gstin'), fssaiLicenseNo:value('fssaiLicenseNo'), sacCode:value('sacCode'), taxRate:value('taxRate'), stateCode:value('stateCode'), addressLine1:value('addressLine1'), addressLine2:value('addressLine2'), city:value('city'), state:document.getElementById(`branch-state-${code}`)?.value || '', country:value('country'), phone:value('phone'), email:value('email'), currency:value('currency'), timezone:value('timezone')
+      name:value('name'), legalName:value('legalName'), gstin:value('gstin'), fssaiLicenseNo:value('fssaiLicenseNo'), sacCode:value('sacCode'), taxRate:value('taxRate'), stateCode:value('stateCode'), addressLine1:value('addressLine1'), addressLine2:value('addressLine2'), city:value('city'), state:document.getElementById(`branch-state-${code}`)?.value || '', country:value('country'), phone:value('phone'), email:value('email'), currency:value('currency'), timezone:value('timezone'), salesStorageMode:document.getElementById(`branch-salesStorageMode-${code}`)?.value || 'LOCAL_AND_ONLINE'
     }) });
     branchProfileMsg.innerText = data.message;
   } catch (err) { branchProfileMsg.innerText = err.message; } finally { button.disabled = false; }

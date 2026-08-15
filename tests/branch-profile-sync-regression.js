@@ -15,7 +15,7 @@ const tenants = read('saas-backend/src/routes/tenants.js');
 const mobileDownload = read('saas-backend/public/mobile-download.html');
 
 assert(owners.includes("router.get('/branch-profiles', authenticateOwner") && owners.includes("router.put('/branch-profiles/:restaurantCode', authenticateOwner"), 'owner branch profile API requires authenticated owner access');
-assert(owners.includes('ro.owner_user_id=$18') && owners.includes('ro.active=true'), 'branch updates are tenant-isolated to the assigned owner');
+assert(owners.includes('ro.owner_user_id=$19') && owners.includes('ro.active=true'), 'branch updates are tenant-isolated to the assigned owner');
 assert(ownerProfile.includes('Restaurant &amp; Branch Profiles') && ownerProfileJs.includes("/owners/branch-profiles"), 'owner portal exposes per-branch profile editing');
 assert(license.includes('restaurantProfile: restaurantProfile(license)') && pos.includes('applyCloudRestaurantProfile(db, response.data)'), 'existing license authentication contract transfers SaaS profile to POS');
 assert(admin.includes('name="customerStructure"') && admin.includes('value="GROUP"') && admin.includes('restaurantBranchCount') && admin.includes('multiBranchProfiles'), 'restaurant onboarding explicitly supports one restaurant or a multi-branch restaurant group');

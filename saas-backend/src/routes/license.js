@@ -31,6 +31,10 @@ function restaurantProfile(row) {
   };
 }
 
+function dataStoragePolicy(row) {
+  return { sales: row.sales_storage_mode === 'LOCAL_ONLY' ? 'LOCAL_ONLY' : 'LOCAL_AND_ONLINE' };
+}
+
 router.post('/validate', async (req, res) => {
   const { restaurantId, licenseKey } = req.body;
   const normalizedRestaurantId = String(restaurantId || '').trim().toUpperCase();
@@ -62,6 +66,7 @@ router.post('/validate', async (req, res) => {
           state: 'Tamil Nadu', country: 'India', phone: '+91 98765 43210', email: 'demo@kmasterpos.com',
           currency: 'INR', timezone: 'Asia/Kolkata', logo_path: ''
         },
+        dataStoragePolicy: { sales: 'LOCAL_AND_ONLINE' },
         expiresAt: new Date(Date.now() + (3650 * 24 * 60 * 60 * 1000)).toISOString(),
         syncToken: null,
         packageCode: 'WHITE_LABEL_DEMO',
@@ -81,7 +86,7 @@ router.post('/validate', async (req, res) => {
       SELECT l.status, l.expires_at, l.sync_token,
              t.id AS tenant_id, t.name AS restaurant_name, t.legal_name, t.gstin,
              t.fssai_license_no, t.sac_code, t.tax_rate, t.state_code, t.address_line_1, t.address_line_2,
-             t.city, t.state, t.country, t.phone, t.email, t.currency, t.timezone, t.logo_path,
+             t.city, t.state, t.country, t.phone, t.email, t.currency, t.timezone, t.logo_path, t.sales_storage_mode,
              p.code AS package_code, p.name AS package_name
       FROM licenses l
       JOIN tenants t ON t.id = l.tenant_id
@@ -139,6 +144,7 @@ router.post('/validate', async (req, res) => {
       valid: true,
       restaurantName: license.restaurant_name,
       restaurantProfile: restaurantProfile(license),
+      dataStoragePolicy: dataStoragePolicy(license),
       expiresAt: license.expires_at,
       syncToken: license.sync_token,
       packageCode: license.package_code || null,

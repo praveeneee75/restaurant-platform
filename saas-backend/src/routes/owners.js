@@ -327,7 +327,7 @@ router.get('/branch-profiles', authenticateOwner, async (req, res) => {
     const result = await pool.query(`
       SELECT t.restaurant_code, t.name, t.legal_name, t.gstin, t.fssai_license_no,
              t.sac_code, t.tax_rate, t.state_code, t.address_line_1, t.address_line_2,
-             t.city, t.state, t.country, t.phone, t.email, t.currency, t.timezone
+             t.city, t.state, t.country, t.phone, t.email, t.currency, t.timezone, t.sales_storage_mode
       FROM restaurant_owners ro
       JOIN tenants t ON t.id = ro.tenant_id
       WHERE ro.owner_user_id = $1 AND ro.active = true
@@ -342,6 +342,7 @@ router.get('/branch-profiles', authenticateOwner, async (req, res) => {
 
 router.put('/branch-profiles/:restaurantCode', authenticateOwner, async (req, res) => {
   const profile = req.body || {};
+  const salesStorageMode = profile.salesStorageMode === 'LOCAL_ONLY' ? 'LOCAL_ONLY' : 'LOCAL_AND_ONLINE';
   const required = ['name','legalName','sacCode','stateCode','addressLine1','city','state','country','phone','email','currency','timezone'];
   const missing = required.filter((key) => !String(profile[key] || '').trim());
   if (missing.length) return res.status(400).json({ success: false, message: `Complete the required branch fields: ${missing.join(', ')}` });
@@ -356,17 +357,29 @@ router.put('/branch-profiles/:restaurantCode', authenticateOwner, async (req, re
     const result = await pool.query(`
       UPDATE tenants t SET name=$1, legal_name=$2, gstin=NULLIF($3,''), fssai_license_no=NULLIF($4,''),
         sac_code=$5, tax_rate=$6, state_code=$7, address_line_1=$8, address_line_2=$9,
-        city=$10, state=$11, country=$12, phone=$13, email=$14, currency=$15, timezone=$16, updated_at=NOW()
-      WHERE t.restaurant_code=$17 AND EXISTS (
-        SELECT 1 FROM restaurant_owners ro WHERE ro.tenant_id=t.id AND ro.owner_user_id=$18 AND ro.active=true
+        city=$10, state=$11, country=$12, phone=$13, email=$14, currency=$15, timezone=$16,
+        sales_storage_mode=$17, updated_at=NOW()
+      WHERE t.restaurant_code=$18 AND EXISTS (
+        SELECT 1 FROM restaurant_owners ro WHERE ro.tenant_id=t.id AND ro.owner_user_id=$19 AND ro.active=true
       ) RETURNING t.restaurant_code, t.name
-    `, [String(profile.name).trim(), String(profile.legalName).trim(), String(profile.gstin || '').trim().toUpperCase(), String(profile.fssaiLicenseNo || '').replace(/\D/g,''), String(profile.sacCode).trim(), Number(profile.taxRate || 0), String(profile.stateCode), String(profile.addressLine1).trim(), String(profile.addressLine2 || '').trim(), String(profile.city).trim(), String(profile.state).trim(), String(profile.country).trim(), String(profile.phone).trim(), String(profile.email).trim().toLowerCase(), String(profile.currency).trim().toUpperCase(), String(profile.timezone).trim(), String(req.params.restaurantCode).trim().toUpperCase(), req.owner.id]);
+    `, [String(profile.name).trim(), String(profile.legalName).trim(), String(profile.gstin || '').trim().toUpperCase(), String(profile.fssaiLicenseNo || '').replace(/\D/g,''), String(profile.sacCode).trim(), Number(profile.taxRate || 0), String(profile.stateCode), String(profile.addressLine1).trim(), String(profile.addressLine2 || '').trim(), String(profile.city).trim(), String(profile.state).trim(), String(profile.country).trim(), String(profile.phone).trim(), String(profile.email).trim().toLowerCase(), String(profile.currency).trim().toUpperCase(), String(profile.timezone).trim(), salesStorageMode, String(req.params.restaurantCode).trim().toUpperCase(), req.owner.id]);
     if (!result.rowCount) return res.status(404).json({ success: false, message: 'Branch not found or not assigned to this owner' });
     res.json({ success: true, message: `${result.rows[0].name} profile saved. POS will receive it at next authentication.` });
   } catch (err) {
     console.error('OWNER BRANCH PROFILE UPDATE ERROR:', err.message);
     res.status(500).json({ success: false, message: publicError(err) });
   }
+});
+
+router.get('/validate-pos-report-access/:restaurantCode', authenticateOwner, async (req, res) => {
+  try {
+    const result = await pool.query(`SELECT t.restaurant_code, t.sales_storage_mode FROM restaurant_owners ro
+      JOIN tenants t ON t.id = ro.tenant_id
+      WHERE ro.owner_user_id=$1 AND ro.active=true AND t.restaurant_code=$2 LIMIT 1`,
+    [req.owner.id, String(req.params.restaurantCode || '').trim().toUpperCase()]);
+    if (!result.rowCount) return res.status(403).json({ success:false, message:'Restaurant is not assigned to this owner' });
+    res.json({ success:true, restaurantId:result.rows[0].restaurant_code, salesStorageMode:result.rows[0].sales_storage_mode });
+  } catch (err) { res.status(500).json({ success:false, message:publicError(err) }); }
 });
 
 router.post('/branch-profiles/:restaurantCode/disconnect', authenticateOwner, async (req, res) => {

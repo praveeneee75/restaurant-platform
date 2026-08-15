@@ -37,6 +37,8 @@ async function migrate() {
   await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS timezone TEXT');
   await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS logo_path TEXT');
   await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()');
+  await pool.query("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS sales_storage_mode TEXT NOT NULL DEFAULT 'LOCAL_AND_ONLINE'");
+  await pool.query("UPDATE tenants SET sales_storage_mode = 'LOCAL_AND_ONLINE' WHERE sales_storage_mode NOT IN ('LOCAL_ONLY','LOCAL_AND_ONLINE') OR sales_storage_mode IS NULL");
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS licenses (

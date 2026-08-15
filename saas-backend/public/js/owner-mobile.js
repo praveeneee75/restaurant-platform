@@ -6,8 +6,29 @@ async function api(url) {
   const res = await fetch(url, { headers: { Authorization: `Bearer ${ownerToken}` } });
   if (window.SaasSession?.handleUnauthorized?.(res)) throw new Error("Session expired");
   const data = await res.json();
-  if (!res.ok || data.success === false) throw new Error(data.message || "Request failed");
+  if (!res.ok || data.success === false) {
+    const error = new Error(data.message || "Request failed");
+    Object.assign(error, data);
+    throw error;
+  }
   return data;
+}
+
+async function reportApi(path, restaurantId, fromDate, toDate) {
+  try { return await api(`${path}?restaurantId=${encodeURIComponent(restaurantId)}&fromDate=${fromDate}&toDate=${toDate}`); }
+  catch (error) {
+    if (error.code !== 'POS_DIRECT_REQUIRED') throw error;
+    if (!error.posUrl) throw new Error('Sales data is stored locally. Bring the POS online to retrieve this report.');
+    const base = String(error.posUrl).replace(/\/$/, '');
+    try {
+      const response = await fetch(`${base}/owner-direct/reports?restaurantId=${encodeURIComponent(restaurantId)}&fromDate=${fromDate}&toDate=${toDate}`, { headers:{ Authorization:`Bearer ${ownerToken}` } });
+      const live = await response.json();
+      if (!response.ok || !live.success) throw new Error(live.message || 'Live POS report failed');
+      return path.endsWith('/items') ? { success:true, items:live.items, source:'LIVE_POS' } : live;
+    } catch (_) {
+      throw new Error('Sales data is stored locally. Bring the POS online and ensure this device can reach the restaurant POS to retrieve the report.');
+    }
+  }
 }
 
 function money(value) {
@@ -42,9 +63,9 @@ async function loadReports() {
   const restaurantId = restaurantSelect.value;
   if (!restaurantId) return;
   const [today, month, items, sync] = await Promise.all([
-    api(`/owner/reports/summary?restaurantId=${restaurantId}&fromDate=${todayIso()}&toDate=${todayIso()}`),
-    api(`/owner/reports/summary?restaurantId=${restaurantId}&fromDate=${monthStartIso()}&toDate=${todayIso()}`),
-    api(`/owner/reports/items?restaurantId=${restaurantId}&fromDate=${monthStartIso()}&toDate=${todayIso()}`),
+    reportApi('/owner/reports/summary', restaurantId, todayIso(), todayIso()),
+    reportApi('/owner/reports/summary', restaurantId, monthStartIso(), todayIso()),
+    reportApi('/owner/reports/items', restaurantId, monthStartIso(), todayIso()),
     api(`/owner/reports/sync-status?restaurantId=${restaurantId}`)
   ]);
   todaySales.textContent = money(today.totals.netSales);

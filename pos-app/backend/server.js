@@ -1279,6 +1279,8 @@ function applyCloudRestaurantProfile(db, licenseData) {
   if (Array.isArray(licenseData?.ownerCapabilities)) {
     setConfigValues(db, { owner_capabilities: JSON.stringify(licenseData.ownerCapabilities.map((code) => String(code).toUpperCase())) });
   }
+  const salesMode = licenseData?.dataStoragePolicy?.sales === 'LOCAL_ONLY' ? 'LOCAL_ONLY' : 'LOCAL_AND_ONLINE';
+  setConfigValues(db, { sales_storage_mode: salesMode });
 }
 
 function mobilePosBaseUrl() {
@@ -10998,9 +11000,13 @@ async function syncQueuedReport(db, restaurantId, row) {
 }
 
 async function runCloudSyncForDate(restaurantId, dateValue) {
-  const payload = buildDailyReportPayload(restaurantId, dateValue);
   const db = openRestaurantDatabase(restaurantId);
   try {
+    if (getConfigValue(db, 'sales_storage_mode', 'LOCAL_AND_ONLINE') === 'LOCAL_ONLY') {
+      cloudSyncStatus(db, restaurantId, 'LOCAL_ONLY', 'Sales storage is configured as local only');
+      return { success: true, skipped: true, storageMode: 'LOCAL_ONLY', reportDate: isoDateOnly(dateValue) };
+    }
+    const payload = buildDailyReportPayload(restaurantId, dateValue);
     const queueId = saveCloudSyncQueue(db, payload);
     const row = db.prepare('SELECT * FROM cloud_sync_queue WHERE id = ?').get(queueId);
     return await syncQueuedReport(db, restaurantId, row);
@@ -11012,6 +11018,7 @@ async function runCloudSyncForDate(restaurantId, dateValue) {
 async function retryCloudSyncQueue(restaurantId) {
   const db = openRestaurantDatabase(restaurantId);
   try {
+    if (getConfigValue(db, 'sales_storage_mode', 'LOCAL_AND_ONLINE') === 'LOCAL_ONLY') return [];
     const rows = db.prepare(`
       SELECT * FROM cloud_sync_queue
       WHERE status IN ('PENDING', 'FAILED') AND attempts < 20
@@ -11387,6 +11394,13 @@ async function runOwnerControlTick() {
     db = openRestaurantDatabase(restaurantId);
     const credentials = saasCredentials(db, restaurantId);
     const snapshot = buildOwnerControlSnapshot(db);
+    if (getConfigValue(db, 'sales_storage_mode', 'LOCAL_AND_ONLINE') === 'LOCAL_ONLY') {
+      snapshot.liveOperations = {};
+      snapshot.executiveSales = {};
+      snapshot.refundSummary = {};
+      snapshot.promocodeSummary = {};
+      snapshot.reprintSummary = {};
+    }
     await axios.post(`${saasUrl}/owner-control/pos/push-snapshot`, { restaurantId, ...credentials, ...snapshot }, { timeout: 10000 });
     const pulled = await axios.post(`${saasUrl}/owner-control/pos/pull`, { restaurantId, ...credentials }, { timeout: 10000 });
     for (const config of pulled.data?.configurations || []) {
@@ -11911,5 +11925,68 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 POS backend running at http://localhost:${PORT}`);
   sendPosHeartbeat().catch((err) => console.warn('Initial POS heartbeat skipped:', err.message));
+});
+
+async function authorizeOwnerDirectReport(req, restaurantId) {
+  const token = String(req.get('authorization') || '');
+  if (!/^Bearer\s+\S+/i.test(token)) throw Object.assign(new Error('Owner authentication is required'), { statusCode: 401 });
+  const saasUrl = String(process.env.SAAS_URL || '').replace(/\/$/, '');
+  if (!saasUrl) throw Object.assign(new Error('Owner authentication service is unavailable'), { statusCode: 503 });
+  const response = await axios.get(`${saasUrl}/owners/validate-pos-report-access/${encodeURIComponent(restaurantId)}`, {
+    headers: { Authorization: token }, timeout: 7000, validateStatus: () => true
+  });
+  if (response.status !== 200 || !response.data?.success) {
+    throw Object.assign(new Error(response.data?.message || 'Owner access denied'), { statusCode: response.status === 401 ? 401 : 403 });
+  }
+  return response.data;
+}
+
+function reportDates(fromDate, toDate) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(fromDate || '')) || !/^\d{4}-\d{2}-\d{2}$/.test(String(toDate || ''))) throw new Error('Valid report dates are required');
+  const start = new Date(`${fromDate}T00:00:00Z`), end = new Date(`${toDate}T00:00:00Z`);
+  if (start > end || (end - start) / 86400000 > 366) throw new Error('Report range must be between 1 and 367 days');
+  const dates = [];
+  for (let day = start; day <= end; day = new Date(day.getTime() + 86400000)) dates.push(day.toISOString().slice(0, 10));
+  return dates;
+}
+
+app.get('/owner-direct/reports', async (req, res) => {
+  const restaurantId = String(req.query.restaurantId || getSingleRestaurantId() || '').trim();
+  try {
+    if (!restaurantId) throw new Error('restaurantId required');
+    await authorizeOwnerDirectReport(req, restaurantId);
+    const dates = reportDates(req.query.fromDate, req.query.toDate);
+    const reports = dates.map((date) => buildDailyReportPayload(restaurantId, date));
+    const totals = reports.reduce((sum, row) => {
+      Object.keys(sum).forEach((key) => { sum[key] += Number(row.summary[key] || 0); });
+      return sum;
+    }, { grossSales:0, netSales:0, taxAmount:0, discountAmount:0, refundsAmount:0, ordersCount:0, cashTotal:0, cardTotal:0, upiTotal:0 });
+    const itemMap = new Map();
+    reports.flatMap((row) => row.itemSales).forEach((item) => {
+      const current = itemMap.get(item.itemName) || { item_name:item.itemName, quantity_sold:0, total_sales:0 };
+      current.quantity_sold += Number(item.quantitySold || 0); current.total_sales += Number(item.totalSales || 0);
+      itemMap.set(item.itemName, current);
+    });
+    res.json({ success:true, storageMode:'LOCAL_ONLY', source:'LIVE_POS', fromDate:req.query.fromDate, toDate:req.query.toDate, totals, items:[...itemMap.values()].sort((a,b) => b.total_sales-a.total_sales) });
+  } catch (err) { res.status(err.statusCode || 400).json({ success:false, message:err.message }); }
+});
+
+app.get('/owner-direct/dashboard', async (req, res) => {
+  const restaurantId = String(req.query.restaurantId || getSingleRestaurantId() || '').trim();
+  try {
+    if (!restaurantId) throw new Error('restaurantId required');
+    await authorizeOwnerDirectReport(req, restaurantId);
+    const db = openRestaurantDatabase(restaurantId);
+    try {
+      if (getConfigValue(db, 'sales_storage_mode', 'LOCAL_AND_ONLINE') !== 'LOCAL_ONLY') throw Object.assign(new Error('Direct reports are enabled only for local-only sales storage'), { statusCode:409 });
+      const snapshot = buildOwnerControlSnapshot(db);
+      const dates = reportDates(req.query.fromDate || dateDaysAgo(89), req.query.toDate || dateDaysAgo(0));
+      const dailyReports = dates.map((date) => {
+        const row = buildDailyReportPayload(restaurantId, date);
+        return { report_date:date, gross_sales:row.summary.grossSales, net_sales:row.summary.netSales, tax_amount:row.summary.taxAmount, discount_amount:row.summary.discountAmount, refunds_amount:row.summary.refundsAmount, orders_count:row.summary.ordersCount, cash_total:row.summary.cashTotal, card_total:row.summary.cardTotal, upi_total:row.summary.upiTotal };
+      }).filter((row) => row.orders_count || row.gross_sales || row.refunds_amount).reverse();
+      res.json({ success:true, source:'LIVE_POS', salesStorageMode:'LOCAL_ONLY', restaurant:{ code:restaurantId, name:getConfigValue(db,'restaurant_display_name',restaurantId) }, freshness:{ lastSnapshotAt:new Date().toISOString(), lastHeartbeatAt:new Date().toISOString() }, ...snapshot, dailyReports, topItems:snapshot.executiveSales?.itemPerformance || [], health:{ app_status:'ONLINE' }, alerts:[], commands:[], capabilities:[], pendingApprovals:[] });
+    } finally { db.close(); }
+  } catch (err) { res.status(err.statusCode || 400).json({ success:false, message:err.message }); }
 });
 

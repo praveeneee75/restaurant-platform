@@ -14,12 +14,25 @@ function dateRange(query) {
   return { fromDate, toDate };
 }
 
+function localOnlyResponse(res, tenant) {
+  return res.status(409).json({
+    success: false,
+    code: 'POS_DIRECT_REQUIRED',
+    storageMode: 'LOCAL_ONLY',
+    posUrl: tenant.mobile_pos_url || null,
+    message: tenant.mobile_pos_url
+      ? 'Sales data is stored locally. The owner portal must retrieve it from the POS app.'
+      : 'Sales data is stored locally. Bring the POS online to retrieve this report.'
+  });
+}
+
 router.get('/summary', async (req, res) => {
   const { restaurantId } = req.query;
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
 
   try {
     const tenant = req.tenant;
+    if (tenant.sales_storage_mode === 'LOCAL_ONLY') return localOnlyResponse(res, tenant);
     const { fromDate, toDate } = dateRange(req.query);
     const rows = await pool.query(
       `
@@ -65,6 +78,7 @@ router.get('/items', async (req, res) => {
 
   try {
     const tenant = req.tenant;
+    if (tenant.sales_storage_mode === 'LOCAL_ONLY') return localOnlyResponse(res, tenant);
     const { fromDate, toDate } = dateRange(req.query);
     const result = await pool.query(
       `
@@ -111,6 +125,7 @@ router.post('/request-sync', async (req, res) => {
 
   try {
     const tenant = req.tenant;
+    if (tenant.sales_storage_mode === 'LOCAL_ONLY') return localOnlyResponse(res, tenant);
     await pool.query(
       `INSERT INTO tenant_remote_commands (tenant_id, restaurant_code, command_type, payload, status, requested_by, expires_at)
        VALUES ($1, $2, 'REQUEST_SYNC', '{}'::jsonb, 'PENDING', $3, NOW() + INTERVAL '24 hours')`,

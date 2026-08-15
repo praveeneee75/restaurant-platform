@@ -33,7 +33,7 @@ async function api(url, options={}) {
     const res = await fetch(url,{...options,signal:controller.signal,headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`,...options.headers}});
     if(window.SaasSession?.handleUnauthorized?.(res)) throw new Error('Session expired');
     const data = await res.json();
-    if(!res.ok || data.success === false) throw new Error(data.message || 'Request failed');
+    if(!res.ok || data.success === false) { const error=new Error(data.message || 'Request failed');Object.assign(error,data);throw error; }
     return data;
   } catch(error) {
     if(error.name === 'AbortError') throw new Error('Owner data took too long to load. Check POS connectivity and retry.');
@@ -392,7 +392,17 @@ async function load(){
   $('status').innerHTML='<span class="sync-pill">Loading cloud snapshot…</span>';
   $('refreshButton').disabled=true;
   try {
-    const dashboards=await Promise.all(ids.map((id)=>api(`/owner-control/owner/dashboard?restaurantId=${encodeURIComponent(id)}`)));
+    const cloudDashboards=await Promise.all(ids.map((id)=>api(`/owner-control/owner/dashboard?restaurantId=${encodeURIComponent(id)}`)));
+    const dashboards=await Promise.all(cloudDashboards.map(async(data)=>{
+      if(data.salesStorageMode!=='LOCAL_ONLY')return data;
+      if(!data.posUrl)throw new Error(`${data.restaurant?.name||'Restaurant'} stores sales locally. Bring the POS online to retrieve sales data.`);
+      try{
+        const base=String(data.posUrl).replace(/\/$/,'');
+        const response=await fetch(`${base}/owner-direct/dashboard?restaurantId=${encodeURIComponent(data.restaurant.code)}&fromDate=${encodeURIComponent(selectedDate())}&toDate=${encodeURIComponent(localDate())}`,{headers:{Authorization:`Bearer ${token}`}});
+        const live=await response.json();if(!response.ok||!live.success)throw new Error(live.message||'Live POS report failed');
+        return {...data,...live,configurationSnapshot:data.configurationSnapshot,capabilities:data.capabilities,alerts:data.alerts,commands:data.commands,pendingApprovals:data.pendingApprovals};
+      }catch(_){throw new Error(`${data.restaurant?.name||'Restaurant'} stores sales locally. Bring the POS online and ensure this device can reach the POS to retrieve sales data.`);}
+    }));
     render(aggregateDashboards(dashboards));
   } catch(error) {
     $('status').innerHTML=`<div class="od-error">${esc(error.message)}</div>`;

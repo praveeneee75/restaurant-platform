@@ -31,7 +31,7 @@ router.post('/daily-report', async (req, res) => {
   try {
     const tenantResult = await pool.query(
       `
-      SELECT t.id AS tenant_id, t.restaurant_code, l.status, l.expires_at
+      SELECT t.id AS tenant_id, t.restaurant_code, t.sales_storage_mode, l.status, l.expires_at
       FROM tenants t
       JOIN licenses l ON l.tenant_id = t.id
       WHERE t.restaurant_code = $1
@@ -52,6 +52,10 @@ router.post('/daily-report', async (req, res) => {
     if (tenant.status !== 'ACTIVE' || new Date(tenant.expires_at) < new Date()) {
       await logSync(pool, tenant.tenant_id, restaurantId, 'FAILED', 'License inactive or expired');
       return res.status(403).json({ success: false, message: 'License inactive or expired' });
+    }
+    if (tenant.sales_storage_mode === 'LOCAL_ONLY') {
+      await logSync(pool, tenant.tenant_id, restaurantId, 'LOCAL_ONLY', 'Sales upload skipped by restaurant data-storage policy');
+      return res.json({ success:true, skipped:true, storageMode:'LOCAL_ONLY', message:'Sales data remains on the POS' });
     }
 
     const client = await pool.connect();

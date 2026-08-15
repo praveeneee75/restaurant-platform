@@ -94,18 +94,21 @@ router.get('/owner/dashboard', async (req, res) => {
       pool.query("SELECT id, change_type, summary, payload, status, requested_at, expires_at FROM tenant_change_approvals WHERE tenant_id = $1 AND status = 'AWAITING_OWNER' AND expires_at > NOW() ORDER BY requested_at DESC", [req.tenant.id])
     ]);
     const snap = snapshot.rows[0] || {};
+    const localOnly = req.tenant.sales_storage_mode === 'LOCAL_ONLY';
     res.json({
       success: true,
       restaurant: { id: req.tenant.id, code: req.tenant.restaurant_code, name: req.tenant.name },
+      salesStorageMode: localOnly ? 'LOCAL_ONLY' : 'LOCAL_AND_ONLINE',
+      posUrl: req.tenant.mobile_pos_url || null,
       freshness: { lastSnapshotAt: snap.received_at || null, lastHeartbeatAt: heartbeat.rows[0]?.last_heartbeat_at || null },
-      liveOperations: json(snap.live_operations, { dineIn: [], parcel: [], party: [], online: [] }),
-      executiveSales: json(snap.executive_sales, {}),
-      refunds: json(snap.refund_summary, {}),
-      promocodes: json(snap.promocode_summary, {}),
-      reprints: json(snap.reprint_summary, {}),
+      liveOperations: localOnly ? { dineIn: [], parcel: [], party: [], online: [] } : json(snap.live_operations, { dineIn: [], parcel: [], party: [], online: [] }),
+      executiveSales: localOnly ? {} : json(snap.executive_sales, {}),
+      refunds: localOnly ? {} : json(snap.refund_summary, {}),
+      promocodes: localOnly ? {} : json(snap.promocode_summary, {}),
+      reprints: localOnly ? {} : json(snap.reprint_summary, {}),
       configurationSnapshot: json(snap.configuration_snapshot, {}),
-      dailyReports: reports.rows,
-      topItems: items.rows,
+      dailyReports: localOnly ? [] : reports.rows,
+      topItems: localOnly ? [] : items.rows,
       health: heartbeat.rows[0] || null,
       alerts: alerts.rows,
       commands: commands.rows
@@ -437,7 +440,10 @@ router.post('/pos/push-snapshot', async (req, res) => {
   try {
     const tenant = await posTenant(req);
     if (!tenant) return res.status(401).json({ success: false, message: 'Invalid POS credentials' });
-    const { liveOperations, executiveSales, refundSummary, promocodeSummary, reprintSummary, configurationSnapshot } = req.body;
+    let { liveOperations, executiveSales, refundSummary, promocodeSummary, reprintSummary, configurationSnapshot } = req.body;
+    if (tenant.sales_storage_mode === 'LOCAL_ONLY') {
+      liveOperations = {}; executiveSales = {}; refundSummary = {}; promocodeSummary = {}; reprintSummary = {};
+    }
     await pool.query(`
       INSERT INTO tenant_operational_snapshots
         (tenant_id, live_operations, executive_sales, refund_summary, promocode_summary, reprint_summary, configuration_snapshot, received_at)
