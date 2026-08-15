@@ -58,7 +58,7 @@ async function postJson(path, body) {
   assert(windows?.available, 'Windows installer is not available');
   if (expectedPosVersion) assert(windows.fileName.includes(expectedPosVersion), 'Windows installer does not match expected POS version');
 
-  const installerHead = await fetch(`${baseUrl}${windows.fileUrl}`, { method: 'HEAD' });
+  const installerHead = await fetch(new URL(windows.fileUrl, baseUrl).toString(), { method: 'HEAD' });
   assert.strictEqual(installerHead.status, 200, 'Windows installer HEAD failed');
   assert(Number(installerHead.headers.get('content-length') || 0) > 1000000, 'Windows installer content length is too small');
 
