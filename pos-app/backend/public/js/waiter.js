@@ -213,10 +213,28 @@ function renderCart() {
 
 function renderTransferOptions() {
   const selectedId = Number(state.selectedTable?.id || 0);
-  const availableTables = state.tables.filter((table) => Number(table.id) !== selectedId && table.status !== "INACTIVE");
+  const availableTables = state.tables.filter((table) => table.status !== "INACTIVE" && (transferMode !== "TABLE" || Number(table.id) !== selectedId));
   transferTable.innerHTML = `<option value="">Choose target table</option>` + availableTables.map((table) => (
-    `<option value="${table.id}">${esc(table.table_name)} (${esc(table.status)})</option>`
+    `<option value="${table.id}">${esc(table.table_name)}${Number(table.id) === selectedId ? " (CURRENT TABLE)" : ` (${esc(table.status)})`}</option>`
   )).join("");
+}
+
+function renderTransferTargetChecks() {
+  const label = document.getElementById("transferTargetOrderLabel");
+  const select = document.getElementById("transferTargetOrder");
+  const help = document.getElementById("transferTargetOrderHelp");
+  if (transferMode === "TABLE" || !transferTable.value) {
+    label.hidden = true;
+    select.innerHTML = "";
+    help.textContent = transferMode === "TABLE" ? "The check will remain separate and receive a new customer reference." : "";
+    return;
+  }
+  const choices = (transferPreview?.targetOrders || []).filter((order) => Number(order.table_id) === Number(transferTable.value) && Number(order.billing_ready || 0) !== 1);
+  label.hidden = choices.length === 0;
+  select.innerHTML = choices.length > 1 ? '<option value="">Choose customer check</option>' : "";
+  select.innerHTML += choices.map((order) => `<option value="${order.id}">${esc(order.customer_name || "Walk-in customer")} · ${esc(order.customer_ref || order.order_reference || `Order ${order.id}`)}</option>`).join("");
+  if (choices.length === 1) select.value = String(choices[0].id);
+  help.textContent = choices.length === 0 ? "No open customer check is available; a new check will be created." : choices.length === 1 ? "Items will merge into this customer check." : "Choose which customer check should receive the items.";
 }
 
 async function selectTable(tableId) {
@@ -457,7 +475,7 @@ async function createWaiterCustomerFromForm() {
 function renderOrderTransferChoices() {
   document.querySelectorAll("[data-transfer-mode]").forEach((button) => button.classList.toggle("active", button.dataset.transferMode === transferMode));
   if (transferMode === "TABLE") {
-    orderTransferChoices.innerHTML = '<p>The complete customer check, all submitted KOTs and saved items will move together. Choose a table without another open check.</p>';
+    orderTransferChoices.innerHTML = '<p>The complete customer check, all submitted KOTs and saved items will move together as a separate customer check with a new reference.</p>';
     return;
   }
   const grouped = (transferPreview?.items || []).reduce((result, item) => {
@@ -481,17 +499,22 @@ async function openOrderTransferDialog() {
   orderTransferStatus.textContent = "";
   renderTransferOptions();
   renderOrderTransferChoices();
+  renderTransferTargetChecks();
   orderTransferDialog.showModal();
 }
 
 async function transferSelectedOrder(event) {
   event?.preventDefault();
   if (!transferTable.value) throw new Error("Choose a target table");
+  const targetOrder = document.getElementById("transferTargetOrder");
+  const targetChoices = transferMode === "TABLE" ? [] : (transferPreview?.targetOrders || []).filter((order) => Number(order.table_id) === Number(transferTable.value) && Number(order.billing_ready || 0) !== 1);
+  if (targetChoices.length > 1 && !targetOrder.value) throw new Error("Choose the destination customer check");
   const moved = await postJson("/orders/transfer", {
     orderId: state.orderId,
     toTableId: transferTable.value,
     lockId: state.lock.id,
     mode: transferMode,
+    targetOrderId: targetOrder.value || null,
     kotIds: [...document.querySelectorAll('input[name="transferKot"]:checked')].map((input) => Number(input.value)),
     itemIds: [...document.querySelectorAll('input[name="transferItem"]:checked')].map((input) => Number(input.value))
   });
@@ -651,7 +674,8 @@ waiterOrderSelector.addEventListener("change", async () => {
 searchWaiterCustomer.addEventListener("click", () => searchWaiterCustomerByPhone().catch((err) => alert(err.message)));
 createWaiterCustomer.addEventListener("click", () => createWaiterCustomerFromForm().catch((err) => alert(err.message)));
 transferTableButton.addEventListener("click", () => openOrderTransferDialog().catch((err) => alert(err.message)));
-document.querySelectorAll("[data-transfer-mode]").forEach((button) => button.addEventListener("click", () => { transferMode = button.dataset.transferMode; renderOrderTransferChoices(); }));
+document.querySelectorAll("[data-transfer-mode]").forEach((button) => button.addEventListener("click", () => { transferMode = button.dataset.transferMode; renderTransferOptions(); renderOrderTransferChoices(); renderTransferTargetChecks(); }));
+transferTable.addEventListener("change", renderTransferTargetChecks);
 closeOrderTransfer.addEventListener("click", () => orderTransferDialog.close());
 cancelOrderTransfer.addEventListener("click", () => orderTransferDialog.close());
 orderTransferForm.addEventListener("submit", (event) => transferSelectedOrder(event).catch((err) => { orderTransferStatus.textContent = err.message; }));

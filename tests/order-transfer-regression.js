@@ -94,7 +94,34 @@ async function main() {
   await ok('POST', '/orders/apply-discount', { restaurantId, actor:owner, orderId:discounted, type:'MANUAL', value:5, valueType:'FLAT', appliedByRole:'OWNER' });
   const rejected = await request('POST', '/orders/transfer', { restaurantId, actor:captain, orderId:discounted, toTableId:tables[2].id, mode:'ITEM', itemIds:[1] });
   if (rejected.status < 400 || !/discounts or rewards/i.test(rejected.data.message || '')) throw new Error('partial transfer did not protect applied discounts');
-  console.log('Order transfer regression passed: captain preview, table/KOT/item movement, kitchen notices, inventory ownership, settlement/invoice/report continuity, and discount protection.');
+
+  const occupiedTarget = await submit(tables[4], [{ item:items[1] }]);
+  const wholeIntoOccupied = await submit(tables[3], [{ item:items[2] }]);
+  db = openDatabase(restaurantId);
+  const oldWholeIdentity = db.prepare('SELECT order_reference FROM orders WHERE id = ?').get(wholeIntoOccupied).order_reference;
+  db.close();
+  await ok('POST', '/orders/transfer', { restaurantId, actor:captain, orderId:wholeIntoOccupied, toTableId:tables[4].id, mode:'TABLE' });
+  db = openDatabase(restaurantId);
+  const occupiedChecks = db.prepare("SELECT id, order_reference FROM orders WHERE table_id = ? AND status = 'OPEN' AND payment_status != 'PAID' ORDER BY id").all(tables[4].id);
+  const movedWhole = occupiedChecks.find((order) => Number(order.id) === Number(wholeIntoOccupied));
+  db.close();
+  if (!occupiedChecks.some((order) => Number(order.id) === Number(occupiedTarget)) || !movedWhole || movedWhole.order_reference === oldWholeIdentity) throw new Error('whole-check transfer into occupied table did not remain separate with a new reference');
+
+  const sameTableTargetA = await submit(tables[2], [{ item:items[0] }]);
+  const sameTableTargetB = await submit(tables[2], [{ item:items[1] }]);
+  const sameTableSource = await submit(tables[2], [{ item:items[2] }]);
+  const sameTablePreview = await ok('POST', '/orders/transfer-preview', { restaurantId, actor:captain, orderId:sameTableSource });
+  if (!sameTablePreview.tables.some((table) => Number(table.id) === Number(tables[2].id))) throw new Error('current table is missing from KOT/item transfer destinations');
+  const sameTableItem = sameTablePreview.items[0];
+  const ambiguous = await request('POST', '/orders/transfer', { restaurantId, actor:captain, orderId:sameTableSource, toTableId:tables[2].id, mode:'ITEM', itemIds:[sameTableItem.id] });
+  if (ambiguous.status < 400 || !/destination customer check/i.test(ambiguous.data.message || '')) throw new Error('multiple destination customers did not require an explicit selection');
+  const selectedMerge = await ok('POST', '/orders/transfer', { restaurantId, actor:captain, orderId:sameTableSource, toTableId:tables[2].id, targetOrderId:sameTableTargetB, mode:'ITEM', itemIds:[sameTableItem.id] });
+  db = openDatabase(restaurantId);
+  const selectedOwner = db.prepare('SELECT order_id FROM order_items WHERE id = ?').get(sameTableItem.id);
+  const untouchedTarget = db.prepare('SELECT COUNT(*) count FROM order_items WHERE order_id = ?').get(sameTableTargetA);
+  db.close();
+  if (!selectedMerge.mergedIntoExistingCheck || Number(selectedOwner.order_id) !== Number(sameTableTargetB) || Number(untouchedTarget.count) < 1) throw new Error('same-table item transfer did not merge into the selected customer check');
+  console.log('Order transfer regression passed: occupied whole-check separation/new reference, explicit multi-customer selection, same-table movement, table/KOT/item movement, kitchen notices, inventory ownership, settlement/invoice/report continuity, and discount protection.');
 }
 
 main().then(() => process.exit(0)).catch((error) => { console.error(error.stack || error.message); process.exit(1); });

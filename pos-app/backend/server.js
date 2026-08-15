@@ -7176,8 +7176,16 @@ app.post('/orders/transfer-preview', (req, res) => {
       WHERE oi.order_id = ? AND oi.kot_id IS NOT NULL
       ORDER BY COALESCE(k.suborder_no, k.id), oi.id
     `).all(orderId);
-    const tables = db.prepare("SELECT id, table_name, status FROM tables WHERE active = 1 AND id != ? ORDER BY table_name").all(order.table_id || 0);
-    res.json({ success: true, order, items, tables });
+    const tables = db.prepare("SELECT id, table_name, status FROM tables WHERE active = 1 ORDER BY table_name").all();
+    const targetOrders = db.prepare(`
+      SELECT o.id, o.table_id, o.table_no, o.order_reference, o.customer_ref, o.billing_ready,
+             c.name AS customer_name, c.phone AS customer_phone
+      FROM orders o
+      LEFT JOIN customers c ON c.id = o.customer_id
+      WHERE o.status = 'OPEN' AND o.payment_status != 'PAID' AND o.id != ?
+      ORDER BY o.table_id, o.created_at, o.id
+    `).all(orderId);
+    res.json({ success: true, order, items, tables, targetOrders });
   } catch (err) {
     sendError(res, err);
   } finally {
@@ -7186,7 +7194,7 @@ app.post('/orders/transfer-preview', (req, res) => {
 });
 
 app.post('/orders/transfer', (req, res) => {
-  const { restaurantId, actor, orderId, toTableId, mode, kotIds = [], itemIds = [], lockId } = req.body;
+  const { restaurantId, actor, orderId, toTableId, targetOrderId, mode, kotIds = [], itemIds = [], lockId } = req.body;
   const safeMode = String(mode || '').toUpperCase();
   if (!restaurantId || !isPositiveId(orderId) || !isPositiveId(toTableId) || !['TABLE', 'KOT', 'ITEM'].includes(safeMode)) {
     return res.status(400).json({ success: false, message: 'Order, target table and transfer mode are required' });
@@ -7196,26 +7204,31 @@ app.post('/orders/transfer', (req, res) => {
     requirePermission(db, actor?.role, 'orders.transfer_table', 'Order transfer permission required');
     const source = db.prepare("SELECT * FROM orders WHERE id = ? AND status = 'OPEN' AND payment_status != 'PAID'").get(orderId);
     if (!source) throw new Error('Open unpaid order not found');
-    if (Number(source.table_id) === Number(toTableId)) throw new Error('Choose a different target table');
     if (lockId) verifyOrderLock(db, actor, source.table_id, orderId, lockId);
     const targetTable = db.prepare("SELECT id, table_name, status FROM tables WHERE id = ? AND active = 1").get(toTableId);
     if (!targetTable) throw new Error('Target table not found');
 
     if (safeMode === 'TABLE') {
-      const existing = db.prepare("SELECT id FROM orders WHERE table_id = ? AND status = 'OPEN' AND payment_status != 'PAID' LIMIT 1").get(toTableId);
-      if (existing) throw new Error('Whole-check transfer requires a table without an open check');
+      if (Number(source.table_id) === Number(toTableId)) throw new Error('Choose a different target table for the complete customer check');
       db.transaction(() => {
-        db.prepare('UPDATE orders SET table_id = ?, table_no = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(toTableId, targetTable.table_name, orderId);
+        let identity = nextOrderIdentity(db, toTableId);
+        if (identity.customerRef === source.customer_ref) {
+          const next = identity.orderSequence + 1;
+          identity = { orderSequence: next, customerRef: `A${next}`, orderReference: `${next}-A${next}` };
+        }
+        db.prepare('UPDATE orders SET table_id = ?, table_no = ?, order_sequence = ?, customer_ref = ?, order_reference = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+          .run(toTableId, targetTable.table_name, identity.orderSequence, identity.customerRef, identity.orderReference, orderId);
         syncTableStatus(db, source.table_id);
         syncTableStatus(db, toTableId);
         if (lockId) db.prepare(`UPDATE order_locks SET table_id = ?, locked_at = CURRENT_TIMESTAMP, expires_at = ${lockExpirySql()} WHERE id = ?`).run(toTableId, lockId);
         const movedIds = db.prepare('SELECT id FROM order_items WHERE order_id = ? AND kot_id IS NOT NULL').all(orderId).map((row) => Number(row.id));
         const targetOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
         queueOrderTransferPrintJobs(db, source, targetOrder, movedIds, actor);
-        writeOrderStatusHistory(db, actor, orderId, 'TRANSFERRED', 'ORDER', `Whole check moved from ${source.table_no} to ${targetTable.table_name}`);
-        writeAudit(db, actor, 'TRANSFER_TABLE', 'ORDER', orderId, source, { ...source, table_id: toTableId, table_no: targetTable.table_name });
+        writeOrderStatusHistory(db, actor, orderId, 'TRANSFERRED', 'ORDER', `Whole check moved from ${source.table_no} to ${targetTable.table_name} as ${identity.orderReference}`);
+        writeAudit(db, actor, 'TRANSFER_TABLE', 'ORDER', orderId, source, { ...source, table_id: toTableId, table_no: targetTable.table_name, ...identity });
       })();
-      return res.json({ success: true, mode: safeMode, orderId, message: `Check moved to ${targetTable.table_name}` });
+      const moved = db.prepare('SELECT order_reference FROM orders WHERE id = ?').get(orderId);
+      return res.json({ success: true, mode: safeMode, orderId, targetReference: moved?.order_reference, message: `Customer check moved to ${targetTable.table_name} as ${moved?.order_reference}` });
     }
 
     const discountState = db.prepare('SELECT COUNT(*) AS count FROM discounts WHERE order_id = ?').get(orderId);
@@ -7232,47 +7245,70 @@ app.post('/orders/transfer', (req, res) => {
     if (!selectedItems.length) throw new Error('The selected submitted KOT items are no longer available');
     if (safeMode === 'ITEM' && selectedItems.length !== selectedIds.length) throw new Error('One or more selected items are invalid or not submitted to KOT');
 
+    const destinationOrders = db.prepare("SELECT * FROM orders WHERE table_id = ? AND status = 'OPEN' AND payment_status != 'PAID' AND COALESCE(billing_ready, 0) = 0 AND id != ? ORDER BY created_at, id").all(toTableId, orderId);
+    let selectedTarget = isPositiveId(targetOrderId)
+      ? destinationOrders.find((order) => Number(order.id) === Number(targetOrderId))
+      : (destinationOrders.length === 1 ? destinationOrders[0] : null);
+    if (isPositiveId(targetOrderId) && !selectedTarget) throw new Error('The selected destination customer check is no longer available');
+    if (!isPositiveId(targetOrderId) && destinationOrders.length > 1) throw new Error('Choose the destination customer check');
+    if (selectedTarget && Number(selectedTarget.billing_ready) === 1) throw new Error('The selected destination check is ready for billing and cannot accept transferred items');
+    if (selectedTarget) {
+      const targetDiscounts = db.prepare('SELECT COUNT(*) AS count FROM discounts WHERE order_id = ?').get(selectedTarget.id);
+      if (Number(targetDiscounts?.count || 0) || Number(selectedTarget.redeemed_points || 0) || Number(selectedTarget.loyalty_discount || 0)) {
+        throw new Error('Remove applied discounts or rewards from the destination check before transferring items');
+      }
+    }
+
     const result = db.transaction(() => {
       reverseInventoryDeductionForOrder(db, actor, orderId);
-      const identity = nextOrderIdentity(db, toTableId);
-      const inserted = db.prepare(`
-        INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, created_by, customer_id, order_source, order_sequence, customer_ref, order_reference)
-        VALUES ('DINE_IN', ?, ?, 'OPEN', 0, 'UNPAID', ?, ?, 'TRANSFER', ?, ?, ?)
-      `).run(toTableId, targetTable.table_name, actor?.id || null, source.customer_id || null, identity.orderSequence, identity.customerRef, identity.orderReference);
-      const targetOrderId = Number(inserted.lastInsertRowid);
+      if (selectedTarget) reverseInventoryDeductionForOrder(db, actor, selectedTarget.id);
+      let destination = selectedTarget;
+      if (!destination) {
+        let identity = nextOrderIdentity(db, toTableId);
+        if (identity.customerRef === source.customer_ref) {
+          const next = identity.orderSequence + 1;
+          identity = { orderSequence: next, customerRef: `A${next}`, orderReference: `${next}-A${next}` };
+        }
+        const inserted = db.prepare(`
+          INSERT INTO orders (order_type, table_id, table_no, status, total_amount, payment_status, created_by, customer_id, order_source, order_sequence, customer_ref, order_reference)
+          VALUES ('DINE_IN', ?, ?, 'OPEN', 0, 'UNPAID', ?, ?, 'TRANSFER', ?, ?, ?)
+        `).run(toTableId, targetTable.table_name, actor?.id || null, source.customer_id || null, identity.orderSequence, identity.customerRef, identity.orderReference);
+        destination = db.prepare('SELECT * FROM orders WHERE id = ?').get(inserted.lastInsertRowid);
+      }
+      const destinationOrderId = Number(destination.id);
       const movedItemIds = selectedItems.map((item) => Number(item.id));
-      db.prepare(`UPDATE order_items SET order_id = ? WHERE id IN (${movedItemIds.map(() => '?').join(',')})`).run(targetOrderId, ...movedItemIds);
+      db.prepare(`UPDATE order_items SET order_id = ? WHERE id IN (${movedItemIds.map(() => '?').join(',')})`).run(destinationOrderId, ...movedItemIds);
 
       const affectedKots = [...new Set(selectedItems.map((item) => Number(item.kot_id)))];
       affectedKots.forEach((kotId) => {
         const remaining = Number(db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE order_id = ? AND kot_id = ?').get(orderId, kotId)?.count || 0);
         if (!remaining) {
-          db.prepare('UPDATE kots SET order_id = ? WHERE id = ?').run(targetOrderId, kotId);
+          db.prepare('UPDATE kots SET order_id = ? WHERE id = ?').run(destinationOrderId, kotId);
           return;
         }
         const movedForKot = selectedItems.filter((item) => Number(item.kot_id) === kotId).map((item) => Number(item.id));
         const oldKot = db.prepare('SELECT kitchen_id, status FROM kots WHERE id = ?').get(kotId);
-        const nextSuborder = Number(db.prepare('SELECT COALESCE(MAX(suborder_no), 0) + 1 AS next FROM kots WHERE order_id = ?').get(targetOrderId)?.next || 1);
-        const newKot = db.prepare('INSERT INTO kots (order_id, kitchen_id, status, suborder_no) VALUES (?, ?, ?, ?)').run(targetOrderId, oldKot.kitchen_id, oldKot.status || 'CREATED', nextSuborder);
+        const nextSuborder = Number(db.prepare('SELECT COALESCE(MAX(suborder_no), 0) + 1 AS next FROM kots WHERE order_id = ?').get(destinationOrderId)?.next || 1);
+        const newKot = db.prepare('INSERT INTO kots (order_id, kitchen_id, status, suborder_no) VALUES (?, ?, ?, ?)').run(destinationOrderId, oldKot.kitchen_id, oldKot.status || 'CREATED', nextSuborder);
         db.prepare(`UPDATE order_items SET kot_id = ? WHERE id IN (${movedForKot.map(() => '?').join(',')})`).run(newKot.lastInsertRowid, ...movedForKot);
       });
 
       const sourceTotal = calculateOrderPricing(db, orderId, false).payableSubtotal;
-      const targetTotal = calculateOrderPricing(db, targetOrderId, false).payableSubtotal;
+      const targetTotal = calculateOrderPricing(db, destinationOrderId, false).payableSubtotal;
       db.prepare('UPDATE orders SET total_amount = ?, billing_ready = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(sourceTotal, orderId);
-      db.prepare('UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(targetTotal, targetOrderId);
+      db.prepare('UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(targetTotal, destinationOrderId);
       deductInventoryForOrder(db, actor, orderId, 'KOT_TRANSFER_REBALANCE');
-      deductInventoryForOrder(db, actor, targetOrderId, 'KOT_TRANSFER_REBALANCE');
+      deductInventoryForOrder(db, actor, destinationOrderId, 'KOT_TRANSFER_REBALANCE');
       const sourceItemCount = Number(db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE order_id = ?').get(orderId)?.count || 0);
       if (!sourceItemCount) db.prepare("UPDATE orders SET status = 'TRANSFERRED', billing_ready = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(orderId);
       syncTableStatus(db, source.table_id);
       syncTableStatus(db, toTableId);
-      const targetOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(targetOrderId);
+      const targetOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(destinationOrderId);
       const printJobs = queueOrderTransferPrintJobs(db, source, targetOrder, movedItemIds, actor);
-      writeOrderStatusHistory(db, actor, orderId, 'TRANSFERRED_OUT', 'ORDER', `${safeMode} moved to ${targetTable.table_name} as ${identity.orderReference}`);
-      writeOrderStatusHistory(db, actor, targetOrderId, 'TRANSFERRED_IN', 'ORDER', `${safeMode} moved from ${source.table_no}`);
-      writeAudit(db, actor, `TRANSFER_${safeMode}`, safeMode === 'KOT' ? 'KOT' : 'ORDER_ITEM', targetOrderId, null, { sourceOrderId: orderId, targetOrderId, movedItemIds, printJobs });
-      return { targetOrderId, targetReference: identity.orderReference, movedItemCount: movedItemIds.length, printJobs };
+      writeOrderStatusHistory(db, actor, orderId, 'TRANSFERRED_OUT', 'ORDER', `${safeMode} moved to ${targetTable.table_name} · ${targetOrder.order_reference}`);
+      writeOrderStatusHistory(db, actor, destinationOrderId, 'TRANSFERRED_IN', 'ORDER', `${safeMode} moved from ${source.table_no} · ${source.order_reference}`);
+      writeAudit(db, actor, `TRANSFER_${safeMode}`, safeMode === 'KOT' ? 'KOT' : 'ORDER_ITEM', destinationOrderId, null, { sourceOrderId: orderId, targetOrderId: destinationOrderId, movedItemIds, mergedIntoExistingCheck: Boolean(selectedTarget), printJobs });
+      return { targetOrderId: destinationOrderId, targetReference: targetOrder.order_reference, mergedIntoExistingCheck: Boolean(selectedTarget), movedItemCount: movedItemIds.length, printJobs };
     })();
     res.json({ success: true, mode: safeMode, ...result, message: `${safeMode === 'KOT' ? 'KOT' : 'Item'} transfer completed to ${targetTable.table_name}; ${result.printJobs} kitchen notice(s) queued` });
   } catch (err) {

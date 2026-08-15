@@ -105,6 +105,8 @@
       <div class="transfer-mode-tabs" role="tablist"><button type="button" data-transfer-mode="TABLE" class="active">Table</button><button type="button" data-transfer-mode="KOT">KOT</button><button type="button" data-transfer-mode="ITEM">Item</button></div>
       <div id="orderTransferChoices" class="order-transfer-choices"></div>
       <label>Destination table<select id="transferTable" required></select></label>
+      <label id="transferTargetOrderLabel" hidden>Destination customer check<select id="transferTargetOrder"></select></label>
+      <p id="transferTargetOrderHelp" class="dialog-help"></p>
       <p id="orderTransferStatus" class="dialog-status" role="alert"></p>
       <div><button id="cancelOrderTransfer" type="button" class="secondary-button">Cancel</button><button id="confirmOrderTransfer" type="submit">Transfer</button></div>
     </form>

@@ -247,29 +247,53 @@ async function openBillingOrderTransfer() {
   const backdrop = document.createElement('div');
   backdrop.className = 'modifier-modal-backdrop';
   backdrop.dataset.orderTransfer = 'true';
-  const tableOptions = (preview.tables || []).map((table) => `<option value="${table.id}">${esc(table.table_name)} (${esc(table.status)})</option>`).join('');
-  backdrop.innerHTML = `<div class="modifier-modal order-transfer-modal"><header><div><h2>Transfer KOT / Item / Table</h2><p>${esc(preview.order.table_no)} · ${esc(preview.order.order_reference || preview.order.id)}</p></div><button type="button" class="secondary-btn" data-close-transfer>Close</button></header><div class="transfer-mode-tabs"><button type="button" class="active" data-mode="TABLE">Table Wise</button><button type="button" data-mode="KOT">KOT Wise</button><button type="button" data-mode="ITEM">Item Wise</button></div><div data-transfer-choices></div><label>Destination table<select data-target-table><option value="">Choose target table</option>${tableOptions}</select></label><p data-transfer-status class="status-message"></p><div class="cart-actions"><button type="button" data-confirm-transfer>Transfer</button></div></div>`;
+  backdrop.innerHTML = `<div class="modifier-modal order-transfer-modal"><header><div><h2>Transfer KOT / Item / Table</h2><p>Current check: ${esc(preview.order.table_no)} · ${esc(preview.order.customer_ref || preview.order.order_reference || preview.order.id)}</p></div><button type="button" class="secondary-btn" data-close-transfer>Close</button></header><div class="transfer-mode-tabs"><button type="button" class="active" data-mode="TABLE">Table Wise</button><button type="button" data-mode="KOT">KOT Wise</button><button type="button" data-mode="ITEM">Item Wise</button></div><div data-transfer-choices></div><label>Destination table<select data-target-table></select></label><label data-target-order-label hidden>Destination customer check<select data-target-order></select></label><p data-target-order-help class="status-message"></p><p data-transfer-status class="status-message"></p><div class="cart-actions"><button type="button" data-confirm-transfer>Transfer</button></div></div>`;
   document.body.appendChild(backdrop);
   let mode = 'TABLE';
   const grouped = (preview.items || []).reduce((result, item) => { (result[item.kot_id] ||= []).push(item); return result; }, {});
+  const renderDestination = () => {
+    const tableSelect = backdrop.querySelector('[data-target-table]');
+    const currentTableId = Number(preview.order.table_id);
+    const tables = (preview.tables || []).filter((table) => mode !== 'TABLE' || Number(table.id) !== currentTableId);
+    tableSelect.innerHTML = '<option value="">Choose target table</option>' + tables.map((table) => `<option value="${table.id}">${esc(table.table_name)}${Number(table.id) === currentTableId ? ' (CURRENT TABLE)' : ` (${esc(table.status)})`}</option>`).join('');
+    renderTargetOrders();
+  };
+  const renderTargetOrders = () => {
+    const tableId = Number(backdrop.querySelector('[data-target-table]').value || 0);
+    const label = backdrop.querySelector('[data-target-order-label]');
+    const select = backdrop.querySelector('[data-target-order]');
+    const help = backdrop.querySelector('[data-target-order-help]');
+    if (mode === 'TABLE' || !tableId) { label.hidden = true; select.innerHTML = ''; help.textContent = mode === 'TABLE' ? 'The check remains separate and receives a new customer reference.' : ''; return; }
+    const orders = (preview.targetOrders || []).filter((order) => Number(order.table_id) === tableId && Number(order.billing_ready || 0) !== 1);
+    label.hidden = orders.length === 0;
+    select.innerHTML = orders.length > 1 ? '<option value="">Choose customer check</option>' : '';
+    select.innerHTML += orders.map((order) => `<option value="${order.id}">${esc(order.customer_name || 'Walk-in customer')} · ${esc(order.customer_ref || order.order_reference || order.id)}</option>`).join('');
+    if (orders.length === 1) select.value = String(orders[0].id);
+    help.textContent = orders.length === 0 ? 'A new customer check will be created.' : orders.length === 1 ? 'Items will merge into this customer check.' : 'Choose which customer check should receive the items.';
+  };
   const renderChoices = () => {
     backdrop.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode));
     const choices = backdrop.querySelector('[data-transfer-choices]');
-    if (mode === 'TABLE') return choices.innerHTML = '<p>The complete customer check will move together. The destination must not have another open check.</p>';
+    if (mode === 'TABLE') return choices.innerHTML = '<p>The complete customer check will move together as a separate customer check with a new reference.</p>';
     choices.innerHTML = `<div class="split-item-list">${Object.entries(grouped).map(([kotId, items]) => mode === 'KOT'
       ? `<label><input type="checkbox" name="transferKot" value="${kotId}"><span><strong>KOT ${esc(items[0].suborder_no || kotId)}</strong> · ${items.length} item line(s) · ${esc(items[0].kitchen_name || 'Kitchen')}</span></label>`
       : items.map((item) => `<label><input type="checkbox" name="transferItem" value="${item.id}"><span>${esc(item.name)} × ${item.quantity} · KOT ${esc(item.suborder_no || kotId)}</span></label>`).join('')).join('')}</div>`;
   };
   renderChoices();
-  backdrop.querySelectorAll('[data-mode]').forEach((button) => button.onclick = () => { mode = button.dataset.mode; renderChoices(); });
+  renderDestination();
+  backdrop.querySelector('[data-target-table]').onchange = renderTargetOrders;
+  backdrop.querySelectorAll('[data-mode]').forEach((button) => button.onclick = () => { mode = button.dataset.mode; renderChoices(); renderDestination(); });
   backdrop.querySelector('[data-close-transfer]').onclick = () => backdrop.remove();
   backdrop.addEventListener('click', (event) => { if (event.target === backdrop) backdrop.remove(); });
   backdrop.querySelector('[data-confirm-transfer]').onclick = async () => {
     const status = backdrop.querySelector('[data-transfer-status]');
     const toTableId = Number(backdrop.querySelector('[data-target-table]').value || 0);
     if (!toTableId) return status.textContent = 'Choose a destination table.';
+    const matchingOrders = mode === 'TABLE' ? [] : (preview.targetOrders || []).filter((order) => Number(order.table_id) === toTableId && Number(order.billing_ready || 0) !== 1);
+    const targetOrderId = Number(backdrop.querySelector('[data-target-order]').value || 0) || null;
+    if (matchingOrders.length > 1 && !targetOrderId) return status.textContent = 'Choose the destination customer check.';
     try {
-      const transferResponse = await fetch('/orders/transfer', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ restaurantId, actor:{id:sessionUser.id,role:sessionUser.role}, orderId:state.selected.id, toTableId, mode, kotIds:[...backdrop.querySelectorAll('input[name="transferKot"]:checked')].map((input) => Number(input.value)), itemIds:[...backdrop.querySelectorAll('input[name="transferItem"]:checked')].map((input) => Number(input.value)) }) });
+      const transferResponse = await fetch('/orders/transfer', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ restaurantId, actor:{id:sessionUser.id,role:sessionUser.role}, orderId:state.selected.id, toTableId, targetOrderId, mode, kotIds:[...backdrop.querySelectorAll('input[name="transferKot"]:checked')].map((input) => Number(input.value)), itemIds:[...backdrop.querySelectorAll('input[name="transferItem"]:checked')].map((input) => Number(input.value)) }) });
       const result = await transferResponse.json();
       if (!transferResponse.ok || result.success === false) throw Error(result.message || 'Transfer failed');
       backdrop.remove();
