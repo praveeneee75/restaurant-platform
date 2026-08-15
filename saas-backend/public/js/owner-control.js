@@ -97,6 +97,11 @@ function aggregateDashboards(dashboards) {
       lastSnapshotAt: latest(dashboards.map((data) => data.freshness?.lastSnapshotAt)),
       lastHeartbeatAt: latest(dashboards.map((data) => data.freshness?.lastHeartbeatAt))
     },
+    liveOperationsAvailability: {
+      online: dashboards.every((data)=>data.liveOperationsAvailability?.online === true),
+      source: dashboards.every((data)=>data.liveOperationsAvailability?.online === true) ? 'LIVE_POS' : 'PARTIAL_OR_OFFLINE',
+      message: dashboards.every((data)=>data.liveOperationsAvailability?.online === true) ? 'All selected POS apps are online.' : 'One or more selected POS apps are offline. Their live operations are hidden.'
+    },
     liveOperations: {},
     executiveSales: {},
     refunds: { rows: groupRows(all((data) => data.refunds?.rows), ['refund_mode','reason'], ['count','amount']) },
@@ -131,7 +136,11 @@ function titleCase(value) {
   return String(value || '').replace(/([a-z])([A-Z])/g,'$1 $2').replaceAll('_',' ').replace(/\b\w/g,(char)=>char.toUpperCase());
 }
 
-function renderLiveOperations(operations={}) {
+function renderLiveOperations(operations={}, availability={}) {
+  if (availability.online === false) {
+    $('liveOperationsList').innerHTML = `<div class="ops-empty"><strong>POS is offline</strong><p>Live orders and open values are unavailable. Bring the POS online and press Refresh.</p></div>`;
+    return;
+  }
   const entries = ['dineIn','parcel','party','online'].map((key)=>[key,operations[key]||[]]);
   const totalOrders = entries.reduce((sum,[,items])=>sum+items.length,0);
   const totalValue = entries.flatMap(([,items])=>items).reduce((sum,item)=>sum+Number(item.total||0),0);
@@ -189,7 +198,10 @@ function render(data) {
   const online=sales.onlineOrders || {};
   $('onlineSummary').innerHTML=`<div class="online-stat"><span>Total online</span><strong>${money(online.sales)}</strong><small>${number(online.orders)} orders</small></div><div class="online-stat" style="border-color:#2563eb"><span>Prepaid</span><strong>${money(online.prepaid_sales)}</strong><small>${number(online.prepaid_orders)} orders</small></div><div class="online-stat" style="border-color:#ef4444"><span>COD</span><strong>${money(online.cod_sales)}</strong><small>${number(online.cod_orders)} orders</small></div>`;
 
-  renderLiveOperations(data.liveOperations||{});
+  renderLiveOperations(data.liveOperations||{}, data.liveOperationsAvailability||{});
+  $('cloudHistoryDescription').textContent = data.salesStorageMode === 'LOCAL_ONLY'
+    ? 'Sales history is loaded directly from the live POS and is unavailable while that POS is offline.'
+    : `Stored daily totals received from POS remain available when the POS is offline. Last cloud snapshot: ${data.freshness?.lastSnapshotAt ? new Date(data.freshness.lastSnapshotAt).toLocaleString() : 'not yet received'}.`;
   $('refunds').innerHTML=`<h3>Refunds</h3>${rows(data.refunds?.rows||[],r=>`<div class="control-row"><span>${esc(r.refund_mode)} · ${esc(r.reason||'No reason')} (${r.count})</span><b>${money(r.amount)}</b></div>`)}`;
   $('promocodes').innerHTML=`<h3>Promocodes</h3>${rows(data.promocodes?.rows||[],r=>`<div class="control-row"><span>${esc(r.code)} · ${r.usage_count} uses</span><b>${money(r.discount_amount)}</b></div>`)}`;
   $('alerts').innerHTML=rows(data.alerts||[],a=>`<div class="control-card ${a.severity==='HIGH'?'alert-high':''}"><b>${esc(a.alert_type)}</b><p>${esc(a.message)}</p></div>`,'No active alerts.');

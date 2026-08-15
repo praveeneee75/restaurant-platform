@@ -95,13 +95,16 @@ router.get('/owner/dashboard', async (req, res) => {
     ]);
     const snap = snapshot.rows[0] || {};
     const localOnly = req.tenant.sales_storage_mode === 'LOCAL_ONLY';
+    const lastHeartbeatAt = heartbeat.rows[0]?.last_heartbeat_at || null;
+    const posOnline = heartbeatOnline(lastHeartbeatAt);
     res.json({
       success: true,
       restaurant: { id: req.tenant.id, code: req.tenant.restaurant_code, name: req.tenant.name },
       salesStorageMode: localOnly ? 'LOCAL_ONLY' : 'LOCAL_AND_ONLINE',
       posUrl: req.tenant.mobile_pos_url || null,
-      freshness: { lastSnapshotAt: snap.received_at || null, lastHeartbeatAt: heartbeat.rows[0]?.last_heartbeat_at || null },
-      liveOperations: localOnly ? { dineIn: [], parcel: [], party: [], online: [] } : json(snap.live_operations, { dineIn: [], parcel: [], party: [], online: [] }),
+      freshness: { lastSnapshotAt: snap.received_at || null, lastHeartbeatAt },
+      liveOperationsAvailability: { online: posOnline, source: posOnline ? 'LIVE_POS' : 'UNAVAILABLE', message: posOnline ? 'Live POS connection' : 'POS is offline. Live operations are unavailable.' },
+      liveOperations: localOnly || !posOnline ? { dineIn: [], parcel: [], party: [], online: [] } : json(snap.live_operations, { dineIn: [], parcel: [], party: [], online: [] }),
       executiveSales: localOnly ? {} : json(snap.executive_sales, {}),
       refunds: localOnly ? {} : json(snap.refund_summary, {}),
       promocodes: localOnly ? {} : json(snap.promocode_summary, {}),

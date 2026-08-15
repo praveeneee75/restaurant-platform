@@ -75,7 +75,7 @@
           <article class="od-card" id="financeSummary"><h2>Refund & promotion summary</h2><div id="refunds" class="control-list"></div><div id="promocodes" class="control-list"></div></article>
           <article class="od-card" id="managementSummary"><h2>Alerts & approvals</h2><div id="alerts" class="control-list"></div><div id="approvals" class="control-list"></div></article>
         </section>
-        <section class="od-card od-report" id="ownerReports"><div class="od-report-head"><div><h2>Cloud sales history</h2><p class="od-subtitle">Daily totals received from POS. Select a date above to inspect a specific trading day.</p></div><button id="downloadReportButton" class="od-icon-btn">Download CSV</button></div><div id="dailyReportRows" class="od-report-table"></div></section>
+        <section class="od-card od-report" id="ownerReports"><div class="od-report-head"><div><h2>Cloud sales history</h2><p class="od-subtitle" id="cloudHistoryDescription">Stored daily totals received from POS remain available when the POS is offline.</p></div><button id="downloadReportButton" class="od-icon-btn">Download CSV</button></div><div id="dailyReportRows" class="od-report-table"></div></section>
         <section class="od-card remote-config" id="remoteConfig">
           <h2>Branch publishing</h2>
           <p class="od-subtitle">Choose a populated source branch and one or more target branches. The portal validates the choice, queues the menu, and shows whether each POS acknowledged it.</p>
@@ -124,6 +124,6 @@
   </div>
   <div class="od-drawer" id="ownerDrawer" hidden><aside class="od-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawerTitle"><div class="od-drawer-head"><h2 id="drawerTitle">Owner activity</h2><button id="closeDrawerButton" class="od-icon-btn" aria-label="Close">×</button></div><div id="drawerBody"></div></aside></div>
   <script src="/js/saas-session.js" data-session-scope="owner"></script>
-  <script src="/js/owner-control.js?v=20260815-sales-storage-policy"></script>
+  <script src="/js/owner-control.js?v=20260815-offline-live-operations"></script>
 </body>
 </html>

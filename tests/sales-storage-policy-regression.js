@@ -25,5 +25,9 @@ assert(ownerReports.includes("code: 'POS_DIRECT_REQUIRED'") && ownerReports.incl
 assert(pos.includes("app.get('/owner-direct/reports'") && pos.includes("app.get('/owner-direct/dashboard'") && pos.includes('authorizeOwnerDirectReport'), 'POS exposes owner-authenticated live report endpoints');
 assert(owners.includes("validate-pos-report-access/:restaurantCode") && owners.includes('ro.owner_user_id=$1'), 'live POS reports validate that the signed-in owner is assigned to the restaurant');
 assert(ownerMobile.includes('POS_DIRECT_REQUIRED') && ownerControlUi.includes('/owner-direct/dashboard'), 'both owner mobile and executive owner portal retrieve local-only sales from the live POS');
+assert(migrate.includes('reject_local_only_sales_rows') && migrate.includes('tenant_daily_reports_local_only_guard') && migrate.includes('tenant_item_sales_local_only_guard'), 'database triggers reject report and item-sales writes for local-only tenants');
+assert(migrate.includes('scrub_local_only_operational_snapshot') && migrate.includes('tenant_operational_snapshots_local_only_guard'), 'database trigger strips revenue-bearing operational snapshots for local-only tenants');
+assert(migrate.includes('purge_sales_when_tenant_becomes_local_only') && migrate.includes('DELETE FROM tenant_daily_reports') && migrate.includes('DELETE FROM tenant_item_sales'), 'switching to local-only permanently purges previously uploaded cloud sales data');
+assert(migrate.includes("metadata = metadata - 'paidAmount'"), 'local-only enforcement removes paid revenue amounts from central loyalty metadata');
 
 console.log('Sales storage policy regression passed');

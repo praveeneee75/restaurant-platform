@@ -900,6 +900,72 @@ async function migrate() {
       updated_at = NOW()
   `);
 
+  // LOCAL_ONLY is a storage boundary, not just a presentation preference.
+  // Enforce it in PostgreSQL so old POS builds, retries and concurrent requests
+  // cannot repopulate sales data after the owner changes the policy.
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION reject_local_only_sales_rows() RETURNS trigger AS $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM tenants WHERE id = NEW.tenant_id AND sales_storage_mode = 'LOCAL_ONLY') THEN
+        RETURN NULL;
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+  `);
+  await pool.query('DROP TRIGGER IF EXISTS tenant_daily_reports_local_only_guard ON tenant_daily_reports');
+  await pool.query(`CREATE TRIGGER tenant_daily_reports_local_only_guard BEFORE INSERT OR UPDATE ON tenant_daily_reports
+    FOR EACH ROW EXECUTE FUNCTION reject_local_only_sales_rows()`);
+  await pool.query('DROP TRIGGER IF EXISTS tenant_item_sales_local_only_guard ON tenant_item_sales');
+  await pool.query(`CREATE TRIGGER tenant_item_sales_local_only_guard BEFORE INSERT OR UPDATE ON tenant_item_sales
+    FOR EACH ROW EXECUTE FUNCTION reject_local_only_sales_rows()`);
+
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION scrub_local_only_operational_snapshot() RETURNS trigger AS $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM tenants WHERE id = NEW.tenant_id AND sales_storage_mode = 'LOCAL_ONLY') THEN
+        NEW.live_operations = '{}'::jsonb;
+        NEW.executive_sales = '{}'::jsonb;
+        NEW.refund_summary = '{}'::jsonb;
+        NEW.promocode_summary = '{}'::jsonb;
+        NEW.reprint_summary = '{}'::jsonb;
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+  `);
+  await pool.query('DROP TRIGGER IF EXISTS tenant_operational_snapshots_local_only_guard ON tenant_operational_snapshots');
+  await pool.query(`CREATE TRIGGER tenant_operational_snapshots_local_only_guard BEFORE INSERT OR UPDATE ON tenant_operational_snapshots
+    FOR EACH ROW EXECUTE FUNCTION scrub_local_only_operational_snapshot()`);
+
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION purge_sales_when_tenant_becomes_local_only() RETURNS trigger AS $$
+    BEGIN
+      IF NEW.sales_storage_mode = 'LOCAL_ONLY' AND OLD.sales_storage_mode IS DISTINCT FROM 'LOCAL_ONLY' THEN
+        DELETE FROM tenant_item_sales WHERE tenant_id = NEW.id;
+        DELETE FROM tenant_daily_reports WHERE tenant_id = NEW.id;
+        UPDATE tenant_operational_snapshots SET live_operations='{}'::jsonb, executive_sales='{}'::jsonb,
+          refund_summary='{}'::jsonb, promocode_summary='{}'::jsonb, reprint_summary='{}'::jsonb
+          WHERE tenant_id = NEW.id;
+        UPDATE loyalty_ledger SET metadata = metadata - 'paidAmount' WHERE tenant_id = NEW.id AND metadata ? 'paidAmount';
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+  `);
+  await pool.query('DROP TRIGGER IF EXISTS tenants_local_only_sales_purge ON tenants');
+  await pool.query(`CREATE TRIGGER tenants_local_only_sales_purge AFTER UPDATE OF sales_storage_mode ON tenants
+    FOR EACH ROW EXECUTE FUNCTION purge_sales_when_tenant_becomes_local_only()`);
+
+  // Repair tenants already configured as LOCAL_ONLY before this enforcement existed.
+  await pool.query(`DELETE FROM tenant_item_sales s USING tenants t WHERE s.tenant_id=t.id AND t.sales_storage_mode='LOCAL_ONLY'`);
+  await pool.query(`DELETE FROM tenant_daily_reports r USING tenants t WHERE r.tenant_id=t.id AND t.sales_storage_mode='LOCAL_ONLY'`);
+  await pool.query(`UPDATE tenant_operational_snapshots s SET live_operations='{}'::jsonb, executive_sales='{}'::jsonb,
+    refund_summary='{}'::jsonb, promocode_summary='{}'::jsonb, reprint_summary='{}'::jsonb
+    FROM tenants t WHERE s.tenant_id=t.id AND t.sales_storage_mode='LOCAL_ONLY'`);
+  await pool.query(`UPDATE loyalty_ledger l SET metadata = metadata - 'paidAmount' FROM tenants t
+    WHERE l.tenant_id=t.id AND t.sales_storage_mode='LOCAL_ONLY' AND l.metadata ? 'paidAmount'`);
+
   await pool.query('CREATE INDEX IF NOT EXISTS idx_tenants_restaurant_code ON tenants(restaurant_code)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_licenses_tenant_id ON licenses(tenant_id)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_licenses_license_key ON licenses(license_key)');
