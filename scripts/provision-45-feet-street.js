@@ -36,7 +36,14 @@ function token() {
 }
 
 async function main() {
-  const pool = new Pool();
+  const pool = new Pool({
+    host: process.env.DB_HOST || process.env.PGHOST,
+    port: Number(process.env.DB_PORT || process.env.PGPORT || 5432),
+    user: process.env.DB_USER || process.env.PGUSER,
+    password: process.env.DB_PASSWORD || process.env.PGPASSWORD,
+    database: process.env.DB_NAME || process.env.PGDATABASE,
+    ssl: String(process.env.DB_SSL || '').toLowerCase() === 'false' ? false : undefined
+  });
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -91,7 +98,7 @@ async function main() {
       ON CONFLICT (slug) DO UPDATE SET organization_id=EXCLUDED.organization_id,tenant_id=EXCLUDED.tenant_id,display_name=EXCLUDED.display_name,
       description=EXCLUDED.description,active=true,service_area=EXCLUDED.service_area,updated_at=NOW()`, [organizationId, tenantId, profile.slug, profile.displayName, profile.city]);
     await client.query(`INSERT INTO online_menu_snapshots (tenant_id,source,payload)
-      SELECT $1,'WHITELABEL_45_FEET_STREET',payload FROM online_menu_snapshots WHERE tenant_id=$2 ORDER BY created_at DESC LIMIT 1`, [tenantId, source.id]);
+      SELECT $1,'WHITELABEL_45_FEET_STREET',payload FROM online_menu_snapshots WHERE tenant_id=$2 ORDER BY synced_at DESC LIMIT 1`, [tenantId, source.id]);
     await client.query('COMMIT');
     console.log(JSON.stringify({ success:true, tenantId, restaurantCode:profile.code, branchName:profile.branchName, profile }, null, 2));
   } catch (error) {
