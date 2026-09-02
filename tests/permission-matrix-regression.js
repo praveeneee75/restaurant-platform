@@ -32,6 +32,16 @@ assert(hasPermission(db, 'CASHIER', 'reports.view_invoice_only'), 'cashier repor
 assert(hasPermission(db, 'MANAGER_1', 'reports.view_invoice_only'), 'manager report access is missing');
 assert(!hasPermission(db, 'CAPTAIN', 'reports.view_invoice_only'), 'captain incorrectly received report access');
 assert(!hasPermission(db, 'WAITER', 'billing.refund'), 'waiter received privileged billing access');
+assert(hasPermission(db, 'CASHIER', 'orders.merge') && hasPermission(db, 'CASHIER', 'orders.split') && hasPermission(db, 'CASHIER', 'orders.unlock'), 'cashier billing workflow compatibility permissions are missing');
+assert(hasPermission(db, 'CAPTAIN', 'availability.manage'), 'captain availability compatibility permission is missing');
+assert(hasPermission(db, 'KITCHEN', 'kitchen.reprint'), 'kitchen reprint compatibility permission is missing');
+const cashierRole = db.prepare("SELECT id FROM roles WHERE name = 'CASHIER'").get();
+const mergePermission = db.prepare("SELECT id FROM permissions WHERE code = 'orders.merge'").get();
+db.prepare('UPDATE role_permissions SET allowed = 0 WHERE role_id = ? AND permission_id = ?').run(cashierRole.id, mergePermission.id);
+const reopenedDb = openDatabase('PERMISSIONTEST');
+seedDefaultPermissions(reopenedDb);
+assert(!hasPermission(reopenedDb, 'CASHIER', 'orders.merge'), 'permission seeding overwrote an Owner-customized role control');
+reopenedDb.close();
 db.close();
 
 const html = fs.readFileSync(path.join(posRoot, 'backend/public/admin.html'), 'utf8');
@@ -50,6 +60,14 @@ assert(css.includes('input:focus-visible + span'), 'keyboard focus styling is mi
 assert(server.includes('OWNER access is protected and cannot be changed'), 'OWNER API protection is missing');
 assert(server.includes('Every permission value must be true or false'), 'permission payload validation is missing');
 assert(server.includes('Unknown permission control:'), 'unknown permission validation is missing');
+[
+  'billing.discount', 'billing.void', 'customers.manage', 'customers.view', 'devices.manage',
+  'invoices.view', 'kitchen.reprint', 'kitchen.status.update', 'orders.merge', 'orders.reopen',
+  'orders.split', 'orders.unlock', 'printers.manage', 'reservations.manage', 'retail.sell',
+  'retail.stock_adjust', 'retail.view', 'rewards.manage', 'tax.export'
+].forEach((code) => assert(server.includes(`'${code}'`), `API enforcement is missing for ${code}`));
+assert(!/app\.get\('\/orders\/(?:live|open-list)'[\s\S]{0,350}printers\.manage/.test(server), 'printer permission leaked into an order-list route');
+assert(!/app\.post\('\/kds\/reprint-kot'[\s\S]{0,450}orders\.reopen/.test(server), 'order reopen permission leaked into KDS reprint');
 
 const topNavPages = ['admin.html', 'billing.html', 'kds.html', 'orders.html', 'pos-live.html', 'customer.html'];
 topNavPages.forEach((page) => {

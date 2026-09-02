@@ -23,7 +23,7 @@ async function postJson(url, body) {
 }
 
 async function loadCustomers() {
-  const data = await fetch(`/customers/list?restaurantId=${encodeURIComponent(restaurantId)}`).then((res) => res.json());
+  const data = await fetch(`/customers/list?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}`).then((res) => res.json());
   if (!data.success) throw new Error(data.message);
   state.customers = data.customers;
   renderCustomers();
@@ -61,7 +61,7 @@ function renderExecutiveSummary() {
 }
 
 async function loadReports() {
-  const data = await fetch(`/customers/reports?restaurantId=${encodeURIComponent(restaurantId)}`).then((res) => res.json());
+  const data = await fetch(`/customers/reports?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}`).then((res) => res.json());
   if (!data.success) throw new Error(data.message);
   state.reports = data;
   customerReports.innerHTML = `
@@ -85,7 +85,7 @@ function fillCustomer(customer = {}) {
 
 async function loadProfile(customerId) {
   state.selectedCustomerId = customerId;
-  const data = await fetch(`/customers/profile?restaurantId=${encodeURIComponent(restaurantId)}&customerId=${customerId}`).then((res) => res.json());
+  const data = await fetch(`/customers/profile?restaurantId=${encodeURIComponent(restaurantId)}&customerId=${customerId}&role=${encodeURIComponent(actor.role)}`).then((res) => res.json());
   if (!data.success) throw new Error(data.message);
   profileTitle.textContent = `${data.customer.name} · ${data.customer.loyaltyBalance} pts`;
   const earned = data.ledger.filter((row) => ["EARN", "ADJUSTMENT"].includes(String(row.type).toUpperCase())).reduce((sum, row) => sum + Number(row.points || 0), 0);

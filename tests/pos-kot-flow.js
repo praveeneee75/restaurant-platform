@@ -121,7 +121,7 @@ async function post(url, body) {
   const billPayload = JSON.parse(billJob?.payload || '{}');
   if (!billPayload.restaurantProfile?.gstin || !billPayload.restaurantProfile?.fssaiLicenseNo) throw new Error('Bill print payload omitted GSTIN or FSSAI');
   if (!billPayload.kotReferences) throw new Error('Bill print payload omitted KOT numbers');
-  const invoice = await request('GET', `/orders/invoices/${first.orderId}?restaurantId=${restaurantId}`);
+  const invoice = await request('GET', `/orders/invoices/${first.orderId}?restaurantId=${restaurantId}&role=OWNER`);
   if (!invoice.data.invoice?.kot_references) throw new Error('Invoice detail omitted KOT numbers');
   console.log(JSON.stringify({ success: true, orderId: first.orderId, submittedLines: submitted.length, saveCreatedKot: false, secondKotOnlyNewLines: true, partyOrderReopens: true, partyNotesInKds: true, partyNotesInKotPrint: true, billPrintQueued: true, complianceFieldsIncluded: true, kotReferencesIncluded: true }));
   process.exit(0);

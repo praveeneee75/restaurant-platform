@@ -19,7 +19,7 @@ assert(pos.includes('tax_mode: item.tax_mode || "INCLUSIVE"'),
   'Retrieved POS cart lines must preserve tax treatment for totals and unit prices');
 assert(pos.includes('fetchOpenOrderDetails(orderId, { fresh: true })') && pos.includes('controller.abort(), 12000'),
   'Explicit order retrieval must bypass stale cache and fail promptly instead of hanging');
-assert(adminHtml.includes('id="itemValidationStatus"') && admin.includes('This ${field} is already used by'),
+assert(adminHtml.includes('id="itemValidationStatus"') && admin.includes('This item name is already used by'),
   'Menu item duplicate validation must be shown beside the editor');
 assert(server.includes("if (activeNameExists(db, 'items', 'name', name, id))") && server.includes('Alphabetic and numeric short codes must be unique'),
   'Server must reject duplicate item names and short codes');

@@ -120,7 +120,7 @@ async function main() {
       throw error;
     }
     if (Math.abs(Number(settled.payable) - Number(discount.netPayable)) > 0.01 || Number(settled.paidAmount) < Number(settled.payable)) throw new Error(`case ${index + 1}: settlement total mismatch`);
-    const invoice = await json('GET', `/orders/invoices/${saved.orderId}?restaurantId=${restaurantId}`);
+    const invoice = await json('GET', `/orders/invoices/${saved.orderId}?restaurantId=${restaurantId}&role=OWNER`);
     if (!invoice.invoice && !invoice.order && !invoice.success) throw new Error(`case ${index + 1}: invoice retrieval failed`);
     if (!Array.isArray(invoice.discounts) || invoice.discounts.length === 0) throw new Error(`case ${index + 1}: applied discount missing from invoice detail`);
     results.push({ case: index + 1, table: table.table_name, orderId: saved.orderId, discount: index % 2 === 0 ? 'cash' : 'promo', payable: settled.payable });

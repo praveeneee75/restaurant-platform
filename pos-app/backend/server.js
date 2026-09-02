@@ -1241,6 +1241,14 @@ function localIpAddresses() {
   return (physical.length ? physical : candidates).map(({ address }) => address);
 }
 
+function requireAnyPermission(db, role, permissionCodes, message = 'Permission denied') {
+  if (!permissionCodes.some((permissionCode) => canRole(db, role, permissionCode))) {
+    const error = new Error(message);
+    error.status = 403;
+    throw error;
+  }
+}
+
 function resolveCompletedTaskNotifications(db) {
   // Task notifications are actionable state, not a permanent inbox. Resolve old rows
   // defensively on every read as well as when the action completes, which also repairs
@@ -2425,6 +2433,7 @@ app.post('/orders/apply-discount', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
 
   try {
+    requirePermission(db, appliedByRole, 'billing.discount', 'Discount permission required');
     if (!getBooleanConfig(db, 'allow_discount', true)) throw new Error('Discounts are disabled in settings');
     const order = db.prepare(`
       SELECT payment_status FROM orders WHERE id = ?
@@ -2812,6 +2821,7 @@ app.get('/reports/sales/daily', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
 
   try {
+    requirePermission(db, role, canRole(db, role, 'reports.view_all') ? 'reports.view_all' : 'reports.view_invoice_only', 'Reports permission required');
     const row = db.prepare(`
       SELECT
         COUNT(o.id) as orders,
@@ -2961,6 +2971,7 @@ app.get('/reports/revenue/tax', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
 
   try {
+    requirePermission(db, role, 'tax.export', 'Tax report permission required');
     const row = db.prepare(`
       SELECT
         COUNT(o.id) as orders,
@@ -4029,9 +4040,11 @@ function probePrinterPort(host, port = 9100, timeout = 180) {
 app.get('/admin/printers/discover', (req, res) => {
   const { restaurantId, role } = req.query;
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
-  if (!canManage(role)) return res.status(403).json({ success: false, message: 'Printer management permission required' });
   const discovered = [];
   try {
+    const permissionDb = openRestaurantDatabase(restaurantId);
+    try { requirePermission(permissionDb, role, 'printers.manage', 'Printer management permission required'); }
+    finally { permissionDb.close(); }
     const interfaces = Object.values(os.networkInterfaces()).flat().filter((entry) => entry && entry.family === 'IPv4' && !entry.internal);
     const hosts = new Set();
     interfaces.forEach((entry) => {
@@ -4076,7 +4089,7 @@ app.post('/admin/promo-codes/save', (req, res) => {
   if (validFrom && validTo && validFrom > validTo) return res.status(400).json({ success: false, message: 'Valid-from date cannot be after valid-to date' });
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, actor?.role, 'admin.settings.manage', 'Promocode management permission required');
+    requirePermission(db, actor?.role, 'rewards.manage', 'Reward management permission required');
     const cleanCode = normaliseText(code).toUpperCase();
     const existing = db.prepare('SELECT id FROM promo_codes WHERE code = ? AND id != ?').get(cleanCode, id || 0);
     if (existing) return res.status(409).json({ success: false, message: 'That promocode already exists' });
@@ -4093,7 +4106,7 @@ app.post('/admin/promo-codes/delete', (req, res) => {
   if (!restaurantId || !isPositiveId(id)) return res.status(400).json({ success: false, message: 'Promocode id required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, actor?.role, 'admin.settings.manage', 'Promocode management permission required');
+    requirePermission(db, actor?.role, 'rewards.manage', 'Reward management permission required');
     db.prepare('UPDATE promo_codes SET active = 0 WHERE id = ?').run(id);
     res.json({ success: true });
   } catch (err) { sendError(res, err); } finally { db.close(); }
@@ -4106,12 +4119,13 @@ app.post('/admin/printers/save', (req, res) => {
   const cleanType = String(type || 'KITCHEN').toUpperCase();
   const cleanConnection = String(connection || 'USB').toUpperCase();
   const cleanPaperWidth = Number(paperWidthMm) === 80 ? 80 : 58;
-  if (!restaurantId || !hasText(name) || !printerTypes.includes(cleanType) || !connections.includes(cleanConnection) || !canManage(actor?.role)) {
+  if (!restaurantId || !hasText(name) || !printerTypes.includes(cleanType) || !connections.includes(cleanConnection)) {
     return res.status(400).json({ success: false, message: 'Printer name, type, connection and manager permission are required' });
   }
 
   const db = openRestaurantDatabase(restaurantId);
   try {
+    requirePermission(db, actor?.role, 'printers.manage', 'Printer management permission required');
     if (activeNameExists(db, 'printers', 'name', name, id)) throw new Error('Printer name already exists');
     const oldValue = id ? db.prepare('SELECT * FROM printers WHERE id = ?').get(id) : null;
     const result = id
@@ -4132,12 +4146,13 @@ app.post('/admin/printers/save', (req, res) => {
 
 app.post('/admin/printers/delete', (req, res) => {
   const { restaurantId, actor, id } = req.body;
-  if (!restaurantId || !isPositiveId(id) || !canManage(actor?.role)) {
-    return res.status(400).json({ success: false, message: 'Printer and manager permission are required' });
+  if (!restaurantId || !isPositiveId(id)) {
+    return res.status(400).json({ success: false, message: 'Printer is required' });
   }
 
   const db = openRestaurantDatabase(restaurantId);
   try {
+    requirePermission(db, actor?.role, 'printers.manage', 'Printer management permission required');
     const oldValue = db.prepare('SELECT * FROM printers WHERE id = ?').get(id);
     db.prepare('UPDATE printers SET active = 0, deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
     db.prepare('UPDATE kitchens SET printer_id = NULL WHERE printer_id = ?').run(id);
@@ -4980,6 +4995,7 @@ app.post('/admin/items/save', (req, res) => {
 
   const db = openRestaurantDatabase(restaurantId);
   try {
+    requirePermission(db, actor?.role, 'admin.menu.manage', 'Menu management permission required');
     const alphaCode = normaliseText(alphaShortCode).toUpperCase().replace(/\s+/g, ' ');
     const numberCode = normaliseText(numericShortCode);
     const itemTaxMode = String(taxMode || 'INCLUSIVE').toUpperCase() === 'EXCLUSIVE' ? 'EXCLUSIVE' : 'INCLUSIVE';
@@ -5088,7 +5104,7 @@ app.post('/admin/items/channels', (req, res) => {
   }
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, actor.role, 'inventory.view', 'Item channel availability permission is required');
+    requirePermission(db, actor.role, 'availability.manage', 'Item channel availability permission is required');
     const oldValue = db.prepare('SELECT * FROM items WHERE id = ?').get(id);
     if (!oldValue) throw new Error('Menu item not found');
     db.prepare(`UPDATE items SET ${field} = ? WHERE id = ?`).run(enabled ? 1 : 0, id);
@@ -5324,7 +5340,7 @@ app.get('/reservations/list', (req, res) => {
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, role, 'orders.create', 'Reservation permission required');
+    requirePermission(db, role, 'reservations.manage', 'Reservation permission required');
     const rows = db.prepare(`
       SELECT r.*, t.table_name
       FROM reservations r
@@ -5349,7 +5365,7 @@ app.post('/reservations/save', (req, res) => {
   }
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, actor?.role, 'orders.create', 'Reservation permission required');
+    requirePermission(db, actor?.role, 'reservations.manage', 'Reservation permission required');
     const selectedStatus = ['BOOKED', 'ARRIVED', 'CANCELLED', 'COMPLETED'].includes(status) ? status : 'BOOKED';
     const oldValue = id ? db.prepare('SELECT * FROM reservations WHERE id = ?').get(id) : null;
     const result = id
@@ -5373,7 +5389,7 @@ app.post('/reservations/cancel', (req, res) => {
   if (!restaurantId || !isPositiveId(id)) return res.status(400).json({ success: false, message: 'Reservation id required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, actor?.role, 'orders.cancel', 'Reservation cancel permission required');
+    requirePermission(db, actor?.role, 'reservations.manage', 'Reservation cancel permission required');
     const oldValue = db.prepare('SELECT * FROM reservations WHERE id = ?').get(id);
     if (!oldValue) throw new Error('Reservation not found');
     db.prepare("UPDATE reservations SET status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id);
@@ -5481,7 +5497,7 @@ app.post('/pos/item-availability', (req, res) => {
   }
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, actor.role, 'inventory.view', 'Item availability permission is required');
+    requirePermission(db, actor.role, 'availability.manage', 'Item availability permission is required');
     const oldValue = db.prepare('SELECT id, name, active FROM items WHERE id = ?').get(id);
     if (!oldValue) throw new Error('Item not found');
     db.prepare('UPDATE items SET active = ? WHERE id = ?').run(active === false ? 0 : 1, id);
@@ -6490,10 +6506,11 @@ app.get('/orders/open', (req, res) => {
 });
 
 app.get('/orders/invoices', (req, res) => {
-  const { restaurantId, fromDate, toDate, limit = 100 } = req.query;
+  const { restaurantId, fromDate, toDate, role, limit = 100 } = req.query;
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    requirePermission(db, role, 'invoices.view', 'Invoice viewing permission required');
     const rows = db.prepare(`
       SELECT
         o.id,
@@ -6529,11 +6546,12 @@ app.get('/orders/invoices', (req, res) => {
 });
 
 app.get('/orders/invoices/:id', (req, res) => {
-  const { restaurantId } = req.query;
+  const { restaurantId, role } = req.query;
   const invoiceId = Number(req.params.id);
   if (!restaurantId || !isPositiveId(invoiceId)) return res.status(400).json({ success: false, message: 'restaurantId and invoice id are required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    requirePermission(db, role, 'invoices.view', 'Invoice viewing permission required');
     const invoice = db.prepare(`
       SELECT o.*, c.name AS customer_name, c.phone AS customer_phone, u.name AS cashier_name,
              COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.order_id = o.id), 0) AS refunded_amount
@@ -6647,10 +6665,12 @@ function buildInvoicePdf(invoice, items) {
 
 app.get('/orders/invoices/:id/pdf', (req, res) => {
   const restaurantId = req.query.restaurantId;
+  const role = req.query.role;
   const invoiceId = Number(req.params.id);
   if (!restaurantId || !isPositiveId(invoiceId)) return res.status(400).json({ success: false, message: 'restaurantId and invoice id are required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    requirePermission(db, role, 'invoices.view', 'Invoice viewing permission required');
     const invoice = db.prepare(`SELECT o.*, c.name AS customer_name FROM orders o LEFT JOIN customers c ON c.id = o.customer_id WHERE o.id = ? AND o.status = 'PAID'`).get(invoiceId);
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
     Object.assign(invoice, {
@@ -6714,7 +6734,7 @@ app.post('/orders/split-check', (req, res) => {
   }
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, actor?.role, 'orders.create', 'Order creation permission required');
+    requirePermission(db, actor?.role, 'orders.split', 'Order split permission required');
     const sourceOrder = db.prepare('SELECT * FROM orders WHERE id = ? AND status = \'OPEN\' AND payment_status != \'PAID\'').get(orderId);
     if (!sourceOrder) throw new Error('Open order not found');
     const sourceItems = db.prepare(`
@@ -6863,7 +6883,7 @@ app.get('/device-sessions/list', (req, res) => {
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, role, 'admin.view', 'Admin view permission required');
+    requirePermission(db, role, 'devices.manage', 'Device management permission required');
     const devices = db.prepare(`
       SELECT ds.*, u.name AS user_name, u.role
       FROM device_sessions ds
@@ -6885,7 +6905,7 @@ app.post('/device-sessions/force-logout', (req, res) => {
   if (!restaurantId || !isPositiveId(id)) return res.status(400).json({ success: false, message: 'Device session required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, actor?.role, 'admin.settings.manage', 'Device monitor permission required');
+    requirePermission(db, actor?.role, 'devices.manage', 'Device management permission required');
     const oldValue = db.prepare('SELECT * FROM device_sessions WHERE id = ?').get(id);
     db.prepare('UPDATE device_sessions SET active = 0, last_seen_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
     writeAudit(db, actor, 'FORCE_LOGOUT', 'DEVICE_SESSION', id, oldValue, { id, active: 0 });
@@ -7085,6 +7105,7 @@ app.post('/orders/cancel', (req, res) => {
   try {
     const role = String(actor?.role || '').toUpperCase();
     const privileged = ['OWNER', 'ADMIN', 'MANAGER', 'MANAGER_1', 'MANAGER_2'].includes(role);
+    let authorizationRole = actor?.role;
     if (privileged) requirePermission(db, actor?.role, 'orders.cancel', 'Order cancel permission required');
     if (forcePin || !privileged) {
       if (!/^\d{6}$/.test(String(pin || ''))) throw new Error('Enter a valid six-digit owner or manager approval PIN');
@@ -7097,11 +7118,15 @@ app.post('/orders/cancel', (req, res) => {
         (!user.pin_hash && String(user.pin || '') === String(pin))
       ));
       if (!approver) throw new Error('The owner or manager approval PIN is incorrect');
+      authorizationRole = approver.role;
       requirePermission(db, approver.role, 'orders.cancel', 'Approver does not have order cancellation permission');
     }
     if (!getBooleanConfig(db, 'allow_order_cancel', true)) throw new Error('Order cancellation is disabled in settings');
     const oldValue = db.prepare("SELECT * FROM orders WHERE id = ? AND payment_status != 'PAID' AND status NOT IN ('PAID', 'CANCELLED', 'MERGED')").get(orderId);
     if (!oldValue) throw new Error('Only an open, unsettled order can be cancelled');
+    if (Number(oldValue.billing_ready || 0) === 1) {
+      requirePermission(db, authorizationRole, 'billing.void', 'Bill void permission required');
+    }
     db.transaction(() => {
       db.prepare("UPDATE orders SET status = 'CANCELLED', cancelled_at = CURRENT_TIMESTAMP WHERE id = ?").run(orderId);
       db.prepare("UPDATE delivery_orders SET delivery_status = 'CANCELLED' WHERE order_id = ?").run(orderId);
@@ -7211,10 +7236,11 @@ function restoreRetailStockForFullRefund(db, actor, orderId) {
 }
 
 app.get('/retail/bootstrap', (req, res) => {
-  const { restaurantId } = req.query;
+  const { restaurantId, role } = req.query;
   if (!restaurantId) return res.status(400).json({ success:false, message:'restaurantId required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    requirePermission(db, role, 'retail.view', 'Retail counter viewing permission required');
     if (!getBooleanConfig(db, 'retail_counter_enabled', false)) {
       const error = new Error('Retail Counter is disabled. Enable it in Admin > Settings > Retail Counter.'); error.status=403; throw error;
     }
@@ -7240,7 +7266,7 @@ app.post('/retail/orders/prepare', (req, res) => {
   const db=openRestaurantDatabase(restaurantId);
   try {
     if (!getBooleanConfig(db,'retail_counter_enabled',false)) { const e=new Error('Retail Counter is disabled');e.status=403;throw e; }
-    requirePermission(db,actor?.role,'orders.create','Order creation permission required');
+    requirePermission(db,actor?.role,'retail.sell','Retail sales permission required');
     const result=db.transaction(()=>{
       const identity=nextDraftOrderIdentity(db,'RETAIL');
       const created=db.prepare(`INSERT INTO orders(order_type,table_no,status,payment_status,created_by,order_source,order_sequence,customer_ref,order_reference)
@@ -7273,7 +7299,7 @@ app.post('/retail/stock-adjust', (req,res)=>{
   if(!restaurantId||!isPositiveId(itemId)||!Number.isFinite(qty)||qty===0) return res.status(400).json({success:false,message:'Item and non-zero stock adjustment are required'});
   const db=openRestaurantDatabase(restaurantId);
   try{
-    requirePermission(db,actor?.role,'admin.menu.manage','Manager permission required');
+    requirePermission(db,actor?.role,'retail.stock_adjust','Retail stock adjustment permission required');
     const item=db.prepare('SELECT id,name,COALESCE(retail_stock,0) retail_stock FROM items WHERE id=? AND deleted_at IS NULL').get(itemId); if(!item) throw new Error('Item not found');
     const balance=Number(item.retail_stock)+qty; if(balance<0&&!getBooleanConfig(db,'retail_allow_negative_stock',false)) throw new Error('Stock adjustment cannot make stock negative');
     db.transaction(()=>{db.prepare('UPDATE items SET retail_stock=? WHERE id=?').run(balance,itemId);db.prepare("INSERT INTO retail_stock_movements(item_id,movement_type,quantity,balance_after,notes,performed_by) VALUES(?,'ADJUSTMENT',?,?,?,?)").run(itemId,qty,balance,normaliseText(notes)||'Manual adjustment',actor?.id||null);writeAudit(db,actor,'ADJUST','RETAIL_STOCK',itemId,{stock:item.retail_stock},{stock:balance,quantity:qty});})();
@@ -7447,7 +7473,7 @@ app.post('/orders/unlock-billing', (req, res) => {
   if (!restaurantId || !isPositiveId(orderId)) return res.status(400).json({ success: false, message: 'Order is required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, actor?.role, 'billing.settle', 'Billing permission required');
+    requirePermission(db, actor?.role, 'orders.unlock', 'Order unlock permission required');
     const order = db.prepare("SELECT * FROM orders WHERE id = ? AND status = 'OPEN' AND payment_status != 'PAID'").get(orderId);
     if (!order) throw new Error('Open order not found');
     if (Number(order.billing_ready) !== 1) throw new Error('Only an order ready for billing can be unlocked');
@@ -7465,7 +7491,7 @@ app.post('/orders/merge-bills', (req, res) => {
   if (!restaurantId || ids.length < 2) return res.status(400).json({ success: false, message: 'Select at least two bills to merge' });
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, actor?.role, 'billing.settle', 'Billing permission required');
+    requirePermission(db, actor?.role, 'orders.merge', 'Order merge permission required');
     const placeholders = ids.map(() => '?').join(',');
     const orders = db.prepare(`SELECT * FROM orders WHERE id IN (${placeholders}) ORDER BY id`).all(...ids);
     if (orders.length !== ids.length) throw new Error('One or more selected bills no longer exist');
@@ -8209,12 +8235,13 @@ app.post('/orders/delivery-tracking', (req, res) => {
 
 app.post('/orders/reopen', (req, res) => {
   const { restaurantId, actor, orderId } = req.body;
-  if (!restaurantId || !isPositiveId(orderId) || !canManage(actor?.role)) {
+  if (!restaurantId || !isPositiveId(orderId)) {
     return res.status(400).json({ success: false, message: 'Order and permission are required' });
   }
 
   const db = openRestaurantDatabase(restaurantId);
   try {
+    requirePermission(db, actor?.role, 'orders.reopen', 'Order reopen permission required');
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
     if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
     if (order.payment_status === 'PAID') return res.status(400).json({ success: false, message: 'Paid orders cannot be reopened' });
@@ -8396,6 +8423,7 @@ app.post('/kds/item-status', (req, res) => {
     if (!canUseKdsWithDb(db, actor?.role)) {
       return res.status(403).json({ success: false, message: 'KDS access denied' });
     }
+    requirePermission(db, actor?.role, 'kitchen.status.update', 'Kitchen status update permission required');
     const oldValue = db.prepare(`SELECT oi.*, o.status AS order_status, o.payment_status
       FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.id = ?`).get(orderItemId);
     if (!oldValue) throw new Error('Order item not found');
@@ -8439,6 +8467,7 @@ app.post('/kds/reprint-kot', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     if (!canUseKdsWithDb(db, actor?.role)) return res.status(403).json({ success:false, message:'KDS access denied' });
+    requirePermission(db, actor?.role, 'kitchen.reprint', 'KOT reprint permission required');
     if (!getBooleanConfig(db, 'allow_kot_reprint', true)) throw new Error('KOT reprint is disabled in Bill Configuration');
     const kot = db.prepare(`SELECT k.id,k.order_id,k.kitchen_id,k.suborder_no,ki.name kitchen_name,ki.printer_id FROM kots k JOIN kitchens ki ON ki.id=k.kitchen_id WHERE k.id=?`).get(kotId);
     if (!kot) throw new Error('KOT not found');
@@ -8466,6 +8495,7 @@ app.post('/kds/order-status', (req, res) => {
     if (!canUseKdsWithDb(db, actor?.role)) {
       return res.status(403).json({ success: false, message: 'KDS access denied' });
     }
+    requirePermission(db, actor?.role, 'kitchen.status.update', 'Kitchen status update permission required');
     const order = db.prepare('SELECT id, status, payment_status, order_type FROM orders WHERE id = ?').get(orderId);
     if (!order) throw new Error('Order not found');
     const settled = String(order.payment_status || '').toUpperCase() === 'PAID' || String(order.status || '').toUpperCase() === 'PAID';
@@ -8529,10 +8559,11 @@ app.get('/customers/search', async (req, res) => {
 });
 
 app.get('/customers/list', (req, res) => {
-  const { restaurantId, includeInactive } = req.query;
+  const { restaurantId, includeInactive, role } = req.query;
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    requirePermission(db, role, 'customers.view', 'Customer viewing permission required');
     const customers = db.prepare(`
       SELECT c.*, COALESCE(SUM(CASE WHEN lp.type = 'EARN' OR lp.type = 'ADJUSTMENT' THEN lp.points WHEN lp.type = 'REDEEM' THEN -lp.points ELSE 0 END), 0) AS loyaltyBalance
       FROM customers c
@@ -8554,6 +8585,7 @@ app.post('/customers/create', (req, res) => {
   if (!restaurantId || !hasText(name) || !hasText(phone)) return res.status(400).json({ success: false, message: 'Customer name and phone are required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    requireAnyPermission(db, actor?.role, ['orders.create', 'customers.manage'], 'Customer creation permission required');
     const duplicate = db.prepare('SELECT id FROM customers WHERE phone = ? AND active = 1 LIMIT 1').get(normaliseText(phone));
     if (duplicate) return res.status(409).json({ success: false, message: 'Customer phone already exists' });
     const result = db.prepare('INSERT INTO customers (name, phone, email, birthday, address) VALUES (?, ?, ?, ?, ?)')
@@ -8574,6 +8606,7 @@ app.post('/customers/update', (req, res) => {
   if (!restaurantId || !isPositiveId(id) || !hasText(name) || !hasText(phone)) return res.status(400).json({ success: false, message: 'Customer id, name and phone are required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    requirePermission(db, actor?.role, 'customers.manage', 'Customer management permission required');
     const duplicate = db.prepare('SELECT id FROM customers WHERE phone = ? AND active = 1 AND id != ? LIMIT 1').get(normaliseText(phone), id);
     if (duplicate) return res.status(409).json({ success: false, message: 'Customer phone already exists' });
     const oldValue = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
@@ -8591,9 +8624,10 @@ app.post('/customers/update', (req, res) => {
 
 app.post('/customers/delete', (req, res) => {
   const { restaurantId, actor, id } = req.body;
-  if (!restaurantId || !isPositiveId(id) || !canManage(actor?.role)) return res.status(400).json({ success: false, message: 'Customer and permission are required' });
+  if (!restaurantId || !isPositiveId(id)) return res.status(400).json({ success: false, message: 'Customer is required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    requirePermission(db, actor?.role, 'customers.manage', 'Customer management permission required');
     const oldValue = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
     db.prepare('UPDATE customers SET active = 0 WHERE id = ?').run(id);
     const newValue = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
@@ -8608,9 +8642,10 @@ app.post('/customers/delete', (req, res) => {
 
 app.post('/customers/notes/create', (req, res) => {
   const { restaurantId, actor, customerId, note } = req.body;
-  if (!restaurantId || !isPositiveId(customerId) || !hasText(note) || !canManage(actor?.role)) return res.status(400).json({ success: false, message: 'Customer note and permission are required' });
+  if (!restaurantId || !isPositiveId(customerId) || !hasText(note)) return res.status(400).json({ success: false, message: 'Customer note is required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    requirePermission(db, actor?.role, 'customers.manage', 'Customer management permission required');
     const result = db.prepare('INSERT INTO customer_notes (customer_id, note, created_by) VALUES (?, ?, ?)').run(customerId, normaliseText(note), actor?.id || null);
     const newValue = db.prepare('SELECT * FROM customer_notes WHERE id = ?').get(result.lastInsertRowid);
     writeAudit(db, actor, 'CREATE', 'CUSTOMER_NOTE', result.lastInsertRowid, null, newValue);
@@ -8623,10 +8658,11 @@ app.post('/customers/notes/create', (req, res) => {
 });
 
 app.get('/customers/profile', (req, res) => {
-  const { restaurantId, customerId } = req.query;
+  const { restaurantId, customerId, role } = req.query;
   if (!restaurantId || !isPositiveId(customerId)) return res.status(400).json({ success: false, message: 'customerId required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    requirePermission(db, role, 'customers.view', 'Customer viewing permission required');
     const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
     const visits = db.prepare(`
@@ -8648,10 +8684,11 @@ app.get('/customers/profile', (req, res) => {
 });
 
 app.get('/customers/reports', (req, res) => {
-  const { restaurantId } = req.query;
+  const { restaurantId, role } = req.query;
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
+    requirePermission(db, role, 'customers.view', 'Customer viewing permission required');
     res.json({
       success: true,
       topCustomers: db.prepare(`
@@ -8718,7 +8755,7 @@ app.post('/loyalty/settings', (req, res) => {
   }
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, actor?.role, 'admin.settings.manage', 'Settings permission required');
+    requirePermission(db, actor?.role, 'rewards.manage', 'Reward management permission required');
     const oldValue = db.prepare("SELECT * FROM settings WHERE key IN ('loyalty_earn_amount', 'loyalty_point_value')").all();
     db.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('loyalty_earn_amount', ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP").run(String(Number(earnAmount)));
     db.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('loyalty_point_value', ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP").run(String(Number(pointValue)));
@@ -8772,7 +8809,7 @@ app.post('/loyalty/rules/save', (req, res) => {
   }
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, actor?.role, 'admin.settings.manage', 'Settings permission required');
+    requirePermission(db, actor?.role, 'rewards.manage', 'Reward management permission required');
     const values = [normaliseText(name), cleanType, isPositiveId(qualifyingItemId) ? Number(qualifyingItemId) : null,
       isPositiveId(qualifyingCategoryId) ? Number(qualifyingCategoryId) : null, isPositiveId(rewardItemId) ? Number(rewardItemId) : null,
       Math.max(1, Number(qualifyingQuantity || 1)), Math.max(1, Number(rewardQuantity || 1)), cleanDiscountType,
@@ -8799,7 +8836,7 @@ app.post('/loyalty/rules/delete', (req, res) => {
   if (!restaurantId || !isPositiveId(id)) return res.status(400).json({ success: false, message: 'Rule required' });
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, actor?.role, 'admin.settings.manage', 'Settings permission required');
+    requirePermission(db, actor?.role, 'rewards.manage', 'Reward management permission required');
     const oldValue = db.prepare('SELECT * FROM loyalty_rules WHERE id = ?').get(id);
     db.prepare('UPDATE loyalty_rules SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
     writeAudit(db, actor, 'DELETE', 'LOYALTY_RULE', Number(id), oldValue, { ...oldValue, active: 0 });

@@ -114,10 +114,10 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'kitchen.kds.view',
     'kitchen.status.update'
   ],
-  CASHIER: ['orders.create', 'orders.transfer_table', 'billing.settle', 'invoices.view', 'reports.view_invoice_only', 'inventory.view', 'availability.manage', 'retail.view', 'retail.sell'],
-  CAPTAIN: ['orders.create', 'orders.transfer_table', 'inventory.view', 'retail.view', 'retail.sell'],
+  CASHIER: ['orders.create', 'orders.merge', 'orders.split', 'orders.unlock', 'orders.transfer_table', 'billing.settle', 'billing.discount', 'invoices.view', 'reports.view_invoice_only', 'inventory.view', 'availability.manage', 'reservations.manage', 'retail.view', 'retail.sell'],
+  CAPTAIN: ['orders.create', 'orders.transfer_table', 'inventory.view', 'availability.manage', 'retail.view', 'retail.sell'],
   WAITER: ['orders.create'],
-  KITCHEN: ['kitchen.kds.view', 'kitchen.status.update']
+  KITCHEN: ['kitchen.kds.view', 'kitchen.status.update', 'kitchen.reprint']
 };
 
 const seededPermissionDbs = new WeakSet();
@@ -150,6 +150,11 @@ function ensurePermissionTables(db) {
       FOREIGN KEY (role_id) REFERENCES roles(id),
       FOREIGN KEY (permission_id) REFERENCES permissions(id)
     );
+
+    CREATE TABLE IF NOT EXISTS permission_migrations (
+      migration_key TEXT PRIMARY KEY,
+      applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 }
 
@@ -174,14 +179,26 @@ function seedDefaultPermissions(db) {
       upsert.run(roles[role], permissionId, codes.includes(code) ? 1 : 0);
     });
   });
-  // Add newly introduced operational permissions without overwriting owner-customized settings.
-  const grantPilotRole = db.prepare(`
-    UPDATE role_permissions SET allowed = 1
-    WHERE role_id = (SELECT id FROM roles WHERE name = ?)
-      AND permission_id IN (SELECT id FROM permissions WHERE code = ?)
-  `);
-  [['MANAGER_1', 'billing.settle'], ['MANAGER_1', 'billing.non_invoice'], ['CASHIER', 'inventory.view'], ['CASHIER', 'orders.transfer_table'], ['CASHIER', 'reports.view_invoice_only'], ['CAPTAIN', 'inventory.view']]
-    .forEach(([role, code]) => grantPilotRole.run(role, code));
+  // Preserve access introduced by earlier releases once, then leave every later Owner edit authoritative.
+  const migrationKey = '2026-09-role-compatibility-v2';
+  if (!db.prepare('SELECT migration_key FROM permission_migrations WHERE migration_key = ?').get(migrationKey)) {
+    const grantPilotRole = db.prepare(`
+      UPDATE role_permissions SET allowed = 1
+      WHERE role_id = (SELECT id FROM roles WHERE name = ?)
+        AND permission_id IN (SELECT id FROM permissions WHERE code = ?)
+    `);
+    const compatibilityGrants = [
+      ['MANAGER_1', 'billing.settle'], ['MANAGER_1', 'billing.discount'], ['MANAGER_1', 'billing.non_invoice'],
+      ['CASHIER', 'inventory.view'], ['CASHIER', 'orders.transfer_table'], ['CASHIER', 'orders.merge'],
+      ['CASHIER', 'orders.split'], ['CASHIER', 'orders.unlock'], ['CASHIER', 'billing.discount'],
+      ['CASHIER', 'reports.view_invoice_only'], ['CASHIER', 'reservations.manage'],
+      ['CAPTAIN', 'inventory.view'], ['CAPTAIN', 'availability.manage'], ['KITCHEN', 'kitchen.reprint']
+    ];
+    db.transaction(() => {
+      compatibilityGrants.forEach(([role, code]) => grantPilotRole.run(role, code));
+      db.prepare('INSERT INTO permission_migrations (migration_key) VALUES (?)').run(migrationKey);
+    })();
+  }
   seededPermissionDbs.add(db);
 }
 

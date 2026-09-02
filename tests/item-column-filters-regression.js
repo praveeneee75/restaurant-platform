@@ -8,15 +8,15 @@ const js = fs.readFileSync(path.join(root, 'pos-app/backend/public/js/admin-dash
 const css = fs.readFileSync(path.join(root, 'pos-app/backend/public/css/style.css'), 'utf8');
 
 const expectedFilters = [
-  'item_code', 'name', 'alpha_short_code', 'tax_mode', 'category_name',
+  'item_code', 'name', 'barcode', 'retail_stock', 'tax_mode', 'category_name',
   'kitchen_name', 'price', 'allow_dine_in', 'allow_parcel', 'allow_party_order',
-  'online_enabled', 'active'
+  'allow_retail', 'online_enabled', 'active'
 ];
 
 for (const field of expectedFilters) {
   assert.match(html, new RegExp(`data-item-filter=["']${field}["']`), `missing ${field} column filter`);
 }
-assert.doesNotMatch(html, /Numeric short code|Number code|data-item-filter=["']numeric_short_code["']/, 'duplicate numeric code control must not be displayed');
+assert.doesNotMatch(html, /Alphabetic short code|Numeric short code|Alpha code|Number code|data-item-filter=["'](?:alpha|numeric)_short_code["']/, 'legacy duplicate short-code controls must not be displayed');
 
 assert.match(html, /id="clearItemFilters"/, 'missing clear filters control');
 assert.match(html, /id="itemFilterCount"/, 'missing visible item count');

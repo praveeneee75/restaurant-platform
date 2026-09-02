@@ -127,7 +127,7 @@ setInterval(() => {
 }, 30 * 1000);
 
 async function loadInvoiceList() {
-  const data = await fetchJson(`/orders/invoices?restaurantId=${encodeURIComponent(restaurantId)}&fromDate=${invoiceFrom.value || ""}&toDate=${invoiceTo.value || ""}&limit=100`);
+  const data = await fetchJson(`/orders/invoices?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}&fromDate=${invoiceFrom.value || ""}&toDate=${invoiceTo.value || ""}&limit=100`);
   state.invoices = data.invoices || [];
   renderInvoices();
 }
@@ -590,7 +590,7 @@ function renderInvoices() {
 
 async function showInvoiceDetail(invoiceId) {
   const panel = document.getElementById('invoiceDetail');
-  const data = await fetchJson(`/orders/invoices/${encodeURIComponent(invoiceId)}?restaurantId=${encodeURIComponent(restaurantId)}`);
+  const data = await fetchJson(`/orders/invoices/${encodeURIComponent(invoiceId)}?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}`);
   const invoice = data.invoice;
   const items = data.items || [];
   const discounts = data.discounts || [];
@@ -663,7 +663,7 @@ async function showInvoiceDetail(invoiceId) {
 }
 
 async function downloadInvoicePdf(invoiceId, invoiceNo) {
-  const response = await fetch(`/orders/invoices/${encodeURIComponent(invoiceId)}/pdf?restaurantId=${encodeURIComponent(restaurantId)}`);
+  const response = await fetch(`/orders/invoices/${encodeURIComponent(invoiceId)}/pdf?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}`);
   if (!response.ok) {
     let message = 'PDF download failed';
     try { message = (await response.json()).message || message; } catch (_) { /* non-JSON error */ }
@@ -907,7 +907,6 @@ function editItem(id) {
   itemName.value = row.name || "";
   itemCategory.value = row.category_id || "";
   itemPrice.value = row.price ?? 0;
-  itemAlphaShortCode.value = row.alpha_short_code || "";
   itemTaxMode.value = String(row.tax_mode || "INCLUSIVE").toUpperCase() === "EXCLUSIVE" ? "EXCLUSIVE" : "INCLUSIVE";
   itemBarcode.value = row.barcode || "";
   itemRetailCost.value = row.retail_cost ?? 0;
@@ -1647,18 +1646,14 @@ itemForm.addEventListener("submit", async (e) => {
   itemValidationStatus.textContent = "";
   const currentId = String(itemId.value || "");
   const name = itemName.value.trim().toLowerCase();
-  const alpha = itemAlphaShortCode.value.trim().replace(/\s+/g, " ").toUpperCase();
-  const duplicate = (state.admin.items || []).find((item) => String(item.id) !== currentId && (
-    String(item.name || "").trim().toLowerCase() === name
-    || (alpha && String(item.alpha_short_code || "").trim().toUpperCase() === alpha)
-  ));
+  const duplicate = (state.admin.items || []).find((item) => String(item.id) !== currentId
+    && String(item.name || "").trim().toLowerCase() === name);
   if (duplicate) {
-    const field = String(duplicate.name || "").trim().toLowerCase() === name ? "item name" : "alphabetic short code";
-    itemValidationStatus.textContent = `This ${field} is already used by ${duplicate.name}. Enter a unique value.`;
+    itemValidationStatus.textContent = `This item name is already used by ${duplicate.name}. Enter a unique value.`;
     return;
   }
   try {
-    await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, alphaShortCode: itemAlphaShortCode.value, numericShortCode: "", taxMode: itemTaxMode.value, barcode:itemBarcode.value, retailCost:itemRetailCost.value, retailStock:itemRetailStock.value, retailReorderLevel:itemRetailReorderLevel.value, onlineDescription: itemOnlineDescription.value, imageUrl: itemImageUrl.value, isVeg: itemVeg.checked, allowDineIn: itemDineIn.checked, allowParcel: itemParcel.checked, allowPartyOrder: itemPartyOrder.checked, allowRetail:itemRetail.checked, onlineEnabled: itemOnlineEnabled.checked, active: itemActive.checked });
+    await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, alphaShortCode: "", numericShortCode: "", taxMode: itemTaxMode.value, barcode:itemBarcode.value, retailCost:itemRetailCost.value, retailStock:itemRetailStock.value, retailReorderLevel:itemRetailReorderLevel.value, onlineDescription: itemOnlineDescription.value, imageUrl: itemImageUrl.value, isVeg: itemVeg.checked, allowDineIn:itemDineIn.checked, allowParcel:itemParcel.checked, allowPartyOrder:itemPartyOrder.checked, allowRetail:itemRetail.checked, onlineEnabled:itemOnlineEnabled.checked, active:itemActive.checked });
     itemForm.reset(); itemDineIn.checked = true; itemParcel.checked = true; itemPartyOrder.checked = true; itemRetail.checked=false; itemActive.checked = true; itemOnlineEnabled.checked = true; itemTaxMode.value = "INCLUSIVE";
     await loadAdmin();
   } catch (error) {

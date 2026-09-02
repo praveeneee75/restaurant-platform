@@ -59,7 +59,8 @@ const { PREFERRED_POS_PORT, findAvailablePort } = require(path.join(root, 'pos-a
   assert.match(waiterJs, /finalWaiterCheck\.hidden = state\.settings\.showFinalBillPrintDineIn === false/, 'Final Check, Bill & Print must follow the Dine In admin setting');
   assert.match(waiterCss, /\.check-panel\.mobile-active \.check-bottom-actions \{ position:fixed;[\s\S]*bottom:0/, 'mobile Check actions must remain anchored to the bottom safe area');
   assert.match(waiterCss, /\[data-waiter-panel="menu"\]\.mobile-active \.mobile-bottom-action \{ position:fixed;[\s\S]*bottom:0/, 'mobile Items review action must remain anchored to the bottom safe area');
-  assert.match(waiter, /class="review-bottom-actions"[\s\S]*class="transfer-panel"[\s\S]*class="actions"/, 'mobile Review must group transfer and order actions into one bottom control area');
+  assert.match(waiter, /class="review-bottom-actions"[\s\S]*class="actions review-icon-actions"/, 'mobile Review must group order actions into one bottom icon control area');
+  assert.match(waiter, /id="orderTransferDialog"[\s\S]*data-transfer-mode="TABLE"[\s\S]*data-transfer-mode="KOT"[\s\S]*data-transfer-mode="ITEM"/, 'mobile Review transfer action must open the table, KOT and item transfer dialog');
   assert.match(waiterCss, /\.cart-panel\.mobile-active \.review-bottom-actions \{ position:fixed;[\s\S]*bottom:0/, 'mobile Review transfer and order actions must remain anchored to the bottom safe area');
   assert.match(waiterCss, /\.customer-controls \{ grid-template-columns:minmax\(0,1fr\) auto; align-items:end; \}/, 'mobile Review customer fields and action buttons must share aligned rows');
   assert.match(waiterJs, /parcelWaiterCheck\.hidden = !state\.selectedTable \|\| state\.fulfillmentType !== "DINE_IN"/, 'captain parcel must be available for a selected table even when its earlier customer check is final-bill locked');
