@@ -341,6 +341,7 @@ async function applyPosDiscount(type, value, valueType, promoCode) {
 }
 
 function applyBootstrap(data) {
+  document.querySelectorAll('[data-retail-nav]').forEach((link)=>{ link.hidden = data.settings?.retailCounterEnabled !== true; });
   const selectedTableId = state.selectedTable?.id;
   const selectedPartnerId = deliveryPartner.value || "";
   const channelField = posMode === 'PARCEL' ? 'allow_parcel' : posMode === 'PARTY' ? 'allow_party_order' : 'allow_dine_in';

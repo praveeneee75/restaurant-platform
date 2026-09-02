@@ -1,0 +1,6 @@
+.retail-item { color: var(--retail-ink); flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 0; }
+.retail-item strong, .retail-item span, .retail-item small { width: 100%; overflow-wrap: anywhere; }
+.retail-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:16px; }
+.retail-kpis span { padding:11px; border-radius:10px; background:#edf7f5; color:#526478; font-size:12px; font-weight:700; }
+.retail-kpis b { display:block; margin-top:4px; color:var(--retail-ink); font-size:17px; }
+@media (max-width: 760px) { .retail-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } }

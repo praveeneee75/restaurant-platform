@@ -93,6 +93,7 @@
         <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="profile">Restaurant Profile</button>
         <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="billing">Billing</button>
         <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="pos">POS Behaviour</button>
+        <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="retail">Retail Counter</button>
         <button class="nav-btn nav-sub-btn" data-view="backup">Backup</button>
         <button class="nav-btn nav-sub-btn" data-view="settings" data-settings-section="online">Online Ordering</button>
         <button class="nav-btn" data-view="permissions">Permissions</button>
@@ -112,6 +113,7 @@
       <div class="nav-group nav-group-links" data-nav-group="links" hidden>
         <p class="nav-group-title">Quick Links</p>
         <a class="nav-link" href="/pos-live.html">Open POS</a>
+        <a class="nav-link" href="/retail.html">Retail Counter</a>
         <a class="nav-link" href="/orders.html">Orders</a>
         <a class="nav-link" href="/kds.html">Open KDS</a>
       </div>
@@ -176,12 +178,17 @@
         <label>Price<input id="itemPrice" type="number" step="0.01" min="0" required></label>
         <label>Alphabetic short code<input id="itemAlphaShortCode" maxlength="12" placeholder="Example: C B"></label>
         <label>Tax treatment<select id="itemTaxMode"><option value="INCLUSIVE">Inclusive of tax</option><option value="EXCLUSIVE">Exclusive of tax</option></select></label>
+        <label>Barcode / EAN / UPC<input id="itemBarcode" maxlength="64" autocomplete="off" placeholder="Scan or enter barcode"></label>
+        <label>Retail cost per unit<input id="itemRetailCost" type="number" step="0.01" min="0" value="0"></label>
+        <label>Retail stock on hand<input id="itemRetailStock" type="number" step="1" min="0" value="0"></label>
+        <label>Retail reorder level<input id="itemRetailReorderLevel" type="number" step="1" min="0" value="0"></label>
         <label>Online description<input id="itemOnlineDescription" placeholder="Short customer-facing description"></label>
         <label>Online image URL<input id="itemImageUrl" placeholder="Leave blank for automatic food image"></label>
         <label class="check-row"><input id="itemVeg" type="checkbox" checked> Veg</label>
         <label class="check-row"><input id="itemDineIn" type="checkbox" checked> Dine In</label>
         <label class="check-row"><input id="itemParcel" type="checkbox" checked> Parcel</label>
         <label class="check-row"><input id="itemPartyOrder" type="checkbox" checked> Party Order</label>
+        <label class="check-row"><input id="itemRetail" type="checkbox"> Retail Counter</label>
         <label class="check-row"><input id="itemOnlineEnabled" type="checkbox" checked> Show on online ordering page</label>
         <label class="check-row"><input id="itemActive" type="checkbox" checked> Active</label>
         <button>Save Item</button>
@@ -189,11 +196,12 @@
       </form>
       <div class="toolbar item-filter-toolbar"><input id="itemSearch" placeholder="Search all menu item columns"><button type="button" class="secondary-btn" id="clearItemFilters">Clear filters</button></div>
       <div class="table-panel availability-items-panel"><table class="availability-items-table"><thead>
-        <tr><th>Item code</th><th>Name</th><th>Alpha code</th><th>Tax</th><th>Category</th><th>Kitchen</th><th>Price</th><th>Dine In</th><th>Parcel</th><th>Party</th><th>Online</th><th>Active</th><th>Actions</th></tr>
+        <tr><th>Item code</th><th>Name</th><th>Barcode</th><th>Stock</th><th>Tax</th><th>Category</th><th>Kitchen</th><th>Price</th><th>Dine In</th><th>Parcel</th><th>Party</th><th>Retail</th><th>Online</th><th>Active</th><th>Actions</th></tr>
         <tr class="item-column-filters" aria-label="Menu item column filters">
           <th><input data-item-filter="item_code" aria-label="Filter by item code" placeholder="Filter"></th>
           <th><input data-item-filter="name" aria-label="Filter by name" placeholder="Filter"></th>
-          <th><input data-item-filter="alpha_short_code" aria-label="Filter by alpha code" placeholder="Filter"></th>
+          <th><input data-item-filter="barcode" aria-label="Filter by barcode" placeholder="Filter"></th>
+          <th><input data-item-filter="retail_stock" aria-label="Filter by retail stock" placeholder="Filter"></th>
           <th><select data-item-filter="tax_mode" aria-label="Filter by tax"><option value="">All</option><option value="INCLUSIVE">Inclusive</option><option value="EXCLUSIVE">Exclusive</option></select></th>
           <th><input data-item-filter="category_name" aria-label="Filter by category" placeholder="Filter"></th>
           <th><input data-item-filter="kitchen_name" aria-label="Filter by kitchen" placeholder="Filter"></th>
@@ -201,6 +209,7 @@
           <th><select data-item-filter="allow_dine_in" aria-label="Filter Dine In availability"><option value="">All</option><option value="1">Yes</option><option value="0">No</option></select></th>
           <th><select data-item-filter="allow_parcel" aria-label="Filter Parcel availability"><option value="">All</option><option value="1">Yes</option><option value="0">No</option></select></th>
           <th><select data-item-filter="allow_party_order" aria-label="Filter Party availability"><option value="">All</option><option value="1">Yes</option><option value="0">No</option></select></th>
+          <th><select data-item-filter="allow_retail" aria-label="Filter Retail availability"><option value="">All</option><option value="1">Yes</option><option value="0">No</option></select></th>
           <th><select data-item-filter="online_enabled" aria-label="Filter Online availability"><option value="">All</option><option value="1">Yes</option><option value="0">No</option></select></th>
           <th><select data-item-filter="active" aria-label="Filter active status"><option value="">All</option><option value="1">Yes</option><option value="0">No</option></select></th>
           <th><span class="filter-count" id="itemFilterCount" aria-live="polite"></span></th>
@@ -561,6 +570,15 @@
               <label class="check-row"><input id="settingBillingShowSettleInvoice" type="checkbox"> Show Settle &amp; Create Invoice</label>
               <label class="check-row"><input id="settingBillingShowSettleOnly" type="checkbox"> Show Settle</label>
             </fieldset>
+          </article>
+
+          <article class="settings-section" data-settings-panel="retail" hidden>
+            <h3>Retail Counter — Snacks &amp; Confectionery</h3>
+            <p class="settings-help">Enable a fast walk-in counter with barcode scanning, manual item search, unit stock control and the existing billing/invoice engine. Retail sales do not create kitchen tickets.</p>
+            <label class="check-row"><input id="settingRetailCounterEnabled" type="checkbox"> Enable Retail Counter</label>
+            <label class="check-row"><input id="settingRetailLowStockWarning" type="checkbox"> Warn when stock reaches reorder level</label>
+            <label class="check-row"><input id="settingRetailAllowNegativeStock" type="checkbox"> Allow sales when stock is insufficient</label>
+            <p class="settings-help">After enabling, configure barcode, cost, stock and Retail availability under Menu Setup → Menu Items, then open <a href="/retail.html">Retail Counter</a>.</p>
           </article>
 
           <article class="settings-section" data-settings-panel="promos" hidden>

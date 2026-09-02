@@ -310,9 +310,9 @@ function renderAdmin() {
   categoriesTable.innerHTML = categories.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.kitchen_name || "Unassigned")}${Number(c.kitchen_active) === 0 ? " (inactive kitchen)" : ""}</td><td>${c.active ? "Active" : "Inactive"}</td><td>${actions("category", c.id)}</td></tr>`).join("");
   const term = (itemSearch?.value || "").trim().toLowerCase();
   const columnFilters = Object.fromEntries([...document.querySelectorAll('[data-item-filter]')].map((control) => [control.dataset.itemFilter, control.value.trim().toLowerCase()]));
-  const booleanItemFields = new Set(['allow_dine_in', 'allow_parcel', 'allow_party_order', 'online_enabled', 'active']);
+  const booleanItemFields = new Set(['allow_dine_in', 'allow_parcel', 'allow_party_order', 'allow_retail', 'online_enabled', 'active']);
   const visibleItems = items.filter((item) => {
-    const searchable = [item.name, item.alpha_short_code, item.numeric_short_code, item.tax_mode, item.category_name, item.kitchen_name, money(item.price)].join(' ').toLowerCase();
+    const searchable = [item.name, item.barcode, item.item_code, item.tax_mode, item.category_name, item.kitchen_name, money(item.price), item.retail_stock].join(' ').toLowerCase();
     if (term && !searchable.includes(term)) return false;
     return Object.entries(columnFilters).every(([field, filterValue]) => {
       if (!filterValue) return true;
@@ -322,7 +322,7 @@ function renderAdmin() {
     });
   });
   if (itemFilterCount) itemFilterCount.textContent = `${visibleItems.length}/${items.length}`;
-  itemsTable.innerHTML = visibleItems.map((i) => `<tr><td><strong>${esc(i.item_code || String(i.id).padStart(4, "0"))}</strong></td><td>${esc(i.name)}</td><td>${esc(i.alpha_short_code || "—")}</td><td>${esc(String(i.tax_mode || "INCLUSIVE").toUpperCase() === "EXCLUSIVE" ? "Exclusive" : "Inclusive")}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td>${[['allow_dine_in','Dine In'],['allow_parcel','Parcel'],['allow_party_order','Party'],['online_enabled','Online'],['active','Active']].map(([field,label]) => `<td><label class="availability-toggle" title="${label}"><input type="checkbox" data-item-channel="${field}" data-item-id="${i.id}" ${Number(i[field] ?? 1) === 1 ? 'checked' : ''}><span>${label}</span></label></td>`).join('')}<td>${actions("item", i.id)}</td></tr>`).join("");
+  itemsTable.innerHTML = visibleItems.map((i) => `<tr><td><strong>${esc(i.item_code || String(i.id).padStart(4, "0"))}</strong></td><td>${esc(i.name)}</td><td>${esc(i.barcode || "—")}</td><td>${money(i.retail_stock)}</td><td>${esc(String(i.tax_mode || "INCLUSIVE").toUpperCase() === "EXCLUSIVE" ? "Exclusive" : "Inclusive")}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td>${[['allow_dine_in','Dine In'],['allow_parcel','Parcel'],['allow_party_order','Party'],['allow_retail','Retail'],['online_enabled','Online'],['active','Active']].map(([field,label]) => `<td><label class="availability-toggle" title="${label}"><input type="checkbox" data-item-channel="${field}" data-item-id="${i.id}" ${Number(i[field] ?? (field === 'allow_retail' ? 0 : 1)) === 1 ? 'checked' : ''}><span>${label}</span></label></td>`).join('')}<td>${actions("item", i.id)}</td></tr>`).join("");
   usersTable.innerHTML = users.map((u) => {
     const canUnlock = isFutureDate(u.locked_until) || u.unlock_requested_at || Number(u.failed_login_attempts || 0) > 0;
     return `<tr>
@@ -879,12 +879,17 @@ function editItem(id) {
   itemPrice.value = row.price ?? 0;
   itemAlphaShortCode.value = row.alpha_short_code || "";
   itemTaxMode.value = String(row.tax_mode || "INCLUSIVE").toUpperCase() === "EXCLUSIVE" ? "EXCLUSIVE" : "INCLUSIVE";
+  itemBarcode.value = row.barcode || "";
+  itemRetailCost.value = row.retail_cost ?? 0;
+  itemRetailStock.value = row.retail_stock ?? 0;
+  itemRetailReorderLevel.value = row.retail_reorder_level ?? 0;
   itemOnlineDescription.value = row.online_description || "";
   itemImageUrl.value = row.image_url || "";
   itemVeg.checked = Number(row.is_veg ?? 1) === 1;
   itemDineIn.checked = Number(row.allow_dine_in ?? 1) === 1;
   itemParcel.checked = Number(row.allow_parcel ?? 1) === 1;
   itemPartyOrder.checked = Number(row.allow_party_order ?? 1) === 1;
+  itemRetail.checked = Number(row.allow_retail ?? 0) === 1;
   itemOnlineEnabled.checked = Number(row.online_enabled ?? 1) === 1;
   itemActive.checked = Number(row.active) !== 0;
   focusFirstInput(itemForm);
@@ -1122,6 +1127,9 @@ function renderSettings() {
   setChecked(settingAllowCashierRegisterClose, settings.allow_cashier_register_close);
   settingCashDiscrepancyThreshold.value = settings.cash_discrepancy_threshold || "0";
   setChecked(settingMobileAppEnabled, settings.mobile_app_enabled);
+  setChecked(settingRetailCounterEnabled, settings.retail_counter_enabled);
+  setChecked(settingRetailAllowNegativeStock, settings.retail_allow_negative_stock);
+  setChecked(settingRetailLowStockWarning, settings.retail_low_stock_warning === undefined ? true : settings.retail_low_stock_warning);
   setChecked(settingOnlineOrderEnabled, settings.online_order_enabled);
   settingOnlineStorefrontSlug.value = settings.online_storefront_slug || "";
   settingOnlineTheme.value = settings.online_theme || "CLASSIC";
@@ -1244,6 +1252,9 @@ function collectSettings() {
     allow_cashier_register_close: checkedValue(settingAllowCashierRegisterClose),
     cash_discrepancy_threshold: settingCashDiscrepancyThreshold.value,
     mobile_app_enabled: checkedValue(settingMobileAppEnabled),
+    retail_counter_enabled: checkedValue(settingRetailCounterEnabled),
+    retail_allow_negative_stock: checkedValue(settingRetailAllowNegativeStock),
+    retail_low_stock_warning: checkedValue(settingRetailLowStockWarning),
     online_order_enabled: checkedValue(settingOnlineOrderEnabled),
     online_storefront_slug: settingOnlineStorefrontSlug.value,
     online_theme: settingOnlineTheme.value,
@@ -1271,6 +1282,7 @@ const SETTINGS_KEYS_BY_SECTION = {
   "bill-print": ["bill_template", "bill_print_contact", "bill_print_kot_references", "bill_compact_kot_references", "bill_print_customer", "bill_print_payment", "bill_print_authorised_signatory", "bill_footer_text", "bill_tax_display_dine_in", "bill_tax_display_parcel", "bill_tax_display_party", ...BILL_LINE_OPTIONS.map(([key])=>`bill_line_${key}`), "bill_invoice_number_format", "bill_left_margin_dots", "bill_trailing_feed_lines", "bill_cut_mode", "bill_print_width_58", "bill_print_width_80", "bill_font_type", "bill_font_size", "bill_line_spacing_dots", "bill_details_layout", ...Object.keys(flatPrintStyles('bill'))],
   kot: ["auto_print_kot", "print_kot_on_save", "print_kot_on_submit", "allow_kot_reprint", "kot_header_text", "kot_footer_text", "kot_template", "kot_print_table", "kot_print_customer", "kot_print_kitchen", "kot_compact_spacing", "kot_left_margin_dots", "kot_trailing_feed_lines", "kot_cut_mode", "kot_print_width_58", "kot_print_width_80", "kot_font_type", "kot_font_size", "kot_line_spacing_dots", ...Object.keys(flatPrintStyles('kot'))],
   kds: ["kds_clear_settled_on_new_business_day", "kds_offline_clear_hours"],
+  retail: ["retail_counter_enabled", "retail_allow_negative_stock", "retail_low_stock_warning"],
   online: ["mobile_app_enabled", "online_order_enabled", "online_storefront_slug", "online_theme", "online_primary_color", "online_accent_color", "online_logo_path", "online_payment_methods", "online_require_otp", "online_allow_loyalty_credit", "online_delivery_enabled", "online_takeaway_enabled", "online_min_order_amount"]
 };
 
@@ -1333,6 +1345,7 @@ function showSettingsSection(section = "profile") {
     pos: "POS Behaviour",
     kot: "Kitchen / KOT",
     kds: "KDS Business Day Cleanup",
+    retail: "Retail Counter",
     "bill-print": "Bill Configuration",
     online: "Online Ordering"
   };
@@ -1605,8 +1618,8 @@ itemForm.addEventListener("submit", async (e) => {
     return;
   }
   try {
-    await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, alphaShortCode: itemAlphaShortCode.value, numericShortCode: "", taxMode: itemTaxMode.value, onlineDescription: itemOnlineDescription.value, imageUrl: itemImageUrl.value, isVeg: itemVeg.checked, allowDineIn: itemDineIn.checked, allowParcel: itemParcel.checked, allowPartyOrder: itemPartyOrder.checked, onlineEnabled: itemOnlineEnabled.checked, active: itemActive.checked });
-    itemForm.reset(); itemDineIn.checked = true; itemParcel.checked = true; itemPartyOrder.checked = true; itemActive.checked = true; itemOnlineEnabled.checked = true; itemTaxMode.value = "INCLUSIVE";
+    await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, alphaShortCode: itemAlphaShortCode.value, numericShortCode: "", taxMode: itemTaxMode.value, barcode:itemBarcode.value, retailCost:itemRetailCost.value, retailStock:itemRetailStock.value, retailReorderLevel:itemRetailReorderLevel.value, onlineDescription: itemOnlineDescription.value, imageUrl: itemImageUrl.value, isVeg: itemVeg.checked, allowDineIn: itemDineIn.checked, allowParcel: itemParcel.checked, allowPartyOrder: itemPartyOrder.checked, allowRetail:itemRetail.checked, onlineEnabled: itemOnlineEnabled.checked, active: itemActive.checked });
+    itemForm.reset(); itemDineIn.checked = true; itemParcel.checked = true; itemPartyOrder.checked = true; itemRetail.checked=false; itemActive.checked = true; itemOnlineEnabled.checked = true; itemTaxMode.value = "INCLUSIVE";
     await loadAdmin();
   } catch (error) {
     itemValidationStatus.textContent = error.message || "Item could not be saved.";

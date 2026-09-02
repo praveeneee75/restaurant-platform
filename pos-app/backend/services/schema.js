@@ -134,6 +134,9 @@ const DEFAULT_SYSTEM_SETTINGS = {
   last_cloud_sync_status: '',
   last_cloud_sync_message: '',
   mobile_app_enabled: '0',
+  retail_counter_enabled: '0',
+  retail_allow_negative_stock: '0',
+  retail_low_stock_warning: '1',
   enabled_modules: '',
   license_package_code: '',
   license_package_name: '',
@@ -412,6 +415,11 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'items', 'allow_dine_in INTEGER DEFAULT 1');
   addColumn(db, 'items', 'allow_parcel INTEGER DEFAULT 1');
   addColumn(db, 'items', 'allow_party_order INTEGER DEFAULT 1');
+  addColumn(db, 'items', 'allow_retail INTEGER DEFAULT 0');
+  addColumn(db, 'items', 'barcode TEXT');
+  addColumn(db, 'items', 'retail_cost REAL DEFAULT 0');
+  addColumn(db, 'items', 'retail_stock REAL DEFAULT 0');
+  addColumn(db, 'items', 'retail_reorder_level REAL DEFAULT 0');
   addColumn(db, 'items', 'alpha_short_code TEXT');
   addColumn(db, 'items', 'numeric_short_code TEXT');
   addColumn(db, 'items', "tax_mode TEXT NOT NULL DEFAULT 'INCLUSIVE'");
@@ -422,6 +430,26 @@ function ensureRestaurantSchema(db) {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_items_numeric_short_code_unique
       ON items(TRIM(numeric_short_code))
       WHERE deleted_at IS NULL AND numeric_short_code IS NOT NULL AND TRIM(numeric_short_code) <> '';
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_items_barcode_unique
+      ON items(TRIM(barcode))
+      WHERE deleted_at IS NULL AND barcode IS NOT NULL AND TRIM(barcode) <> '';
+
+    CREATE TABLE IF NOT EXISTS retail_stock_movements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL,
+      movement_type TEXT NOT NULL,
+      quantity REAL NOT NULL,
+      balance_after REAL NOT NULL,
+      order_id INTEGER,
+      notes TEXT,
+      performed_by INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (item_id) REFERENCES items(id),
+      FOREIGN KEY (order_id) REFERENCES orders(id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_retail_sale_movement_order_item
+      ON retail_stock_movements(order_id, item_id, movement_type)
+      WHERE order_id IS NOT NULL AND movement_type = 'SALE';
   `);
 
   // Phase 6: split payments use the same payments ledger with card/UPI metadata.
