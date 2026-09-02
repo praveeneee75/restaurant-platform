@@ -9215,6 +9215,12 @@ app.post('/permissions/update', (req, res) => {
   if (!restaurantId || actor?.role !== 'OWNER' || !hasText(role) || !permissions || typeof permissions !== 'object') {
     return res.status(403).json({ success: false, message: 'Only OWNER can edit permissions' });
   }
+  if (role === 'OWNER') {
+    return res.status(400).json({ success: false, message: 'OWNER access is protected and cannot be changed' });
+  }
+  if (Array.isArray(permissions) || Object.values(permissions).some((value) => typeof value !== 'boolean')) {
+    return res.status(400).json({ success: false, message: 'Every permission value must be true or false' });
+  }
 
   const db = openRestaurantDatabase(restaurantId);
   try {
@@ -9223,6 +9229,9 @@ app.post('/permissions/update', (req, res) => {
       const targetRole = db.prepare('SELECT * FROM roles WHERE name = ? AND active = 1').get(role);
       if (!targetRole) throw new Error('Role not found');
       const permissionRows = db.prepare('SELECT * FROM permissions WHERE active = 1').all();
+      const knownCodes = new Set(permissionRows.map((permission) => permission.code));
+      const unknownCodes = Object.keys(permissions).filter((code) => !knownCodes.has(code));
+      if (unknownCodes.length) throw new Error(`Unknown permission control: ${unknownCodes[0]}`);
       const oldValue = db.prepare(`
         SELECT p.code, COALESCE(rp.allowed, 0) AS allowed
         FROM permissions p

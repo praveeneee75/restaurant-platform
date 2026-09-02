@@ -825,18 +825,29 @@
     </section>
 
     <section class="admin-view" id="view-permissions">
-      <div class="editor-panel">
-        <h2>Permission Matrix</h2>
-        <p id="permissionsStatus"></p>
+      <div class="editor-panel permission-hero">
+        <div>
+          <p class="eyebrow">Access control</p>
+          <h2>Permission Matrix</h2>
+          <p class="form-hint">Choose exactly what each staff role can view or change. Owner access is protected and cannot be removed.</p>
+        </div>
+        <div class="permission-summary" id="permissionsSummary" aria-live="polite"></div>
       </div>
-      <div class="table-panel">
-        <table>
-          <thead id="permissionsMatrixHead"></thead>
-          <tbody id="permissionsMatrixBody"></tbody>
-        </table>
+      <div class="permission-controls" aria-label="Permission matrix controls">
+        <label>Find a control<input id="permissionSearch" type="search" placeholder="Search billing, refunds, KDS…" autocomplete="off"></label>
+        <label>Module<select id="permissionModuleFilter"><option value="">All modules</option></select></label>
+        <label>Focus role<select id="permissionRoleFilter"><option value="">All roles</option></select></label>
+        <button id="expandPermissionGroups" class="secondary-btn" type="button">Collapse all</button>
+        <button id="resetPermissionFilters" class="secondary-btn" type="button">Clear filters</button>
       </div>
-      <div class="toolbar">
-        <button id="savePermissionsMatrix" type="button">Save Permissions</button>
+      <div id="permissionsValidation" class="permission-validation" role="alert" hidden></div>
+      <div id="permissionsMatrix" class="permission-groups"></div>
+      <div class="permission-savebar">
+        <div>
+          <strong id="permissionsStatus">Permission matrix loaded</strong>
+          <small id="permissionsDirtyStatus">No unsaved changes</small>
+        </div>
+        <button id="savePermissionsMatrix" type="button">Save permission changes</button>
       </div>
     </section>
 

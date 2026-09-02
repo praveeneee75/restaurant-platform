@@ -48,5 +48,6 @@
     ,"test:sales-storage-policy": "node tests/sales-storage-policy-regression.js"
     ,"test:owner-offline": "node tests/owner-offline-visibility-regression.js"
     ,"test:retail-counter": "node tests/retail-counter-regression.js && node tests/retail-refund-regression.js"
+    ,"test:permissions": "node tests/permission-matrix-regression.js"
   }
 }

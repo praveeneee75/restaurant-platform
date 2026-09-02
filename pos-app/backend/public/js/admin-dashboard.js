@@ -473,8 +473,7 @@ function renderBackup() {
 function renderPermissions() {
   if (actor.role !== "OWNER") {
     permissionsStatus.textContent = "Only OWNER can edit permissions";
-    permissionsMatrixHead.innerHTML = "";
-    permissionsMatrixBody.innerHTML = "";
+    permissionsMatrix.innerHTML = "";
     savePermissionsMatrix.hidden = true;
     return;
   }
@@ -483,15 +482,46 @@ function renderPermissions() {
   const permissions = state.permissions.permissions || [];
   const matrix = state.permissions.matrix || [];
   const allowed = new Map(matrix.map((row) => [`${row.role}:${row.permission_code}`, Number(row.allowed) === 1]));
-  permissionsMatrixHead.innerHTML = `<tr><th>Module</th><th>Permission</th>${roles.map((role) => `<th>${esc(role.name)}</th>`).join("")}</tr>`;
-  permissionsMatrixBody.innerHTML = permissions.map((permission) => `
-    <tr>
-      <td>${esc(permission.module)}</td>
-      <td><strong>${esc(permission.code)}</strong><br><small>${esc(permission.description || "")}</small></td>
-      ${roles.map((role) => `<td><input type="checkbox" data-permission-role="${esc(role.name)}" data-permission-code="${esc(permission.code)}" ${allowed.get(`${role.name}:${permission.code}`) ? "checked" : ""} ${role.name === "OWNER" ? "disabled" : ""}></td>`).join("")}
-    </tr>
-  `).join("");
-  permissionsStatus.textContent = "Permission matrix loaded";
+  const modules = [...new Set(permissions.map((permission) => permission.module))];
+  if (!permissionModuleFilter.dataset.loaded) {
+    permissionModuleFilter.innerHTML = `<option value="">All modules</option>${modules.map((module) => `<option value="${esc(module)}">${esc(module.replaceAll("_", " "))}</option>`).join("")}`;
+    permissionRoleFilter.innerHTML = `<option value="">All roles</option>${roles.map((role) => `<option value="${esc(role.name)}">${esc(role.name.replaceAll("_", " "))}</option>`).join("")}`;
+    permissionModuleFilter.dataset.loaded = "1";
+  }
+  const query = String(permissionSearch.value || "").trim().toLowerCase();
+  const moduleFilter = permissionModuleFilter.value;
+  const roleFilter = permissionRoleFilter.value;
+  const visibleRoles = roleFilter ? roles.filter((role) => role.name === roleFilter) : roles;
+  const titleFor = (code) => code.split(".").slice(1).join(" ").replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const grouped = modules.map((module) => ({
+    module,
+    permissions: permissions.filter((permission) => permission.module === module && (!query || `${permission.code} ${permission.description} ${module}`.toLowerCase().includes(query)))
+  })).filter((group) => (!moduleFilter || group.module === moduleFilter) && group.permissions.length);
+  permissionsMatrix.innerHTML = grouped.map((group) => `
+    <details class="permission-group" data-permission-module="${esc(group.module)}" open>
+      <summary>
+        <span><strong>${esc(group.module.replaceAll("_", " "))}</strong><small>${group.permissions.length} control${group.permissions.length === 1 ? "" : "s"}</small></span>
+        <span class="permission-module-actions">
+          ${visibleRoles.filter((role) => role.name !== "OWNER").map((role) => `<button type="button" class="permission-module-toggle" data-module-toggle="${esc(group.module)}" data-module-role="${esc(role.name)}">Toggle ${esc(role.name.replaceAll("_", " "))}</button>`).join("")}
+        </span>
+      </summary>
+      <div class="permission-table-scroll">
+        <table class="permission-table">
+          <thead><tr><th>Control</th>${visibleRoles.map((role) => `<th>${esc(role.name.replaceAll("_", " "))}${role.name === "OWNER" ? `<small>Protected</small>` : ""}</th>`).join("")}</tr></thead>
+          <tbody>${group.permissions.map((permission) => `
+            <tr>
+              <td><strong>${esc(titleFor(permission.code))}</strong><span>${esc(permission.description || "")}</span><code>${esc(permission.code)}</code></td>
+              ${visibleRoles.map((role) => `<td><label class="permission-switch"><input aria-label="Allow ${esc(role.name)} to ${esc(permission.description)}" type="checkbox" data-permission-role="${esc(role.name)}" data-permission-code="${esc(permission.code)}" ${allowed.get(`${role.name}:${permission.code}`) ? "checked" : ""} ${role.name === "OWNER" ? "disabled" : ""}><span aria-hidden="true"></span></label></td>`).join("")}
+            </tr>`).join("")}</tbody>
+        </table>
+      </div>
+    </details>`).join("") || `<div class="permission-empty"><strong>No controls found</strong><p>Try a different search or clear the filters.</p></div>`;
+  const enabled = matrix.filter((row) => Number(row.allowed) === 1).length;
+  permissionsSummary.innerHTML = `<span><strong>${permissions.length}</strong> controls</span><span><strong>${roles.length}</strong> roles</span><span><strong>${enabled}</strong> assignments</span>`;
+  permissionsStatus.textContent = `Showing ${grouped.reduce((sum, group) => sum + group.permissions.length, 0)} of ${permissions.length} controls`;
+  const dirty = permissionsMatrix.dataset.dirty === "1";
+  permissionsDirtyStatus.textContent = dirty ? "Unsaved changes" : "No unsaved changes";
+  savePermissionsMatrix.disabled = !dirty;
 }
 
 function renderDeviceSessions() {
@@ -987,10 +1017,17 @@ function editCombo(id) {
 
 function applyPermissionGuards() {
   const viewPermissions = {
+    kitchens: "admin.menu.manage",
+    categories: "admin.menu.manage",
+    modifiers: "admin.menu.manage",
+    tables: "admin.menu.manage",
+    reservations: "reservations.manage",
     users: "admin.users.manage",
     inventory: "inventory.view",
     reports: "reports.view_invoice_only",
-    devices: "admin.view",
+    devices: "devices.manage",
+    printers: "printers.manage",
+    invoices: "invoices.view",
     settings: "admin.settings.manage",
     permissions: "admin.settings.manage",
     backup: "backup.manage",
@@ -1748,17 +1785,69 @@ resetSettingsDefaults.addEventListener("click", async () => {
 
 savePermissionsMatrix.addEventListener("click", async () => {
   if (actor.role !== "OWNER") return;
-  const roles = [...new Set([...document.querySelectorAll("[data-permission-role]")].map((input) => input.dataset.permissionRole))].filter((role) => role !== "OWNER");
-  for (const role of roles) {
-    const permissions = {};
-    document.querySelectorAll(`[data-permission-role="${role}"]`).forEach((input) => {
-      permissions[input.dataset.permissionCode] = input.checked;
-    });
-    await postJson("/permissions/update", { role, permissions });
+  permissionsValidation.hidden = true;
+  savePermissionsMatrix.disabled = true;
+  permissionsStatus.textContent = "Saving permissions…";
+  try {
+    const roles = (state.permissions.roles || []).map((role) => role.name).filter((role) => role !== "OWNER");
+    for (const role of roles) {
+      const permissions = {};
+      (state.permissions.matrix || []).filter((row) => row.role === role).forEach((row) => {
+        permissions[row.permission_code] = Number(row.allowed) === 1;
+      });
+      await postJson("/permissions/update", { role, permissions });
+    }
+    permissionsMatrix.dataset.dirty = "0";
+    await loadPermissions();
+    permissionsStatus.textContent = "Permissions saved successfully";
+  } catch (err) {
+    permissionsValidation.textContent = `Permissions were not saved: ${err.message}`;
+    permissionsValidation.hidden = false;
+    permissionsStatus.textContent = "Save failed";
+    savePermissionsMatrix.disabled = false;
   }
-  permissionsStatus.textContent = "Permissions saved";
-  alert("Permissions saved");
-  await loadPermissions();
+});
+
+function markPermissionChanged(role, code, checked) {
+  const row = (state.permissions.matrix || []).find((item) => item.role === role && item.permission_code === code);
+  if (row) row.allowed = checked ? 1 : 0;
+  permissionsMatrix.dataset.dirty = "1";
+  permissionsDirtyStatus.textContent = "Unsaved changes";
+  savePermissionsMatrix.disabled = false;
+}
+
+permissionsMatrix.addEventListener("change", (event) => {
+  const input = event.target.closest("[data-permission-role]");
+  if (!input || input.disabled) return;
+  markPermissionChanged(input.dataset.permissionRole, input.dataset.permissionCode, input.checked);
+});
+
+permissionsMatrix.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-module-toggle]");
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const inputs = [...permissionsMatrix.querySelectorAll(`[data-permission-role="${button.dataset.moduleRole}"]`)]
+    .filter((input) => input.closest("[data-permission-module]")?.dataset.permissionModule === button.dataset.moduleToggle && !input.disabled);
+  const enable = inputs.some((input) => !input.checked);
+  inputs.forEach((input) => {
+    input.checked = enable;
+    markPermissionChanged(input.dataset.permissionRole, input.dataset.permissionCode, enable);
+  });
+});
+
+[permissionSearch, permissionModuleFilter, permissionRoleFilter].forEach((control) => control.addEventListener(control === permissionSearch ? "input" : "change", renderPermissions));
+resetPermissionFilters.addEventListener("click", () => {
+  permissionSearch.value = "";
+  permissionModuleFilter.value = "";
+  permissionRoleFilter.value = "";
+  renderPermissions();
+});
+expandPermissionGroups.addEventListener("click", () => {
+  const groups = [...permissionsMatrix.querySelectorAll("details")];
+  const shouldOpen = groups.some((group) => !group.open);
+  groups.forEach((group) => { group.open = shouldOpen; });
+  expandPermissionGroups.textContent = shouldOpen ? "Collapse all" : "Expand all";
 });
 
 loadDevices.addEventListener("click", () => loadDeviceSessions().catch((err) => {
