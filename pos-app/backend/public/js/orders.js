@@ -4,6 +4,7 @@ if (restaurantId) localStorage.setItem("restaurantId", restaurantId);
 
 const user = JSON.parse(localStorage.getItem("user") || '{"role":"OWNER","name":"Owner"}');
 const actor = { id: user.id || null, name: user.name || user.username || user.role || "Owner", role: user.role || "OWNER" };
+document.querySelectorAll('[data-role-nav="reports"]').forEach((el) => { el.hidden = !['OWNER', 'MANAGER_1', 'MANAGER_2', 'CASHIER'].includes(String(actor.role).toUpperCase()); });
 const state = { orders: [], partners: [], report: null };
 let editingOrdersForm = false;
 

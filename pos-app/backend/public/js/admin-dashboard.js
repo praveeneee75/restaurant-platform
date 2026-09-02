@@ -6,14 +6,14 @@ const requestedAdminView = new URLSearchParams(window.location.search).get("view
 const standaloneAdminView = new URLSearchParams(window.location.search).get("standalone") === "1";
 const role = String(user?.role || "").toUpperCase();
 const adminAllowedRoles = new Set(["OWNER", "MANAGER_1", "MANAGER_2", "CASHIER"]);
-if (!user || !adminAllowedRoles.has(role) || (role === "CASHIER" && !["reservations", "items", "invoices"].includes(requestedAdminView))) {
+if (!user || !adminAllowedRoles.has(role) || (role === "CASHIER" && !["reservations", "items", "invoices", "reports"].includes(requestedAdminView))) {
   window.location.replace(`/login.html?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
   throw new Error("Admin access required");
 }
 const actor = { id: user.id, role: user.role || "OWNER" };
 if (standaloneAdminView) document.body.classList.add("standalone-admin-view");
 document.querySelectorAll("[data-logout]").forEach((button) => button.addEventListener("click", () => { localStorage.clear(); window.location.href = "/login.html"; }));
-const activeAdminNavLabel = requestedAdminView === "invoices" ? "Invoices" : requestedAdminView === "items" ? "Availability" : "Admin";
+const activeAdminNavLabel = requestedAdminView === "invoices" ? "Invoices" : requestedAdminView === "items" ? "Availability" : requestedAdminView === "reports" ? "Reports" : "Admin";
 document.querySelectorAll(".app-home-nav a").forEach((link) => link.classList.toggle("active", link.textContent.trim() === activeAdminNavLabel));
 const state = { admin: {}, network: {}, inventory: {}, modifiers: {}, backups: {}, settings: {}, permissions: {}, devices: {}, reservations: [], expenseCategories: [], latestUpdate: null, commercial: {}, invoices: [] };
 const settingQrRequireTablePin = document.getElementById('settingQrRequireTablePin');
@@ -1369,6 +1369,9 @@ function validateSettingsSection(section) {
     if (settingsStatus.textContent.startsWith("Save failed:") || settingsStatus.textContent.includes("must ")) {
       settingsStatus.textContent = "Editing settings...";
     }
+  });
+  document.querySelectorAll('[data-role-nav="reports"]').forEach((link) => {
+    link.hidden = !["CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role);
   });
 });
 

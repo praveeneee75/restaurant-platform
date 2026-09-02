@@ -169,6 +169,7 @@ function applyRoleAndModeUI() {
   document.querySelectorAll('[data-role-nav="kds"]').forEach((el) => { el.hidden = role !== "OWNER" && role !== "MANAGER_2" && role !== "KITCHEN"; });
   document.querySelectorAll('[data-role-nav="availability"]').forEach((el) => { el.hidden = !["CAPTAIN", "CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role); });
   document.querySelectorAll('[data-role-nav="live-orders"]').forEach((el) => { el.hidden = !["CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role); });
+  document.querySelectorAll('[data-role-nav="reports"]').forEach((el) => { el.hidden = !["CASHIER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role); });
   document.querySelectorAll('[data-role-nav="qr-notifications"]').forEach((el) => { el.hidden = !["CAPTAIN", "CASHIER", "WAITER", "MANAGER_1", "MANAGER_2", "OWNER"].includes(role); });
   if (moveTableBtn) moveTableBtn.hidden = !canMove;
   if (settleOrder) settleOrder.hidden = true;

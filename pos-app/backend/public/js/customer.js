@@ -2,6 +2,7 @@ const restaurantId = new URLSearchParams(window.location.search).get("restaurant
 if (restaurantId) localStorage.setItem("restaurantId", restaurantId);
 const user = JSON.parse(localStorage.getItem("user") || '{"role":"OWNER"}');
 const actor = { id: user.id, role: user.role || "OWNER", username: user.username };
+document.querySelectorAll('[data-role-nav="reports"]').forEach((el) => { el.hidden = !['OWNER', 'MANAGER_1', 'MANAGER_2', 'CASHIER'].includes(String(actor.role).toUpperCase()); });
 const state = { customers: [], selectedCustomerId: null, reports: null, query: "" };
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));

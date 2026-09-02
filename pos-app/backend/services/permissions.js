@@ -114,7 +114,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'kitchen.kds.view',
     'kitchen.status.update'
   ],
-  CASHIER: ['orders.create', 'orders.transfer_table', 'billing.settle', 'invoices.view', 'inventory.view', 'availability.manage', 'retail.view', 'retail.sell'],
+  CASHIER: ['orders.create', 'orders.transfer_table', 'billing.settle', 'invoices.view', 'reports.view_invoice_only', 'inventory.view', 'availability.manage', 'retail.view', 'retail.sell'],
   CAPTAIN: ['orders.create', 'orders.transfer_table', 'inventory.view', 'retail.view', 'retail.sell'],
   WAITER: ['orders.create'],
   KITCHEN: ['kitchen.kds.view', 'kitchen.status.update']
@@ -180,7 +180,7 @@ function seedDefaultPermissions(db) {
     WHERE role_id = (SELECT id FROM roles WHERE name = ?)
       AND permission_id IN (SELECT id FROM permissions WHERE code = ?)
   `);
-  [['MANAGER_1', 'billing.settle'], ['MANAGER_1', 'billing.non_invoice'], ['CASHIER', 'inventory.view'], ['CASHIER', 'orders.transfer_table'], ['CAPTAIN', 'inventory.view']]
+  [['MANAGER_1', 'billing.settle'], ['MANAGER_1', 'billing.non_invoice'], ['CASHIER', 'inventory.view'], ['CASHIER', 'orders.transfer_table'], ['CASHIER', 'reports.view_invoice_only'], ['CAPTAIN', 'inventory.view']]
     .forEach(([role, code]) => grantPilotRole.run(role, code));
   seededPermissionDbs.add(db);
 }

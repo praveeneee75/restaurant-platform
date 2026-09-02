@@ -28,6 +28,9 @@ const stored = new Set(db.prepare('SELECT code FROM permissions WHERE active = 1
 expected.forEach((code) => assert(stored.has(code), `permission was not seeded ${code}`));
 assert(hasPermission(db, 'OWNER', 'retail.stock_adjust'), 'OWNER must retain every control');
 assert(hasPermission(db, 'CASHIER', 'retail.sell'), 'cashier retail access migration default changed');
+assert(hasPermission(db, 'CASHIER', 'reports.view_invoice_only'), 'cashier report access is missing');
+assert(hasPermission(db, 'MANAGER_1', 'reports.view_invoice_only'), 'manager report access is missing');
+assert(!hasPermission(db, 'CAPTAIN', 'reports.view_invoice_only'), 'captain incorrectly received report access');
 assert(!hasPermission(db, 'WAITER', 'billing.refund'), 'waiter received privileged billing access');
 db.close();
 
@@ -48,4 +51,17 @@ assert(server.includes('OWNER access is protected and cannot be changed'), 'OWNE
 assert(server.includes('Every permission value must be true or false'), 'permission payload validation is missing');
 assert(server.includes('Unknown permission control:'), 'unknown permission validation is missing');
 
-console.log(`Permission matrix regression passed: ${stored.size} controls seeded, new capability coverage, safe defaults, owner protection, payload validation, filters, bulk toggles, save errors, keyboard focus and responsive layout.`);
+const topNavPages = ['admin.html', 'billing.html', 'kds.html', 'orders.html', 'pos-live.html', 'customer.html'];
+topNavPages.forEach((page) => {
+  const source = fs.readFileSync(path.join(posRoot, 'backend/public', page), 'utf8');
+  assert(source.includes('data-pos-shortcut="F7"'), `${page} is missing the F7 Reports navigation`);
+  assert(source.includes('data-role-nav="reports"'), `${page} is missing the Reports role guard`);
+});
+assert(js.includes('"invoices", "reports"'), 'cashier direct Reports route is not allowed');
+['billing.js', 'pos-live.js', 'orders.js', 'kds.js', 'customer.js'].forEach((file) => {
+  const source = fs.readFileSync(path.join(posRoot, 'backend/public/js', file), 'utf8');
+  assert(source.includes('data-role-nav="reports"'), `${file} does not enforce Reports navigation visibility`);
+  assert(source.includes("'CASHIER'") || source.includes('"CASHIER"'), `${file} does not include Cashier report navigation`);
+});
+
+console.log(`Permission matrix regression passed: ${stored.size} controls seeded, new capability coverage, Cashier/F7 Reports navigation, role visibility, safe defaults, owner protection, payload validation, filters, bulk toggles, save errors, keyboard focus and responsive layout.`);
