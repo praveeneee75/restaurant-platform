@@ -12,6 +12,14 @@ if (!user || !adminAllowedRoles.has(role) || (role === "CASHIER" && !["reservati
 }
 const actor = { id: user.id, role: user.role || "OWNER" };
 if (standaloneAdminView) document.body.classList.add("standalone-admin-view");
+if (role === "CASHIER") {
+  const cashierNavigation = new Set(["parcel", "party", "billing", "invoices", "reports", "availability", "live-orders"]);
+  document.querySelectorAll(".app-home-nav [data-role-nav]").forEach((control) => {
+    const allowed = cashierNavigation.has(control.dataset.roleNav);
+    control.hidden = !allowed;
+    control.style.display = allowed ? "" : "none";
+  });
+}
 document.querySelectorAll("[data-logout]").forEach((button) => button.addEventListener("click", () => { localStorage.clear(); window.location.href = "/login.html"; }));
 const activeAdminNavLabel = requestedAdminView === "invoices" ? "Invoices" : requestedAdminView === "items" ? "Availability" : requestedAdminView === "reports" ? "Reports" : "Admin";
 document.querySelectorAll(".app-home-nav a").forEach((link) => link.classList.toggle("active", link.textContent.trim() === activeAdminNavLabel));
@@ -407,7 +415,8 @@ function applyModuleGuards() {
     const reservationsGroup = reservationsButton?.closest(".nav-group");
     if (reservationsGroup) reservationsGroup.style.display = "";
     if (reservationsButton) reservationsButton.style.display = "";
-    document.querySelectorAll(".admin-view").forEach((panel) => { panel.style.display = panel.id === "view-reservations" ? "" : "none"; });
+    const cashierView = ["reservations", "items", "invoices", "reports"].includes(requestedAdminView) ? requestedAdminView : "reservations";
+    document.querySelectorAll(".admin-view").forEach((panel) => { panel.style.display = panel.id === `view-${cashierView}` ? "" : "none"; });
   }
 }
 
@@ -1536,6 +1545,13 @@ function selectReportType(type) {
   operationalReportPanel.hidden = activeReportType === "sales";
   document.querySelectorAll("[data-report-tab]").forEach((button) => button.classList.toggle("active", button.dataset.reportTab === activeReportType));
 }
+
+document.querySelectorAll("[data-report-tab]").forEach((button) => {
+  button.addEventListener("click", () => {
+    selectReportType(button.dataset.reportTab);
+    loadReports.click();
+  });
+});
 
 function renderExecutiveSalesSummary(data) {
   const sales = data.executiveSales || {};

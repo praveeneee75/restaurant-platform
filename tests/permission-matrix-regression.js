@@ -76,6 +76,14 @@ topNavPages.forEach((page) => {
   assert(source.includes('data-role-nav="reports"'), `${page} is missing the Reports role guard`);
 });
 assert(js.includes('"invoices", "reports"'), 'cashier direct Reports route is not allowed');
+['dine-in', 'parcel', 'party', 'billing', 'invoices', 'kds', 'reports', 'availability', 'live-orders', 'admin', 'notifications'].forEach((control) => {
+  assert(html.includes(`data-role-nav="${control}"`), `Admin top navigation is missing the ${control} role marker`);
+});
+['sales', 'orders', 'categories', 'items', 'employees', 'captains'].forEach((report) => {
+  assert(html.includes(`data-report-tab="${report}"`), `standalone Reports is missing the ${report} submenu`);
+});
+assert(js.includes('const cashierNavigation = new Set'), 'Cashier top navigation allowlist is missing');
+assert(js.includes('panel.id === `view-${cashierView}`'), 'Cashier standalone view guard does not preserve the requested screen');
 ['billing.js', 'pos-live.js', 'orders.js', 'kds.js', 'customer.js'].forEach((file) => {
   const source = fs.readFileSync(path.join(posRoot, 'backend/public/js', file), 'utf8');
   assert(source.includes('data-role-nav="reports"'), `${file} does not enforce Reports navigation visibility`);

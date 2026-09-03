@@ -31,7 +31,7 @@ assert.match(adminHtml, /testKotLayoutPrint[\s\S]*saveKotLayoutPdf[\s\S]*testBil
 assert.match(adminHtml, /operationalReportPrintHeader/, 'Operational reports need a thermal print header');
 assert.match(server, /invoiceOnly[\s\S]*COALESCE\(o\.is_invoice,0\)=1/, 'Operational reports must hide non-invoiced orders for restricted roles');
 assert.match(server, /orderInvoiceClause[\s\S]*aliasedInvoiceClause/, 'Dashboard summaries must apply the same invoice-only restriction');
-assert.doesNotMatch(adminHtml, /class="report-type-tabs"/, 'Duplicate report tabs must not be rendered');
+assert.match(adminHtml, /class="report-type-tabs"[\s\S]*data-report-tab="sales"[\s\S]*data-report-tab="captains"/, 'Standalone Reports must expose its complete submenu');
 assert.match(mobileHtml, /restaurantSelect" hidden/, 'Mobile restaurant dropdown must be hidden');
 assert.match(mobile, /findLocalStaffLogin[\s\S]*\/mobile-app\/login/, 'Mobile staff login must discover the local POS');
 assert.match(mobile, /kitchen:\s*`\$\{posBase\}\/kds\.html/, 'Kitchen must route to KDS');

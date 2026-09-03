@@ -10,7 +10,7 @@
   <header class="app-home-nav">
     <div class="app-home-brand"><strong>K'MASTER</strong> <span>POS</span><small>Administration <b id="headerAppVersion">POS --</b></small></div>
     <nav aria-label="POS home sections">
-      <a data-pos-shortcut="F1" href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a data-pos-shortcut="F2" href="/pos-live.html?mode=PARCEL">POS Parcel</a><a data-pos-shortcut="F3" href="/pos-live.html?mode=PARTY">POS Party Order</a><a data-pos-shortcut="F4" href="/billing.html">Billing</a><a data-pos-shortcut="F5" href="/admin.html?view=invoices&standalone=1#invoices">Invoices</a><a data-pos-shortcut="F6" href="/kds.html">KDS</a><a data-pos-shortcut="F7" data-role-nav="reports" href="/admin.html?view=reports&standalone=1">Reports</a><a data-pos-shortcut="F8" href="/admin.html?view=items&standalone=1">Availability</a><a data-pos-shortcut="F9" href="/orders.html">Live Orders</a><a class="active" href="/admin.html">Admin</a><button data-pos-shortcut="F10" id="notificationButton" data-notification-center type="button" title="Notifications">Notifications <span id="notificationCount" data-notification-count>0</span></button><button data-logout type="button">Logout</button>
+      <a data-role-nav="dine-in" data-pos-shortcut="F1" href="/pos-live.html?mode=DINE_IN">POS Dine In</a><a data-role-nav="parcel" data-pos-shortcut="F2" href="/pos-live.html?mode=PARCEL">POS Parcel</a><a data-role-nav="party" data-pos-shortcut="F3" href="/pos-live.html?mode=PARTY">POS Party Order</a><a data-role-nav="billing" data-pos-shortcut="F4" href="/billing.html">Billing</a><a data-role-nav="invoices" data-pos-shortcut="F5" href="/admin.html?view=invoices&standalone=1#invoices">Invoices</a><a data-role-nav="kds" data-pos-shortcut="F6" href="/kds.html">KDS</a><a data-pos-shortcut="F7" data-role-nav="reports" href="/admin.html?view=reports&standalone=1">Reports</a><a data-role-nav="availability" data-pos-shortcut="F8" href="/admin.html?view=items&standalone=1">Availability</a><a data-role-nav="live-orders" data-pos-shortcut="F9" href="/orders.html">Live Orders</a><a data-role-nav="admin" class="active" href="/admin.html">Admin</a><button data-role-nav="notifications" data-pos-shortcut="F10" id="notificationButton" data-notification-center type="button" title="Notifications">Notifications <span id="notificationCount" data-notification-count>0</span></button><button data-logout type="button">Logout</button>
     </nav>
   </header>
   <aside class="admin-sidebar">
@@ -444,6 +444,14 @@
     <section class="admin-view" id="view-reports">
       <div id="operationalReportPrintHeader" class="operational-report-print-header" aria-hidden="true"></div>
       <div class="section-heading"><div><h2 id="reportHeading">Sales Summary</h2><p id="salesReportSummary">Review settled sales and operational summaries.</p></div></div>
+      <nav class="report-type-tabs" aria-label="Report summaries">
+        <button type="button" class="active" data-report-tab="sales">Sales Summary</button>
+        <button type="button" data-report-tab="orders">Order Summary</button>
+        <button type="button" data-report-tab="categories">Category Summary</button>
+        <button type="button" data-report-tab="items">Item Summary</button>
+        <button type="button" data-report-tab="employees">Employee Summary</button>
+        <button type="button" data-report-tab="captains">Captain Summary</button>
+      </nav>
       <div class="toolbar admin-filter-toolbar">
         <label>From date<input id="reportFrom" type="date"></label>
         <label>To date<input id="reportTo" type="date"></label>
