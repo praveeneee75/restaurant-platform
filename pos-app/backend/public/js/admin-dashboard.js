@@ -5,8 +5,8 @@ const user = JSON.parse(localStorage.getItem("user") || "null");
 const requestedAdminView = new URLSearchParams(window.location.search).get("view") || "";
 const standaloneAdminView = new URLSearchParams(window.location.search).get("standalone") === "1";
 const role = String(user?.role || "").toUpperCase();
-const adminAllowedRoles = new Set(["OWNER", "MANAGER_1", "MANAGER_2", "CASHIER"]);
-if (!user || !adminAllowedRoles.has(role) || (role === "CASHIER" && !["reservations", "items", "invoices", "reports"].includes(requestedAdminView))) {
+const adminAllowedRoles = new Set(["OWNER", "MANAGER_1", "MANAGER_2", "CASHIER", "RETAIL"]);
+if (!user || !adminAllowedRoles.has(role) || (role === "CASHIER" && !["reservations", "items", "invoices", "reports"].includes(requestedAdminView)) || (role === "RETAIL" && requestedAdminView !== "items")) {
   window.location.replace(`/login.html?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
   throw new Error("Admin access required");
 }
@@ -16,6 +16,14 @@ if (role === "CASHIER") {
   const cashierNavigation = new Set(["parcel", "party", "billing", "invoices", "reports", "availability", "live-orders"]);
   document.querySelectorAll(".app-home-nav [data-role-nav]").forEach((control) => {
     const allowed = cashierNavigation.has(control.dataset.roleNav);
+    control.hidden = !allowed;
+    control.style.display = allowed ? "" : "none";
+  });
+}
+if (role === "RETAIL") {
+  const retailNavigation = new Set(["retail", "retail-items"]);
+  document.querySelectorAll(".app-home-nav [data-role-nav]").forEach((control) => {
+    const allowed = retailNavigation.has(control.dataset.roleNav);
     control.hidden = !allowed;
     control.style.display = allowed ? "" : "none";
   });
@@ -108,7 +116,7 @@ async function loadAdmin() {
   // Delete actions are implemented as safe deactivation so historical orders
   // keep their foreign-key references. The normal Admin view must nevertheless
   // remove those rows immediately instead of presenting them as editable again.
-  state.admin = await fetchJson(`/admin/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}`);
+  state.admin = await fetchJson(`/admin/bootstrap?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(actor.role)}`);
   if (window.activeRestaurantName) {
     const restaurantName = state.admin.restaurant?.name || restaurantId;
     activeRestaurantName.textContent = `${restaurantName} active`;
@@ -330,7 +338,8 @@ function renderAdmin() {
     });
   });
   if (itemFilterCount) itemFilterCount.textContent = `${visibleItems.length}/${items.length}`;
-  itemsTable.innerHTML = visibleItems.map((i) => `<tr><td><strong>${esc(i.item_code || String(i.id).padStart(4, "0"))}</strong></td><td>${esc(i.name)}</td><td>${esc(i.barcode || "—")}</td><td>${money(i.retail_stock)}</td><td>${esc(String(i.tax_mode || "INCLUSIVE").toUpperCase() === "EXCLUSIVE" ? "Exclusive" : "Inclusive")}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td>${[['allow_dine_in','Dine In'],['allow_parcel','Parcel'],['allow_party_order','Party'],['allow_retail','Retail'],['online_enabled','Online'],['active','Active']].map(([field,label]) => `<td><label class="availability-toggle" title="${label}"><input type="checkbox" data-item-channel="${field}" data-item-id="${i.id}" ${Number(i[field] ?? (field === 'allow_retail' ? 0 : 1)) === 1 ? 'checked' : ''}><span>${label}</span></label></td>`).join('')}<td>${actions("item", i.id)}</td></tr>`).join("");
+  const canManageMenu = can("admin.menu.manage");
+  itemsTable.innerHTML = visibleItems.map((i) => `<tr><td><strong>${esc(i.item_code || String(i.id).padStart(4, "0"))}</strong></td><td>${esc(i.name)}</td><td>${esc(i.barcode || "—")}</td><td>${money(i.retail_stock)}</td><td>${esc(String(i.tax_mode || "INCLUSIVE").toUpperCase() === "EXCLUSIVE" ? "Exclusive" : "Inclusive")}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td>${[['allow_dine_in','Dine In'],['allow_parcel','Parcel'],['allow_party_order','Party'],['allow_retail','Retail'],['online_enabled','Online'],['active','Active']].map(([field,label]) => `<td><label class="availability-toggle" title="${label}"><input type="checkbox" data-item-channel="${field}" data-item-id="${i.id}" ${Number(i[field] ?? (field === 'allow_retail' ? 0 : 1)) === 1 ? 'checked' : ''} ${canManageMenu ? '' : 'disabled'}><span>${label}</span></label></td>`).join('')}<td>${canManageMenu ? actions("item", i.id) : '—'}</td></tr>`).join("");
   usersTable.innerHTML = users.map((u) => {
     const canUnlock = isFutureDate(u.locked_until) || u.unlock_requested_at || Number(u.failed_login_attempts || 0) > 0;
     return `<tr>
@@ -417,6 +426,12 @@ function applyModuleGuards() {
     if (reservationsButton) reservationsButton.style.display = "";
     const cashierView = ["reservations", "items", "invoices", "reports"].includes(requestedAdminView) ? requestedAdminView : "reservations";
     document.querySelectorAll(".admin-view").forEach((panel) => { panel.style.display = panel.id === `view-${cashierView}` ? "" : "none"; });
+  }
+  if (role === "RETAIL") {
+    document.querySelectorAll(".admin-sidebar, .admin-nav-layout").forEach((el) => { el.style.display = "none"; });
+    document.querySelectorAll(".admin-view").forEach((panel) => { panel.style.display = panel.id === "view-items" ? "" : "none"; });
+    const itemEditor = document.getElementById("itemForm");
+    if (itemEditor) itemEditor.hidden = true;
   }
 }
 
@@ -1050,6 +1065,11 @@ function applyPermissionGuards() {
   document.querySelectorAll(".danger-btn").forEach((btn) => {
     if (!can("admin.menu.manage") && !can("inventory.manage")) btn.hidden = true;
   });
+  if (!can("admin.menu.manage")) {
+    document.querySelectorAll('[data-item-channel]').forEach((input) => { input.disabled = true; });
+    const itemEditor = document.getElementById("itemForm");
+    if (itemEditor) itemEditor.querySelectorAll("input, select, button").forEach((element) => { element.disabled = true; });
+  }
   if (!can("reports.export")) exportAuditCsv.hidden = true;
   if (!can("inventory.purchase_orders")) {
     purchaseOrderForm.hidden = true;

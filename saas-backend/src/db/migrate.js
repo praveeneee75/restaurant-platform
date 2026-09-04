@@ -714,7 +714,7 @@ async function migrate() {
     CROSS JOIN (VALUES
       ('SALES_DETAIL', true), ('EXECUTIVE_SALES', true), ('REFUNDS', true),
       ('PROMOCODES', true), ('LIVE_OPERATIONS', true), ('REMOTE_MENU', true),
-      ('REMOTE_BILLING', false), ('REMOTE_BACKUP', false), ('REMOTE_ONLINE_ORDERING', false),
+      ('REMOTE_BILLING', false), ('REMOTE_BACKUP', false), ('REMOTE_ONLINE_ORDERING', false), ('REMOTE_PERMISSIONS', true),
       ('REMOTE_COMMANDS', true), ('ALERTS', true), ('REMOTE_INVENTORY', false)
     ) AS c(code, enabled)
     ON CONFLICT(tenant_id, capability_code) DO NOTHING

@@ -3,6 +3,7 @@ const DEFAULT_ROLES = [
   ['MANAGER_2', 'Senior manager with financial and operational access'],
   ['MANAGER_1', 'Floor manager with limited reports and operations access'],
   ['CASHIER', 'Cashier with billing access'],
+  ['RETAIL', 'Retail counter sales and item lookup access'],
   ['CAPTAIN', 'Captain with floor order and table transfer access'],
   ['WAITER', 'Waiter with order entry access'],
   ['KITCHEN', 'Kitchen display and preparation access']
@@ -115,6 +116,9 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'kitchen.status.update'
   ],
   CASHIER: ['orders.create', 'orders.merge', 'orders.split', 'orders.unlock', 'orders.transfer_table', 'billing.settle', 'billing.discount', 'invoices.view', 'reports.view_invoice_only', 'inventory.view', 'availability.manage', 'reservations.manage', 'retail.view', 'retail.sell'],
+  // Retail is intentionally narrow: the counter and read-only item catalogue only.
+  // Grant additional controls through the permission matrix when a branch needs them.
+  RETAIL: ['retail.view', 'retail.sell', 'inventory.view'],
   CAPTAIN: ['orders.create', 'orders.transfer_table', 'inventory.view', 'availability.manage', 'retail.view', 'retail.sell'],
   WAITER: ['orders.create'],
   KITCHEN: ['kitchen.kds.view', 'kitchen.status.update', 'kitchen.reprint']

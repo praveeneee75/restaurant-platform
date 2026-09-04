@@ -202,10 +202,10 @@ function canManage(role) {
 
 function canSell(role) {
   const restaurantId = getSingleRestaurantId();
-  if (!restaurantId) return ['OWNER', 'MANAGER', 'MANAGER_1', 'MANAGER_2', 'CASHIER', 'WAITER'].includes(role);
+  if (!restaurantId) return ['OWNER', 'MANAGER', 'MANAGER_1', 'MANAGER_2', 'CASHIER', 'RETAIL', 'WAITER'].includes(role);
   const db = openRestaurantDatabase(restaurantId);
   try {
-    return canRole(db, role, 'orders.create') || canRole(db, role, 'billing.settle');
+    return canRole(db, role, 'orders.create') || canRole(db, role, 'billing.settle') || canRole(db, role, 'retail.sell');
   } finally {
     db.close();
   }
@@ -1840,6 +1840,9 @@ app.post('/login', async (req, res) => {
     if (String(username).includes('@')) {
       const auth = await authenticateCloudOwner(restaurantId, username, pin);
       if (!auth.ok) return res.status(auth.status || 401).json({ success: false, message: auth.message });
+      // Permission changes made in Owner Control are pulled before the POS session begins.
+      // A connectivity failure is deliberately non-blocking so offline POS login remains available.
+      await runOwnerControlTick({ restaurantIdOverride: restaurantId, permissionsOnly: true });
       const kdsBusinessDay = processPosBusinessDayLogin(db, auth.user);
       return res.json({
         success: true,
@@ -1855,6 +1858,7 @@ app.post('/login', async (req, res) => {
 
     const auth = authenticateUserWithPin(db, restaurantId, username, pin, req);
     if (!auth.ok) return res.status(auth.status || 401).json({ success: false, message: auth.message, locked: auth.locked, remainingAttempts: auth.remainingAttempts });
+    await runOwnerControlTick({ restaurantIdOverride: restaurantId, permissionsOnly: true });
     const kdsBusinessDay = processPosBusinessDayLogin(db, auth.user);
     res.json({
       success: true,
@@ -1871,7 +1875,7 @@ app.post('/login', async (req, res) => {
   }
 });
 
-app.post('/mobile-app/login', (req, res) => {
+app.post('/mobile-app/login', async (req, res) => {
   const { restaurantId, username, pin } = req.body;
 
   if (!restaurantId || !username || !pin) {
@@ -1886,6 +1890,7 @@ app.post('/mobile-app/login', (req, res) => {
     }
     const auth = authenticateUserWithPin(db, restaurantId, username, pin, req);
     if (!auth.ok) return res.status(auth.status || 401).json({ success: false, message: auth.message, locked: auth.locked, remainingAttempts: auth.remainingAttempts });
+    await runOwnerControlTick({ restaurantIdOverride: restaurantId, permissionsOnly: true });
     const sourceIp = String(req.ip || req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
     const posIp = (() => { try { return new URL(mobilePosBaseUrl()).hostname; } catch (_) { return ''; } })();
     const prefix = (value) => /^\d+\.\d+\.\d+\.\d+$/.test(value) ? value.split('.').slice(0, 3).join('.') : '';
@@ -3974,11 +3979,14 @@ res.json({success:true})
 // These routes are additive so older API names stay available while the new admin/POS UI has complete CRUD.
 
 app.get('/admin/bootstrap', (req, res) => {
-  const { restaurantId, includeInactive } = req.query;
+  const { restaurantId, includeInactive, role } = req.query;
   if (!restaurantId) return res.status(400).json({ success: false, message: 'restaurantId required' });
 
   const db = openRestaurantDatabase(restaurantId);
   try {
+    if (String(role || '').toUpperCase() === 'RETAIL') {
+      requirePermission(db, role, 'inventory.view', 'Item catalogue viewing permission required');
+    }
     res.json({
       success: true,
       restaurant: {
@@ -5155,7 +5163,7 @@ app.post('/admin/items/toggle', (req, res) => {
 
 app.post('/admin/users/save', (req, res) => {
   const { restaurantId, actor, id, name, username, pin, role, active } = req.body;
-  const roles = ['OWNER', 'MANAGER', 'MANAGER_2', 'MANAGER_1', 'CAPTAIN', 'CASHIER', 'WAITER', 'KITCHEN'];
+  const roles = ['OWNER', 'MANAGER', 'MANAGER_2', 'MANAGER_1', 'CAPTAIN', 'CASHIER', 'RETAIL', 'WAITER', 'KITCHEN'];
   if (!restaurantId || !name || !username || !roles.includes(role) || !canManage(actor?.role)) {
     return res.status(400).json({ success: false, message: 'User name, username, role and manager permission are required' });
   }
@@ -7691,10 +7699,11 @@ app.post('/orders/settle', async (req, res) => {
 
   const db = openRestaurantDatabase(restaurantId);
   try {
-    requirePermission(db, actor?.role, 'billing.settle', 'Billing settlement permission required');
-    if (isInvoice === false) requirePermission(db, actor?.role, 'billing.non_invoice', 'Non-invoice settlement requires manager permission');
     const settlementOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
     if (!settlementOrder) throw new Error('Order not found');
+    if (settlementOrder.order_type === 'RETAIL') requirePermission(db, actor?.role, 'retail.sell', 'Retail sales permission required');
+    else requirePermission(db, actor?.role, 'billing.settle', 'Billing settlement permission required');
+    if (isInvoice === false) requirePermission(db, actor?.role, 'billing.non_invoice', 'Non-invoice settlement requires manager permission');
     const settlementCustomerId = isPositiveId(customerId) ? Number(customerId) : settlementOrder.customer_id;
     let centralLoyalty = null;
     if (settlementCustomerId) {
@@ -11336,6 +11345,7 @@ function safeGet(db, sql, params = [], fallback = {}) {
 }
 
 function buildOwnerControlSnapshot(db) {
+  seedDefaultPermissions(db);
   const liveRows = safeAll(db, `
     SELECT o.id, o.order_reference, o.order_type, o.table_no, o.status, o.total_amount, o.created_at,
            COUNT(oi.id) AS line_count, COALESCE(SUM(oi.quantity), 0) AS item_count
@@ -11463,7 +11473,14 @@ function buildOwnerControlSnapshot(db) {
         promocodes: safeAll(db, 'SELECT id, code, discount_value, discount_type, min_order_amount, max_discount_amount, valid_from, valid_to, stackable_with_promos, stackable_with_discounts, active FROM promo_codes ORDER BY code')
       },
       backup: Object.fromEntries(['backup_enabled','backup_folder_path','onedrive_folder_path','backup_interval_minutes','last_backup_at','last_sync_at'].map((key) => [key, settings[key] ?? ''])),
-      onlineOrdering: Object.fromEntries(Object.keys(settings).filter((key) => key.startsWith('online_') || key.startsWith('qr_')).map((key) => [key, settings[key]]))
+      onlineOrdering: Object.fromEntries(Object.keys(settings).filter((key) => key.startsWith('online_') || key.startsWith('qr_')).map((key) => [key, settings[key]])),
+      permissions: {
+        roles: safeAll(db, 'SELECT name, description, active FROM roles WHERE active = 1 ORDER BY name'),
+        matrix: safeAll(db, `SELECT r.name AS role, p.code AS permission_code, COALESCE(rp.allowed, 0) AS allowed
+          FROM roles r CROSS JOIN permissions p
+          LEFT JOIN role_permissions rp ON rp.role_id = r.id AND rp.permission_id = p.id
+          WHERE r.active = 1 AND p.active = 1 ORDER BY r.name, p.module, p.code`)
+      }
     }
   };
 }
@@ -11541,6 +11558,26 @@ function applyRemoteConfiguration(db, domain, payload) {
     ONLINE_ORDERING: Object.keys(DEFAULT_SYSTEM_SETTINGS).filter((key) => key.startsWith('online_') || key.startsWith('qr_'))
   };
   if (domain === 'MENU') return applyRemoteMenu(db, payload);
+  if (domain === 'PERMISSIONS') {
+    const matrix = payload.rolePermissions;
+    if (!matrix || typeof matrix !== 'object' || Array.isArray(matrix)) throw new Error('Permission configuration requires a rolePermissions object');
+    seedDefaultPermissions(db);
+    const roles = new Map(safeAll(db, 'SELECT id, name FROM roles WHERE active = 1').map((row) => [row.name, row.id]));
+    const permissions = new Map(safeAll(db, 'SELECT id, code FROM permissions WHERE active = 1').map((row) => [row.code, row.id]));
+    const update = db.prepare(`INSERT INTO role_permissions (role_id, permission_id, allowed)
+      VALUES (?, ?, ?) ON CONFLICT(role_id, permission_id) DO UPDATE SET allowed = excluded.allowed`);
+    db.transaction(() => {
+      Object.entries(matrix).forEach(([role, values]) => {
+        if (role === 'OWNER') throw new Error('OWNER permissions cannot be changed remotely');
+        if (!roles.has(role) || !values || typeof values !== 'object' || Array.isArray(values)) throw new Error(`Invalid permission role: ${role}`);
+        Object.entries(values).forEach(([code, allowed]) => {
+          if (!permissions.has(code) || typeof allowed !== 'boolean') throw new Error(`Invalid permission control: ${code}`);
+          update.run(roles.get(role), permissions.get(code), allowed ? 1 : 0);
+        });
+      });
+    })();
+    return { roles: Object.keys(matrix).length };
+  }
   const settings = payload.settings || payload;
   const filtered = Object.fromEntries(Object.entries(settings).filter(([key]) => (allowedSettings[domain] || []).includes(key)));
   if (Object.keys(filtered).length) setConfigValues(db, normaliseSettingsInput(filtered));
@@ -11554,8 +11591,8 @@ async function ackOwnerControl(saasUrl, credentials, restaurantId, body) {
   await axios.post(`${saasUrl}/owner-control/pos/ack`, { restaurantId, ...credentials, ...body }, { timeout: 7000 });
 }
 
-async function runOwnerControlTick() {
-  const restaurantId = getSingleRestaurantId();
+async function runOwnerControlTick({ restaurantIdOverride = null, permissionsOnly = false } = {}) {
+  const restaurantId = restaurantIdOverride || getSingleRestaurantId();
   const saasUrl = String(process.env.SAAS_URL || '').replace(/\/$/, '');
   if (!restaurantId || !saasUrl) return;
   let db;
@@ -11573,6 +11610,7 @@ async function runOwnerControlTick() {
     await axios.post(`${saasUrl}/owner-control/pos/push-snapshot`, { restaurantId, ...credentials, ...snapshot }, { timeout: 10000 });
     const pulled = await axios.post(`${saasUrl}/owner-control/pos/pull`, { restaurantId, ...credentials }, { timeout: 10000 });
     for (const config of pulled.data?.configurations || []) {
+      if (permissionsOnly && String(config.domain).toUpperCase() !== 'PERMISSIONS') continue;
       try {
         const applied = applyRemoteConfiguration(db, String(config.domain).toUpperCase(), config.payload || {});
         setConfigValues(db, { [`remote_config_${String(config.domain).toLowerCase()}_version`]: config.version });

@@ -81,6 +81,8 @@ async function login() {
     const role = data.user.role;
     if (role === "KITCHEN") {
       window.location.href = "/kds.html";
+    } else if (role === "RETAIL") {
+      window.location.href = "/retail.html";
     } else if (role === "OWNER" || role === "MANAGER_2") {
       window.location.href = "/admin.html";
     } else {

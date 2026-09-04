@@ -50,5 +50,6 @@
     ,"test:owner-offline": "node tests/owner-offline-visibility-regression.js"
     ,"test:retail-counter": "node tests/retail-counter-regression.js && node tests/retail-refund-regression.js"
     ,"test:permissions": "node tests/permission-matrix-regression.js"
+    ,"test:retail-permissions": "node tests/retail-permissions-sync-regression.js"
   }
 }

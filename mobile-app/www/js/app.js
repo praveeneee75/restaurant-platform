@@ -804,7 +804,7 @@ async function loadRestaurants() {
       await useRestaurant(remembered);
       showRoleGrid(state.user.role);
       if (!state.user.cloudOwner) {
-        const landingByRole = { CAPTAIN: "captain", WAITER: "waiter", KITCHEN: "kitchen", CASHIER: "cashier", MANAGER: "cashier", MANAGER_1: "cashier", MANAGER_2: "cashier" };
+        const landingByRole = { CAPTAIN: "captain", WAITER: "waiter", KITCHEN: "kitchen", CASHIER: "cashier", RETAIL: "retail", MANAGER: "cashier", MANAGER_1: "cashier", MANAGER_2: "cashier" };
         const landing = landingByRole[String(state.user.role || "").toUpperCase()];
         try {
           await validateStaffPosConnection(remembered);
@@ -845,7 +845,8 @@ function showRoleGrid(role) {
     captain: ["MANAGER", "MANAGER_1", "MANAGER_2", "CAPTAIN"],
     waiter: ["MANAGER", "MANAGER_1", "MANAGER_2", "WAITER"],
     cashier: ["MANAGER", "MANAGER_1", "MANAGER_2", "CASHIER"],
-    kitchen: ["KITCHEN"]
+    kitchen: ["KITCHEN"],
+    retail: ["RETAIL"]
   };
   document.querySelectorAll("[data-role]").forEach((button) => {
     button.hidden = !roleRules[button.dataset.role]?.includes(role);
@@ -900,6 +901,7 @@ async function login() {
         WAITER: "waiter",
         KITCHEN: "kitchen",
         CASHIER: "cashier",
+        RETAIL: "retail",
         MANAGER: "cashier",
         MANAGER_1: "cashier",
         MANAGER_2: "cashier"
@@ -1017,7 +1019,7 @@ retryPosConnection.addEventListener("click", async () => {
     const restaurant = state.restaurant || savedRestaurant();
     await validateStaffPosConnection(restaurant);
     if (!state.user) throw new Error("Sign in again to continue.");
-    const landingByRole = { CAPTAIN: "captain", WAITER: "waiter", KITCHEN: "kitchen", CASHIER: "cashier", MANAGER: "cashier", MANAGER_1: "cashier", MANAGER_2: "cashier" };
+    const landingByRole = { CAPTAIN: "captain", WAITER: "waiter", KITCHEN: "kitchen", CASHIER: "cashier", RETAIL: "retail", MANAGER: "cashier", MANAGER_1: "cashier", MANAGER_2: "cashier" };
     showDashboardView(`POS connected. Opening workspace...`);
     await openRoleWorkspace(landingByRole[String(state.user.role || "").toUpperCase()] || "cashier", retryPosConnection);
   } catch (error) {
@@ -1052,6 +1054,7 @@ async function openRoleWorkspace(role, button) {
     captain: `${posBase}/waiter.html?${mobileParams.toString()}`,
     waiter: `${posBase}/waiter.html?${mobileParams.toString()}`,
     cashier: `${posBase}/pos-live.html?${mobileParams.toString()}`,
+    retail: `${posBase}/retail.html?${mobileParams.toString()}`,
     pos: `${posBase}/pos-live.html?${mobileParams.toString()}`,
     kitchen: `${posBase}/kds.html?${mobileParams.toString()}`
   };
@@ -1069,7 +1072,7 @@ async function openRoleWorkspace(role, button) {
       if (!compatible) throw new Error(`Update POS Desktop to 1.0.147 or later. This POS is ${health.version || "an older version"} and cannot provide the new mobile Dine In workflow.`);
     }
     await fetchJson(`${posBase}/mobile-app/config?restaurantId=${encodeURIComponent(restId)}`);
-    const workspaceLabels = { captain: "POS Dine In", waiter: "POS Dine In", cashier: "Cashier POS", pos: "POS", kitchen: "Kitchen KDS" };
+    const workspaceLabels = { captain: "POS Dine In", waiter: "POS Dine In", cashier: "Cashier POS", retail: "Retail Counter", pos: "POS", kitchen: "Kitchen KDS" };
     activeRole.textContent = workspaceLabels[role] || "Mobile View";
     webviewPanel.classList.toggle("staff-workspace", !state.user?.cloudOwner);
     closeFrame.hidden = !state.user?.cloudOwner;

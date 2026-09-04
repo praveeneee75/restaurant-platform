@@ -49,6 +49,7 @@
     .menu-editor-table input[type="text"],.menu-editor-table input[type="number"],.menu-editor-table select{width:100%;min-width:110px;box-sizing:border-box}
     .menu-editor-table .wide{min-width:190px}
     .menu-editor-empty{padding:22px;color:#64748b}
+    .permission-editor{margin-top:14px;border:1px solid #d7e2ef;border-radius:16px;padding:18px;background:#fff}.permission-toolbar{display:flex;align-items:end;gap:12px;flex-wrap:wrap}.permission-toolbar label{display:grid;gap:6px;min-width:230px}.permission-toolbar select{min-height:42px}.permission-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-top:14px}.permission-group{border:1px solid #d7e2ef;border-radius:10px;overflow:hidden}.permission-group h4{margin:0;padding:10px 12px;background:#f7fafc;font-size:13px}.permission-option{display:flex;align-items:start;gap:9px;padding:9px 12px;border-top:1px solid #edf1f6;font-size:13px}.permission-option input{width:17px;height:17px;margin:1px 0;accent-color:#0f8178}.permission-option small{display:block;color:#64748b;margin-top:2px}
     @media(max-width:900px){.menu-editor-toolbar>*{flex:1 1 100%}.menu-editor-toolbar button{min-height:44px}}
   </style>
 </head>
@@ -116,6 +117,11 @@
             <div id="menuEditorStatus" class="menu-publish-status" role="status" aria-live="polite"></div>
           </section>
           <h3 id="configTitle"></h3>
+          <section id="permissionEditorPanel" class="permission-editor" hidden>
+            <div class="permission-toolbar"><label><span>POS role</span><select id="permissionRoleSelect"></select></label><button id="savePermissionsButton" type="button">Save &amp; sync permissions</button></div>
+            <p id="permissionEditorStatus" class="od-subtitle">Select one restaurant to manage its permission matrix.</p>
+            <div id="permissionEditorBody" class="permission-groups"></div>
+          </section>
           <div id="configStatus" class="od-capability-note" role="status"></div>
           <textarea id="configEditor" class="config-editor" spellcheck="false" aria-describedby="configStatus"></textarea>
           <button id="saveConfigButton" type="button">Publish version to POS</button>

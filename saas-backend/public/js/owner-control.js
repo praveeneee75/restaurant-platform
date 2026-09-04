@@ -12,7 +12,7 @@ let menuEditorMenu = null;
 let menuEditorTab = 'categories';
 let menuEditorOnline = false;
 let menuEditorEnabled = false;
-const domainCapabilities = { MENU:'REMOTE_MENU', BILLING:'REMOTE_BILLING', BACKUP:'REMOTE_BACKUP', ONLINE_ORDERING:'REMOTE_ONLINE_ORDERING' };
+const domainCapabilities = { MENU:'REMOTE_MENU', BILLING:'REMOTE_BILLING', BACKUP:'REMOTE_BACKUP', ONLINE_ORDERING:'REMOTE_ONLINE_ORDERING', PERMISSIONS:'REMOTE_PERMISSIONS' };
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = (v) => Number(v || 0).toLocaleString('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:2});
@@ -217,15 +217,18 @@ function renderConfigTabs(){
   document.querySelectorAll('[data-domain]').forEach(button=>button.onclick=()=>{domain=button.dataset.domain;renderConfigTabs();});
   const enabled=caps.has(domainCapabilities[domain]);
   const menuMode=domain==='MENU';
+  const permissionsMode=domain==='PERMISSIONS';
   $('menuPublisherPanel').hidden=false;
-  $('configTitle').hidden=menuMode;
-  $('configEditor').hidden=$('saveConfigButton').hidden=!enabled||menuMode;
-  $('configStatus').hidden=!enabled||menuMode;
+  $('configTitle').hidden=menuMode||permissionsMode;
+  $('permissionEditorPanel').hidden=!permissionsMode;
+  $('configEditor').hidden=$('saveConfigButton').hidden=!enabled||menuMode||permissionsMode;
+  $('configStatus').hidden=!enabled||menuMode||permissionsMode;
   $('configTitle').textContent=enabled?domain.replaceAll('_',' '):'Remote configuration is not enabled by SaaS administration';
   $('runBackupButton').hidden=!caps.has('REMOTE_BACKUP');
   if(!menuPublisherBranches.length) loadMenuPublisher();
   else renderMenuEditorBranches();
-  if(enabled&&!menuMode) loadEditor();
+  if(enabled&&permissionsMode) renderPermissionEditor();
+  else if(enabled&&!menuMode) loadEditor();
 }
 function renderMenuPublisher(preferredSource=''){
   const source=preferredSource||$('menuSourceSelect').value;
@@ -352,7 +355,7 @@ async function saveMenuEditor(){
   }catch(error){$('menuEditorStatus').textContent=`Menu was not published: ${error.message}`;$('saveMenuEditorButton').disabled=false;}
 }
 function configurationValue(){
-  const map={MENU:'menu',BILLING:'billing',BACKUP:'backup',ONLINE_ORDERING:'onlineOrdering'};
+  const map={MENU:'menu',BILLING:'billing',BACKUP:'backup',ONLINE_ORDERING:'onlineOrdering',PERMISSIONS:'permissions'};
   const value=current?.configurationSnapshot?.[map[domain]];
   if(value && typeof value==='object' && !Array.isArray(value)) return value;
   if(typeof value==='string'){
@@ -362,6 +365,40 @@ function configurationValue(){
     } catch (_) {}
   }
   return {};
+}
+function permissionSnapshot(){
+  const value=configurationValue();
+  return {roles:Array.isArray(value.roles)?value.roles:[],matrix:Array.isArray(value.matrix)?value.matrix:[]};
+}
+function permissionRoleValues(role){
+  return Object.fromEntries(permissionSnapshot().matrix.filter(row=>row.role===role).map(row=>[row.permission_code,Number(row.allowed)===1]));
+}
+function renderPermissionEditor(){
+  const oneRestaurant=selectedRestaurants.size===1;
+  const snapshot=permissionSnapshot();
+  const roles=snapshot.roles.map(row=>row.name).filter(role=>role!=='OWNER');
+  const select=$('permissionRoleSelect');
+  const previous=select.value;
+  select.innerHTML=roles.map(role=>`<option value="${esc(role)}" ${role===previous?'selected':''}>${esc(role.replaceAll('_',' '))}</option>`).join('');
+  const role=select.value||roles[0]||'';
+  const rows=snapshot.matrix.filter(row=>row.role===role);
+  const modules=new Map();
+  rows.forEach(row=>{const module=String(row.permission_code).split('.')[0].replaceAll('_',' ');if(!modules.has(module))modules.set(module,[]);modules.get(module).push(row);});
+  $('permissionEditorBody').innerHTML=rows.length? [...modules.entries()].map(([module, controls])=>`<section class="permission-group"><h4>${esc(titleCase(module))}</h4>${controls.map(row=>`<label class="permission-option"><input type="checkbox" data-owner-permission="${esc(row.permission_code)}" ${Number(row.allowed)===1?'checked':''} ${oneRestaurant?'':'disabled'}><span><b>${esc(row.permission_code)}</b><small>${Number(row.allowed)===1?'Allowed':'Not allowed'}</small></span></label>`).join('')}</section>`).join(''):'<p class="od-subtitle">No POS permission matrix has synced yet. Bring this POS online and use Sync once.</p>';
+  $('savePermissionsButton').disabled=!oneRestaurant||!role||!rows.length;
+  $('permissionEditorStatus').textContent=!oneRestaurant?'Select exactly one restaurant; permissions are always managed per branch.':rows.length?`Editing ${role.replaceAll('_',' ')} permissions for this branch. Changes apply at the next online POS login.`:'No permissions are available from this POS yet.';
+}
+async function savePermissions(){
+  const role=$('permissionRoleSelect').value;
+  if(selectedRestaurants.size!==1||!role)return renderPermissionEditor();
+  const rolePermissions=permissionRoleValues(role);
+  document.querySelectorAll('[data-owner-permission]').forEach(input=>{rolePermissions[input.dataset.ownerPermission]=Boolean(input.checked);});
+  $('savePermissionsButton').disabled=true;$('permissionEditorStatus').textContent='Saving permission changes and queueing POS sync…';
+  try{
+    const result=await api(`/owner-control/owner/config/PERMISSIONS?restaurantId=${encodeURIComponent(rid())}`,{method:'PUT',body:JSON.stringify({restaurantId:rid(),payload:{rolePermissions:{[role]:rolePermissions}}})});
+    $('permissionEditorStatus').textContent=`Permission version ${result.configuration.version} queued. It will apply during the next online POS login.`;
+  }catch(error){$('permissionEditorStatus').textContent=`Permissions were not saved: ${error.message}`;}
+  finally{$('savePermissionsButton').disabled=false;}
 }
 function parseConfigurationEditor(){
   const raw=String($('configEditor').value||'').trim();
@@ -499,6 +536,8 @@ document.querySelectorAll('[data-owner-section]').forEach((button)=>button.oncli
 document.addEventListener('click',(event)=>{if(!event.target.closest('.od-restaurant-filter')){$('restaurantMultiMenu').hidden=true;$('restaurantMultiButton').setAttribute('aria-expanded','false');}});
 $('reportDate').value=localDate();
 $('configEditor').oninput=validateConfigurationEditor;
+$('permissionRoleSelect').onchange=renderPermissionEditor;
+$('savePermissionsButton').onclick=savePermissions;
 $('menuSourceSelect').onchange=()=>{menuTargetIds.clear();menuPublisherBranches.filter((row)=>row.restaurantId!==$('menuSourceSelect').value&&row.remoteMenuEnabled).forEach((row)=>menuTargetIds.add(row.restaurantId));renderMenuPublisher();};
 $('refreshMenuPublisherButton').onclick=loadMenuPublisher;
 $('publishMenuButton').onclick=publishSelectedMenu;

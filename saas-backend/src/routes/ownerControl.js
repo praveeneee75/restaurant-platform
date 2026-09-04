@@ -6,9 +6,9 @@ const { requireOwner, requireOwnedTenant } = require('../middleware/ownerScope')
 const { publicError } = require('../config');
 
 const router = express.Router();
-const DOMAINS = new Set(['MENU', 'BILLING', 'BACKUP', 'ONLINE_ORDERING']);
+const DOMAINS = new Set(['MENU', 'BILLING', 'BACKUP', 'ONLINE_ORDERING', 'PERMISSIONS']);
 const COMMANDS = new Set(['REQUEST_SYNC', 'REFRESH_LICENSE', 'RUN_BACKUP', 'PUBLISH_MENU']);
-const DOMAIN_CAPABILITY = { MENU: 'REMOTE_MENU', BILLING: 'REMOTE_BILLING', BACKUP: 'REMOTE_BACKUP', ONLINE_ORDERING: 'REMOTE_ONLINE_ORDERING' };
+const DOMAIN_CAPABILITY = { MENU: 'REMOTE_MENU', BILLING: 'REMOTE_BILLING', BACKUP: 'REMOTE_BACKUP', ONLINE_ORDERING: 'REMOTE_ONLINE_ORDERING', PERMISSIONS: 'REMOTE_PERMISSIONS' };
 
 function json(value, fallback = {}) {
   if (!value) return fallback;
@@ -28,6 +28,17 @@ function validateDomain(domain, payload) {
       const minutes = Number(payload.backup_interval_minutes);
       if (!Number.isFinite(minutes) || minutes < 5 || minutes > 10080) throw new Error('Backup interval must be between 5 and 10080 minutes');
     }
+  }
+  if (domain === 'PERMISSIONS') {
+    const matrix = payload.rolePermissions;
+    if (!matrix || typeof matrix !== 'object' || Array.isArray(matrix)) throw new Error('Permissions must include rolePermissions');
+    Object.entries(matrix).forEach(([role, permissions]) => {
+      if (role === 'OWNER') throw new Error('OWNER permissions are protected');
+      if (!/^[A-Z][A-Z0-9_]*$/.test(role) || !permissions || typeof permissions !== 'object' || Array.isArray(permissions)) throw new Error('Invalid permission role');
+      Object.entries(permissions).forEach(([code, allowed]) => {
+        if (!/^[a-z][a-z0-9_.]*$/.test(code) || typeof allowed !== 'boolean') throw new Error(`Invalid permission control: ${code}`);
+      });
+    });
   }
   return payload;
 }

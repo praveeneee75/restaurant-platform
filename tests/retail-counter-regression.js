@@ -134,6 +134,11 @@ async function main() {
     "GET",
     `/retail/bootstrap?restaurantId=${restaurantId}&role=OWNER`,
   );
+  const retailRoleBoot = await ok(
+    "GET",
+    `/retail/bootstrap?restaurantId=${restaurantId}&role=RETAIL`,
+  );
+  if (!retailRoleBoot.items.length) throw new Error("Retail role could not view the retail catalogue");
   const item = boot.items.find((i) => i.barcode === "8901234567890");
   if (!item || Number(item.retail_stock) !== 10)
     throw new Error("retail bootstrap did not expose configured product");
@@ -144,14 +149,29 @@ async function main() {
   });
   if (shortage.status < 400 || !/only 10/i.test(shortage.data.message))
     throw new Error("insufficient stock was accepted");
+  db = openDatabase(restaurantId);
+  const retailRole = db.prepare("SELECT id FROM roles WHERE name='RETAIL'").get();
+  const retailView = db.prepare("SELECT id FROM permissions WHERE code='retail.view'").get();
+  db.prepare("UPDATE role_permissions SET allowed=0 WHERE role_id=? AND permission_id=?").run(retailRole.id, retailView.id);
+  db.close();
+  const permissionDenied = await request("GET", `/retail/bootstrap?restaurantId=${restaurantId}&role=RETAIL`);
+  if (permissionDenied.status !== 403) throw new Error("Retail counter was visible after retail.sell was disabled");
+  db = openDatabase(restaurantId);
+  db.prepare("UPDATE role_permissions SET allowed=1 WHERE role_id=? AND permission_id=?").run(retailRole.id, retailView.id);
+  db.close();
+  await ok("POST", "/retail/orders/prepare", {
+    restaurantId,
+    actor: { id: 99, role: "RETAIL" },
+    items: [{ itemId: item.id, quantity: 1 }],
+  });
   const prepared = await ok("POST", "/retail/orders/prepare", {
     restaurantId,
-    actor: owner,
+    actor: { id: 99, role: "RETAIL", name: "Retail user" },
     items: [{ itemId: item.id, quantity: 3 }],
   });
   const settled = await ok("POST", "/orders/settle", {
     restaurantId,
-    actor: owner,
+    actor: { id: 99, role: "RETAIL", name: "Retail user" },
     orderId: prepared.orderId,
     payments: [{ method: "CARD", amount: prepared.payable }],
     redeemPoints: 0,

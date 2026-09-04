@@ -28,6 +28,9 @@ const stored = new Set(db.prepare('SELECT code FROM permissions WHERE active = 1
 expected.forEach((code) => assert(stored.has(code), `permission was not seeded ${code}`));
 assert(hasPermission(db, 'OWNER', 'retail.stock_adjust'), 'OWNER must retain every control');
 assert(hasPermission(db, 'CASHIER', 'retail.sell'), 'cashier retail access migration default changed');
+assert(hasPermission(db, 'RETAIL', 'retail.view') && hasPermission(db, 'RETAIL', 'retail.sell'), 'Retail role must be able to open and sell at Retail Counter');
+assert(hasPermission(db, 'RETAIL', 'inventory.view'), 'Retail role must be able to view the item catalogue');
+assert(!hasPermission(db, 'RETAIL', 'billing.settle') && !hasPermission(db, 'RETAIL', 'orders.create'), 'Retail role must not inherit Parcel or Billing permissions');
 assert(hasPermission(db, 'CASHIER', 'reports.view_invoice_only'), 'cashier report access is missing');
 assert(hasPermission(db, 'MANAGER_1', 'reports.view_invoice_only'), 'manager report access is missing');
 assert(!hasPermission(db, 'CAPTAIN', 'reports.view_invoice_only'), 'captain incorrectly received report access');
