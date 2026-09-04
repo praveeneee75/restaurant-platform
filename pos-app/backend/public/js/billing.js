@@ -22,6 +22,10 @@ async function loadBillingQrSettings() {
   const data = await getJson(`/settings?restaurantId=${encodeURIComponent(restaurantId)}`);
   const settings = data.settings || {};
   state.billingSettings = settings;
+  const retailEnabled = !['0', 0, false, 'false'].includes(settings.retail_counter_enabled);
+  const retailRoles = new Set(['OWNER', 'ADMIN', 'MANAGER', 'MANAGER_1', 'MANAGER_2', 'CASHIER']);
+  const retailNavigation = document.getElementById('retailBillingNavigation');
+  if (retailNavigation) retailNavigation.hidden = !(retailEnabled && retailRoles.has(String(sessionUser.role || '').toUpperCase()));
   billingQrEnabled.checked = !['0', 0, false, 'false'].includes(settings.qr_ordering_enabled);
   billingQrPendingLimit.value = settings.qr_pending_order_limit || 25;
 }

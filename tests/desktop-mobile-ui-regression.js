@@ -12,6 +12,8 @@ const server = read('pos-app/backend/server.js');
 const schema = read('pos-app/backend/services/schema.js');
 const posHtml = read('pos-app/backend/public/pos-live.html');
 const posJs = read('pos-app/backend/public/js/pos-live.js');
+const billingHtml = read('pos-app/backend/public/billing.html');
+const billingJs = read('pos-app/backend/public/js/billing.js');
 const customerJs = read('pos-app/backend/public/js/customer.js');
 const preload = read('pos-app/electron/preload.js');
 const electron = read('pos-app/electron/main.js');
@@ -44,6 +46,7 @@ const cases = [
   ,[customerHtml.includes('id="customerSearch"') && customerHtml.includes('id="searchCustomers"') && customerJs.includes('function filteredCustomers()') && customerJs.includes('searchCustomers.addEventListener'), 'Customer CRM provides explicit name, phone and email search']
   ,[customerHtml.includes('id="crmExecutiveSummary"') && customerHtml.includes('CUSTOMER 360') && customerJs.includes('function renderExecutiveSummary()') && customerJs.includes('Loyalty Ledger') && customerJs.includes('Earned / redeemed'), 'Customer CRM provides executive KPIs and an individual loyalty view']
   ,[posJs.includes('const startsNewParcelCheck = !state.orderId || state.billingReady;') && posJs.includes('New parcel customer check started for this table') && server.includes('Boolean(linkedFulfillment && isPositiveId(tableId))'), 'desktop Dine In starts an independent parcel check when the selected table check is final-bill locked']
+  ,[billingHtml.indexOf('id="retailBillingNavigation"') < billingHtml.indexOf('id="transferBillingOrder"') && billingHtml.includes('href="/retail.html"') && billingJs.includes('retail_counter_enabled') && billingJs.includes('retailNavigation.hidden'), 'Billing keeps a Retail Counter navigation control before Transfer and only exposes it when the optional service is enabled']
   ,[server.includes("app.post('/orders/merge-bills'") && server.includes("app.post('/orders/unlock-billing'") && server.includes("status = 'MERGED'") && schema.includes("addColumn(db, 'orders', 'merge_parent_id INTEGER')"), 'billing provides persisted merge relationships and ready-order unlock']
   ,[adminHtml.includes('data-nav-category="kds"') && adminHtml.includes('id="settingKdsClearSettledOnNewBusinessDay"') && adminHtml.includes('id="settingKdsOfflineClearHours"') && schema.includes("addColumn(db, 'kots', 'archived_at DATETIME')"), 'Admin KDS provides configurable new-business-day settled-order cleanup']
   ,[server.includes("ksub.archived_at IS NULL") && server.includes("'ARCHIVE', 'KDS_BUSINESS_DAY'") && server.includes("SELECT id FROM orders WHERE payment_status = 'PAID' OR status = 'PAID'"), 'KDS cleanup archives only display KOTs for settled orders without changing financial orders']

@@ -1056,7 +1056,9 @@ button:hover,
 .billing-topbar, .billing-detail header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
 .billing-topbar h1 { margin: 0 0 5px; }
 .billing-topbar p { margin: 0; color: var(--muted); }
-.billing-actions { display: flex; gap: 8px; }
+.billing-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.billing-actions .billing-retail-navigation { background: #0f766e; color: #fff; }
+.billing-actions .billing-retail-navigation:hover { background: #0b5f59; }
 .billing-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin: 22px 0 16px; padding: 12px; background: #fff; border: 1px solid var(--border); border-radius: 8px; }
 .billing-legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); font-size: 12px; }
 .legend { display: inline-block; width: 11px; height: 11px; margin-right: 4px; border-radius: 3px; background: #e2e8f0; }
