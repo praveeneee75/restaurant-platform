@@ -39,6 +39,7 @@ const zlib = require('zlib');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const QRCode = require('qrcode');
 const net = require('net');
 const { execFileSync } = require('child_process');
 
@@ -1427,6 +1428,30 @@ function customerLoyaltyBalance(db, customerId) {
 function customerWithBalance(db, customer) {
   if (!customer) return null;
   return { ...customer, loyaltyBalance: customerLoyaltyBalance(db, customer.id) };
+}
+
+function normalizedCustomerMobile(value) {
+  const phone = normalisePhone(value);
+  if (!/^\d{10}$/.test(phone)) throw new Error('Enter a valid 10-digit customer mobile number');
+  return phone;
+}
+
+function normalizedLoyaltyCardCode(value) {
+  const raw = normaliseText(value).toUpperCase().replace(/^KMLOYALTY:[^:]+:/, '');
+  if (!raw) return '';
+  if (!/^[A-Z0-9-]{6,48}$/.test(raw)) throw new Error('Loyalty card code must contain 6 to 48 letters, numbers or dashes');
+  return raw;
+}
+
+function nextLoyaltyCardCode(db) {
+  let code;
+  do { code = `LOY-${crypto.randomBytes(5).toString('hex').toUpperCase()}`; }
+  while (db.prepare('SELECT id FROM loyalty_cards WHERE card_code = ?').get(code));
+  return code;
+}
+
+function loyaltyCardPayload(restaurantId, cardCode) {
+  return `KMLOYALTY:${restaurantId}:${cardCode}`;
 }
 
 function memberIdForCustomer(db, customerId) {
@@ -8576,7 +8601,8 @@ app.get('/customers/list', (req, res) => {
   try {
     requirePermission(db, role, 'customers.view', 'Customer viewing permission required');
     const customers = db.prepare(`
-      SELECT c.*, COALESCE(SUM(CASE WHEN lp.type = 'EARN' OR lp.type = 'ADJUSTMENT' THEN lp.points WHEN lp.type = 'REDEEM' THEN -lp.points ELSE 0 END), 0) AS loyaltyBalance
+      SELECT c.*, COALESCE(SUM(CASE WHEN lp.type = 'EARN' OR lp.type = 'ADJUSTMENT' THEN lp.points WHEN lp.type = 'REDEEM' THEN -lp.points ELSE 0 END), 0) AS loyaltyBalance,
+             (SELECT card_code FROM loyalty_cards lc WHERE lc.customer_id = c.id AND lc.status = 'ACTIVE' ORDER BY lc.issued_at DESC LIMIT 1) AS active_card_code
       FROM customers c
       LEFT JOIN loyalty_points lp ON lp.customer_id = c.id
       WHERE (? = 'true' OR c.active = 1)
@@ -8597,10 +8623,11 @@ app.post('/customers/create', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     requireAnyPermission(db, actor?.role, ['orders.create', 'customers.manage'], 'Customer creation permission required');
-    const duplicate = db.prepare('SELECT id FROM customers WHERE phone = ? AND active = 1 LIMIT 1').get(normaliseText(phone));
+    const mobile = normalizedCustomerMobile(phone);
+    const duplicate = db.prepare('SELECT id FROM customers WHERE phone = ? AND active = 1 LIMIT 1').get(mobile);
     if (duplicate) return res.status(409).json({ success: false, message: 'Customer phone already exists' });
     const result = db.prepare('INSERT INTO customers (name, phone, email, birthday, address) VALUES (?, ?, ?, ?, ?)')
-      .run(normaliseText(name), normaliseText(phone), normaliseText(email) || null, birthday || null, normaliseText(address) || null);
+      .run(normaliseText(name), mobile, normaliseText(email) || null, birthday || null, normaliseText(address) || null);
     const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(result.lastInsertRowid);
     writeAudit(db, actor, 'CREATE', 'CUSTOMER', result.lastInsertRowid, null, customer);
     trackModuleUsage(restaurantId, 'LOYALTY', 'CUSTOMER_CREATED').catch(() => {});
@@ -8618,11 +8645,12 @@ app.post('/customers/update', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     requirePermission(db, actor?.role, 'customers.manage', 'Customer management permission required');
-    const duplicate = db.prepare('SELECT id FROM customers WHERE phone = ? AND active = 1 AND id != ? LIMIT 1').get(normaliseText(phone), id);
+    const mobile = normalizedCustomerMobile(phone);
+    const duplicate = db.prepare('SELECT id FROM customers WHERE phone = ? AND active = 1 AND id != ? LIMIT 1').get(mobile, id);
     if (duplicate) return res.status(409).json({ success: false, message: 'Customer phone already exists' });
     const oldValue = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
     db.prepare('UPDATE customers SET name = ?, phone = ?, email = ?, birthday = ?, address = ?, active = 1 WHERE id = ?')
-      .run(normaliseText(name), normaliseText(phone), normaliseText(email) || null, birthday || null, normaliseText(address) || null, id);
+      .run(normaliseText(name), mobile, normaliseText(email) || null, birthday || null, normaliseText(address) || null, id);
     const newValue = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
     writeAudit(db, actor, 'UPDATE', 'CUSTOMER', id, oldValue, newValue);
     res.json({ success: true, customer: customerWithBalance(db, newValue) });
@@ -8640,7 +8668,10 @@ app.post('/customers/delete', (req, res) => {
   try {
     requirePermission(db, actor?.role, 'customers.manage', 'Customer management permission required');
     const oldValue = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
-    db.prepare('UPDATE customers SET active = 0 WHERE id = ?').run(id);
+    db.transaction(() => {
+      db.prepare('UPDATE customers SET active = 0 WHERE id = ?').run(id);
+      db.prepare("UPDATE loyalty_cards SET status = 'DEACTIVATED', deactivated_at = CURRENT_TIMESTAMP WHERE customer_id = ? AND status = 'ACTIVE'").run(id);
+    })();
     const newValue = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
     writeAudit(db, actor, 'DELETE', 'CUSTOMER', id, oldValue, newValue);
     res.json({ success: true });
@@ -8649,6 +8680,138 @@ app.post('/customers/delete', (req, res) => {
   } finally {
     db.close();
   }
+});
+
+app.get('/customers/lookup', (req, res) => {
+  const { restaurantId, role, query } = req.query;
+  if (!restaurantId || !hasText(String(query || ''))) return res.status(400).json({ success: false, message: 'Mobile number or loyalty card code is required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, role, 'customers.view', 'Customer viewing permission required');
+    const raw = String(query || '').trim();
+    const mobile = normalisePhone(raw);
+    const cardCode = normalizedLoyaltyCardCode(raw);
+    const customer = /^\d{10}$/.test(mobile)
+      ? db.prepare('SELECT * FROM customers WHERE phone = ? AND active = 1 LIMIT 1').get(mobile)
+      : db.prepare(`SELECT c.* FROM loyalty_cards lc JOIN customers c ON c.id = lc.customer_id
+                    WHERE lc.card_code = ? AND lc.status = 'ACTIVE' AND c.active = 1 LIMIT 1`).get(cardCode);
+    const cards = customer ? db.prepare('SELECT * FROM loyalty_cards WHERE customer_id = ? ORDER BY issued_at DESC').all(customer.id) : [];
+    res.json({ success: true, customer: customerWithBalance(db, customer), cards });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
+});
+
+app.post('/customers/create-and-attach', (req, res) => {
+  const { restaurantId, actor, orderId, name, phone, email } = req.body || {};
+  if (!restaurantId || !isPositiveId(orderId) || !hasText(name)) return res.status(400).json({ success: false, message: 'Open bill, customer name and mobile number are required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'customers.manage', 'Customer management permission required');
+    const mobile = normalizedCustomerMobile(phone);
+    const result = db.transaction(() => {
+      const order = db.prepare("SELECT id, customer_id FROM orders WHERE id = ? AND payment_status != 'PAID' AND status != 'CANCELLED'").get(orderId);
+      if (!order) throw new Error('Open bill not found');
+      let customer = db.prepare('SELECT * FROM customers WHERE phone = ? AND active = 1').get(mobile);
+      if (!customer) {
+        const created = db.prepare('INSERT INTO customers (name, phone, email) VALUES (?, ?, ?)').run(normaliseText(name), mobile, normaliseText(email) || null);
+        customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(created.lastInsertRowid);
+        writeAudit(db, actor, 'CREATE', 'CUSTOMER', customer.id, null, customer);
+      }
+      db.prepare('UPDATE orders SET customer_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(customer.id, orderId);
+      writeAudit(db, actor, 'ATTACH', 'ORDER_CUSTOMER', orderId, { customerId: order.customer_id || null }, { customerId: customer.id });
+      return customerWithBalance(db, customer);
+    })();
+    res.json({ success: true, customer: result });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
+});
+
+app.post('/customers/attach-order', (req, res) => {
+  const { restaurantId, actor, orderId, customerId } = req.body || {};
+  if (!restaurantId || !isPositiveId(orderId) || !isPositiveId(customerId)) return res.status(400).json({ success: false, message: 'Open bill and customer are required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'customers.manage', 'Customer management permission required');
+    const result = db.transaction(() => {
+      const order = db.prepare("SELECT id, customer_id FROM orders WHERE id = ? AND payment_status != 'PAID' AND status != 'CANCELLED'").get(orderId);
+      const customer = db.prepare('SELECT * FROM customers WHERE id = ? AND active = 1').get(customerId);
+      if (!order) throw new Error('Open bill not found');
+      if (!customer) throw new Error('Active customer not found');
+      db.prepare('UPDATE orders SET customer_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(customer.id, orderId);
+      writeAudit(db, actor, 'ATTACH', 'ORDER_CUSTOMER', orderId, { customerId: order.customer_id || null }, { customerId: customer.id });
+      return customerWithBalance(db, customer);
+    })();
+    res.json({ success: true, customer: result });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
+});
+
+app.post('/customers/cards/issue', (req, res) => {
+  const { restaurantId, actor, customerId, cardCode, notes } = req.body || {};
+  if (!restaurantId || !isPositiveId(customerId)) return res.status(400).json({ success: false, message: 'Customer is required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'customers.manage', 'Customer management permission required');
+    const card = db.transaction(() => {
+      const customer = db.prepare('SELECT id, phone FROM customers WHERE id = ? AND active = 1').get(customerId);
+      if (!customer) throw new Error('Active customer not found');
+      normalizedCustomerMobile(customer.phone);
+      if (db.prepare("SELECT id FROM loyalty_cards WHERE customer_id = ? AND status = 'ACTIVE'").get(customerId)) throw new Error('Customer already has an active loyalty card. Mark it lost to issue a replacement.');
+      const code = normalizedLoyaltyCardCode(cardCode) || nextLoyaltyCardCode(db);
+      if (db.prepare('SELECT id FROM loyalty_cards WHERE card_code = ?').get(code)) throw new Error('Loyalty card code already exists');
+      const created = db.prepare("INSERT INTO loyalty_cards(customer_id, card_code, status, issued_by, notes) VALUES (?, ?, 'ACTIVE', ?, ?)").run(customerId, code, actor?.id || null, normaliseText(notes) || null);
+      const row = db.prepare('SELECT * FROM loyalty_cards WHERE id = ?').get(created.lastInsertRowid);
+      writeAudit(db, actor, 'ISSUE', 'LOYALTY_CARD', row.id, null, { customerId, cardCode: code });
+      return row;
+    })();
+    res.json({ success: true, card: { ...card, qrPayload: loyaltyCardPayload(restaurantId, card.card_code), barcodeValue: card.card_code } });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
+});
+
+app.post('/customers/cards/replace-lost', (req, res) => {
+  const { restaurantId, actor, customerId, oldCardId, cardCode, notes } = req.body || {};
+  if (!restaurantId || !isPositiveId(customerId) || !isPositiveId(oldCardId)) return res.status(400).json({ success: false, message: 'Customer and active card are required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'customers.manage', 'Customer management permission required');
+    const card = db.transaction(() => {
+      const oldCard = db.prepare("SELECT * FROM loyalty_cards WHERE id = ? AND customer_id = ? AND status = 'ACTIVE'").get(oldCardId, customerId);
+      if (!oldCard) throw new Error('Active loyalty card not found');
+      const code = normalizedLoyaltyCardCode(cardCode) || nextLoyaltyCardCode(db);
+      if (db.prepare('SELECT id FROM loyalty_cards WHERE card_code = ?').get(code)) throw new Error('Loyalty card code already exists');
+      db.prepare("UPDATE loyalty_cards SET status = 'LOST', lost_at = CURRENT_TIMESTAMP WHERE id = ?").run(oldCard.id);
+      const created = db.prepare("INSERT INTO loyalty_cards(customer_id, card_code, status, issued_by, notes) VALUES (?, ?, 'ACTIVE', ?, ?)").run(customerId, code, actor?.id || null, normaliseText(notes) || 'Replacement for lost card');
+      db.prepare('UPDATE loyalty_cards SET replaced_by_card_id = ? WHERE id = ?').run(created.lastInsertRowid, oldCard.id);
+      const row = db.prepare('SELECT * FROM loyalty_cards WHERE id = ?').get(created.lastInsertRowid);
+      writeAudit(db, actor, 'REPLACE_LOST', 'LOYALTY_CARD', oldCard.id, oldCard, { replacementCardId: row.id, replacementCardCode: code });
+      return row;
+    })();
+    res.json({ success: true, card: { ...card, qrPayload: loyaltyCardPayload(restaurantId, card.card_code), barcodeValue: card.card_code } });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
+});
+
+app.post('/customers/cards/deactivate', (req, res) => {
+  const { restaurantId, actor, cardId } = req.body || {};
+  if (!restaurantId || !isPositiveId(cardId)) return res.status(400).json({ success: false, message: 'Loyalty card is required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    requirePermission(db, actor?.role, 'customers.manage', 'Customer management permission required');
+    const oldCard = db.prepare("SELECT * FROM loyalty_cards WHERE id = ? AND status = 'ACTIVE'").get(cardId);
+    if (!oldCard) throw new Error('Active loyalty card not found');
+    db.prepare("UPDATE loyalty_cards SET status = 'DEACTIVATED', deactivated_at = CURRENT_TIMESTAMP WHERE id = ?").run(cardId);
+    writeAudit(db, actor, 'DEACTIVATE', 'LOYALTY_CARD', cardId, oldCard, { status: 'DEACTIVATED' });
+    res.json({ success: true });
+  } catch (err) { sendError(res, err); } finally { db.close(); }
+});
+
+app.get('/customers/cards/:cardId/qr.png', async (req, res) => {
+  const { restaurantId } = req.query;
+  if (!restaurantId || !isPositiveId(req.params.cardId)) return res.status(400).json({ success: false, message: 'Restaurant and loyalty card are required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const card = db.prepare('SELECT card_code FROM loyalty_cards WHERE id = ?').get(req.params.cardId);
+    if (!card) return res.status(404).json({ success: false, message: 'Loyalty card not found' });
+    const png = await QRCode.toBuffer(loyaltyCardPayload(restaurantId, card.card_code), { type: 'png', width: 280, margin: 1, errorCorrectionLevel: 'M' });
+    res.set({ 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=86400', 'Content-Disposition': `inline; filename="loyalty-card-${card.card_code}.png"` });
+    res.send(png);
+  } catch (err) { sendError(res, err); } finally { db.close(); }
 });
 
 app.post('/customers/notes/create', (req, res) => {
@@ -8685,8 +8848,9 @@ app.get('/customers/profile', (req, res) => {
     `).all(customerId);
     const notes = db.prepare('SELECT * FROM customer_notes WHERE customer_id = ? AND active = 1 ORDER BY created_at DESC').all(customerId);
     const ledger = db.prepare('SELECT * FROM loyalty_points WHERE customer_id = ? ORDER BY created_at DESC').all(customerId);
+    const cards = db.prepare('SELECT * FROM loyalty_cards WHERE customer_id = ? ORDER BY issued_at DESC').all(customerId);
     const spend = db.prepare('SELECT COALESCE(SUM(amount), 0) AS totalSpend, COUNT(*) AS visits FROM customer_visits WHERE customer_id = ?').get(customerId);
-    res.json({ success: true, customer: customerWithBalance(db, customer), visits, notes, ledger, totalSpend: spend.totalSpend, visitCount: spend.visits });
+    res.json({ success: true, customer: customerWithBalance(db, customer), visits, notes, ledger, cards, totalSpend: spend.totalSpend, visitCount: spend.visits });
   } catch (err) {
     sendError(res, err);
   } finally {

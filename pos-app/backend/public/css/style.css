@@ -2576,6 +2576,8 @@ button:hover,
 @media(max-width:600px){.settings-section[data-settings-panel="profile"]{grid-template-columns:1fr}}
 .pos-mode-mobile-dine .order-switcher { grid-template-columns:1fr; }
 .pos-mode-mobile-dine .order-switcher button { width:100%; }
+.loyalty-card-preview{display:flex;align-items:center;gap:14px;padding:12px;border:1px solid var(--border);border-radius:12px;background:#f8fffd}.loyalty-card-preview img{width:112px;height:112px;object-fit:contain;background:#fff}.loyalty-card-preview p{margin:0;line-height:1.55}
+@media(max-width:520px){.loyalty-card-preview{align-items:flex-start;flex-direction:column}.loyalty-card-preview img{width:160px;height:160px}}
 @media (min-width:600px) {
   .pos-mode-mobile-dine .table-list { grid-template-columns:repeat(5,minmax(0,1fr)); }
   .pos-mode-mobile-dine .item-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }

@@ -533,6 +533,25 @@ function ensureRestaurantSchema(db) {
       FOREIGN KEY (customer_id) REFERENCES customers(id)
     );
 
+    CREATE TABLE IF NOT EXISTS loyalty_cards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      card_code TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'ACTIVE',
+      issued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      lost_at DATETIME,
+      deactivated_at DATETIME,
+      replaced_by_card_id INTEGER,
+      issued_by INTEGER,
+      notes TEXT,
+      FOREIGN KEY (customer_id) REFERENCES customers(id),
+      FOREIGN KEY (replaced_by_card_id) REFERENCES loyalty_cards(id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_loyalty_cards_active_customer
+      ON loyalty_cards(customer_id) WHERE status = 'ACTIVE';
+    CREATE INDEX IF NOT EXISTS idx_loyalty_cards_customer_status
+      ON loyalty_cards(customer_id, status, issued_at DESC);
+
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,

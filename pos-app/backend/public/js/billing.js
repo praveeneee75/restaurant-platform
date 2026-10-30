@@ -15,6 +15,8 @@ document.querySelectorAll('[data-logout]').forEach((button) => button.addEventLi
 const state = { tables: [], orders: [], selected: null, filter: 'ALL', billingSettings: {} };
 const privilegedBillingRoles = new Set(['CASHIER', 'MANAGER_1', 'MANAGER_2', 'OWNER']);
 const canSettleAndPrint = privilegedBillingRoles.has(String(sessionUser.role || '').toUpperCase());
+const customerManagementRoles = new Set(['OWNER', 'ADMIN', 'MANAGER', 'MANAGER_1', 'MANAGER_2']);
+const canManageCustomers = customerManagementRoles.has(String(sessionUser.role || '').toUpperCase());
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = v => `INR ${Number(v || 0).toFixed(2)}`;
 async function getJson(url) { const r = await fetch(url); const d = await r.json(); if (!r.ok) throw Error(d.message || 'Unable to load billing data'); return d; }
@@ -26,6 +28,8 @@ async function loadBillingQrSettings() {
   const retailRoles = new Set(['OWNER', 'ADMIN', 'MANAGER', 'MANAGER_1', 'MANAGER_2', 'CASHIER']);
   const retailNavigation = document.getElementById('retailBillingNavigation');
   if (retailNavigation) retailNavigation.hidden = !(retailEnabled && retailRoles.has(String(sessionUser.role || '').toUpperCase()));
+  const customerManagement = document.getElementById('billingCustomerManagement');
+  if (customerManagement) customerManagement.hidden = !canManageCustomers;
   billingQrEnabled.checked = !['0', 0, false, 'false'].includes(settings.qr_ordering_enabled);
   billingQrPendingLimit.value = settings.qr_pending_order_limit || 25;
 }
@@ -97,6 +101,7 @@ document.addEventListener('click', async e => {
 billingSearch.addEventListener('input', () => { renderTables(); renderRecent(); });
 refreshBilling.addEventListener('click', () => Promise.all([load(), loadBillingQrSettings()]).catch(e => billingStatus.textContent = e.message));
 transferBillingOrder.addEventListener('click', () => openBillingOrderTransfer().catch((error) => { billingStatus.textContent = error.message; }));
+document.getElementById('billingCustomerManagement').addEventListener('click', () => openBillingCustomerManager());
 saveBillingQrSettings.addEventListener('click', async () => {
   const limit = Number(billingQrPendingLimit.value);
   if (!Number.isInteger(limit) || limit < 1 || limit > 500) { billingQrSettingsStatus.textContent = 'Enter a maximum between 1 and 500.'; billingQrPendingLimit.focus(); return; }
@@ -156,7 +161,8 @@ async function showSubmittedOrder(orderId) {
   const rewardDiscount = Math.max(Number(d.order.loyalty_discount || 0), 0);
   const rewardDetail = rewardDiscount > 0 ? `<div class="bill-adjustment-row discount"><span>Reward points${Number(d.order.redeemed_points || 0) ? ` · ${Number(d.order.redeemed_points)} points` : ''}</span><strong>-${money(rewardDiscount)}</strong></div>` : '';
   const adjustmentRows = `${discountDetails || rewardDetail ? discountDetails + rewardDetail : (displayedDiscount > 0 ? `<div class="bill-adjustment-row discount"><span>Discount applied</span><strong>-${money(displayedDiscount)}</strong></div>` : '')}${displayedServiceCharge > 0 ? `<div class="bill-adjustment-row"><span>Service charge</span><strong>${money(displayedServiceCharge)}</strong></div>` : ''}${Math.abs(displayedRoundOff) >= 0.005 ? `<div class="bill-adjustment-row"><span>Round off</span><strong>${displayedRoundOff < 0 ? '-' : ''}${money(Math.abs(displayedRoundOff))}</strong></div>` : ''}`;
-  billingDetail.innerHTML = `<header><div><h2>${esc(d.order.order_reference || `Order ${d.order.id}`)}</h2><p>${esc(d.order.table_no || d.order.order_type)} · ${esc(d.customer?.name || 'No customer')}</p></div><div class="billing-detail-actions"><button type="button" class="secondary-btn" id="billingSplitBill">Split Bill</button><button type="button" class="secondary-btn" id="billingMergeBill">Merge Bill</button>${Number(d.order.billing_ready) === 1 ? '<button type="button" class="secondary-btn" id="billingUnlockBill">Unlock</button>' : ''}<a class="primary-btn" href="${cashierUrl}">Open POS</a></div></header><div class="bill-lines">${kotSections || '<p>No submitted items</p>'}</div><div class="billing-total-breakdown"><div class="bill-adjustment-row"><span>Subtotal (including tax)</span><strong>${money(grossTotal)}</strong></div>${adjustmentRows}<div class="bill-total"><span>Payable total (including tax)</span><strong>${money(submittedTotal)}</strong></div></div><div class="billing-payment"><h3>Payment</h3><p class="billing-hint">Only KOT-submitted items are billed.</p><select id="billingPaymentMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></select><input id="billingPaymentAmount" type="number" step="0.01" value="${submittedTotal.toFixed(2)}"><div class="billing-settlement-actions">${enabled('billing_show_settle_print') ? `<button id="settlePrintBilling" class="primary-btn" data-action-shortcut="F12" data-settlement-mode="PRINT" data-settle-order="${d.order.id}">Settle &amp; Print</button>` : ''}${enabled('billing_show_settle_invoice') ? `<button id="settleBilling" class="primary-btn" data-action-shortcut="F11" data-settlement-mode="INVOICE" data-settle-order="${d.order.id}">Settle &amp; Create Invoice</button>` : ''}${enabled('billing_show_settle_only') ? `<button id="settleWithoutInvoice" class="primary-btn" data-settlement-mode="NO_INVOICE" data-settle-order="${d.order.id}">Settle</button>` : ''}</div></div>`;
+  billingDetail.innerHTML = `<header><div><h2>${esc(d.order.order_reference || `Order ${d.order.id}`)}</h2><p>${esc(d.order.table_no || d.order.order_type)} · ${esc(d.customer?.name || 'No customer')}</p></div><div class="billing-detail-actions">${canManageCustomers ? '<button type="button" class="secondary-btn" id="billingOrderCustomer">Customer</button>' : ''}<button type="button" class="secondary-btn" id="billingSplitBill">Split Bill</button><button type="button" class="secondary-btn" id="billingMergeBill">Merge Bill</button>${Number(d.order.billing_ready) === 1 ? '<button type="button" class="secondary-btn" id="billingUnlockBill">Unlock</button>' : ''}<a class="primary-btn" href="${cashierUrl}">Open POS</a></div></header><div class="bill-lines">${kotSections || '<p>No submitted items</p>'}</div><div class="billing-total-breakdown"><div class="bill-adjustment-row"><span>Subtotal (including tax)</span><strong>${money(grossTotal)}</strong></div>${adjustmentRows}<div class="bill-total"><span>Payable total (including tax)</span><strong>${money(submittedTotal)}</strong></div></div><div class="billing-payment"><h3>Payment</h3><p class="billing-hint">Only KOT-submitted items are billed.</p><select id="billingPaymentMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></select><input id="billingPaymentAmount" type="number" step="0.01" value="${submittedTotal.toFixed(2)}"><div class="billing-settlement-actions">${enabled('billing_show_settle_print') ? `<button id="settlePrintBilling" class="primary-btn" data-action-shortcut="F12" data-settlement-mode="PRINT" data-settle-order="${d.order.id}">Settle &amp; Print</button>` : ''}${enabled('billing_show_settle_invoice') ? `<button id="settleBilling" class="primary-btn" data-action-shortcut="F11" data-settlement-mode="INVOICE" data-settle-order="${d.order.id}">Settle &amp; Create Invoice</button>` : ''}${enabled('billing_show_settle_only') ? `<button id="settleWithoutInvoice" class="primary-btn" data-settlement-mode="NO_INVOICE" data-settle-order="${d.order.id}">Settle</button>` : ''}</div></div>`;
+  document.getElementById('billingOrderCustomer')?.addEventListener('click', () => openBillingCustomerManager(d));
   document.getElementById('billingSplitBill')?.addEventListener('click', () => openBillingSplit(d, items));
   document.getElementById('billingMergeBill')?.addEventListener('click', () => openBillingMerge(d));
   document.getElementById('billingUnlockBill')?.addEventListener('click', async () => {
@@ -241,6 +247,100 @@ async function showSubmittedOrder(orderId) {
     if (value > balance) { status.textContent = `Only ${balance} reward points are available.`; return; }
     status.textContent = value ? `${value} reward point${value === 1 ? '' : 's'} selected. Apply settlement to confirm.` : 'No reward points selected.';
   });
+}
+
+async function billingCustomerPost(url, body) {
+  const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ restaurantId, actor: { id: sessionUser.id, role: sessionUser.role }, ...body }) });
+  const data = await response.json();
+  if (!response.ok || data.success === false) throw Error(data.message || 'Customer action could not be completed');
+  return data;
+}
+
+function openBillingCustomerManager(orderData = null) {
+  if (!canManageCustomers) return;
+  document.querySelector('.modifier-modal-backdrop[data-billing-customer]')?.remove();
+  const order = orderData?.order || state.selected || null;
+  const attachedCustomer = orderData?.customer || null;
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modifier-modal-backdrop';
+  backdrop.dataset.billingCustomer = 'true';
+  backdrop.innerHTML = `<div class="modifier-modal billing-customer-modal"><header><div><h2>Customers &amp; Loyalty</h2><p>${order ? `Bill ${esc(order.order_reference || order.id)} · ${esc(order.table_no || order.order_type)}` : 'Search, register and manage loyalty cards'}</p></div><button type="button" class="secondary-btn" data-close-customer>Close</button></header><div class="billing-adjustment-grid"><label>Mobile number or loyalty card<input data-customer-query inputmode="text" autocomplete="off" placeholder="Scan card or enter mobile"></label><div class="cart-actions"><button type="button" class="secondary-btn" data-customer-search>Find customer</button></div><label>New customer name<input data-customer-name autocomplete="name" placeholder="Required when registering"></label><label>Customer mobile<input data-customer-mobile inputmode="tel" autocomplete="tel" placeholder="10-digit mobile"></label><div class="cart-actions"><button type="button" class="primary-btn" data-customer-create>${order ? 'Create & attach to bill' : 'Create customer'}</button></div></div><p data-customer-status class="status-message" role="status"></p><section data-customer-result class="billing-adjustments"></section></div>`;
+  document.body.appendChild(backdrop);
+  const query = backdrop.querySelector('[data-customer-query]');
+  const name = backdrop.querySelector('[data-customer-name]');
+  const mobile = backdrop.querySelector('[data-customer-mobile]');
+  const status = backdrop.querySelector('[data-customer-status]');
+  const result = backdrop.querySelector('[data-customer-result]');
+  let selectedCustomer = attachedCustomer;
+  let selectedCards = [];
+  const renderCustomer = () => {
+    if (!selectedCustomer) { result.innerHTML = '<p class="billing-hint">Scan a printed loyalty QR/barcode or enter the customer mobile number.</p>'; return; }
+    const activeCard = selectedCards.find((card) => card.status === 'ACTIVE');
+    result.innerHTML = `<h3>${esc(selectedCustomer.name)}</h3><p>${esc(selectedCustomer.phone)} · ${Number(selectedCustomer.loyaltyBalance || 0)} reward points</p>${activeCard ? `<div class="loyalty-card-preview"><img src="/customers/cards/${activeCard.id}/qr.png?restaurantId=${encodeURIComponent(restaurantId)}" alt="QR code for loyalty card ${esc(activeCard.card_code)}"><p><strong>Active card:</strong> ${esc(activeCard.card_code)}<br><small>Barcode: ${esc(activeCard.card_code)} · QR payload: ${esc(`KMLOYALTY:${restaurantId}:${activeCard.card_code}`)}</small></p></div>` : '<p>No active loyalty card.</p>'}<div class="cart-actions">${order ? `<button type="button" class="primary-btn" data-customer-attach>${attachedCustomer?.id === selectedCustomer.id ? 'Customer attached' : 'Attach to bill'}</button>` : ''}${activeCard ? `<button type="button" class="secondary-btn" data-print-card="${activeCard.id}">Print loyalty card</button><button type="button" class="secondary-btn" data-card-replace="${activeCard.id}">Lost card / replace</button><button type="button" class="danger-btn" data-card-deactivate="${activeCard.id}">Deactivate card</button>` : '<button type="button" class="secondary-btn" data-card-issue>Issue loyalty card</button>'}</div>`;
+    result.querySelector('[data-customer-attach]')?.addEventListener('click', async (event) => {
+      event.currentTarget.disabled = true;
+      try { await billingCustomerPost('/customers/attach-order', { orderId: order.id, customerId: selectedCustomer.id }); status.textContent = `${selectedCustomer.name} attached to this bill.`; await load(); await showSubmittedOrder(order.id); backdrop.remove(); } catch (error) { status.textContent = error.message; event.currentTarget.disabled = false; }
+    });
+    result.querySelector('[data-card-issue]')?.addEventListener('click', async () => {
+      try { const issued = await billingCustomerPost('/customers/cards/issue', { customerId: selectedCustomer.id }); selectedCards = [issued.card, ...selectedCards]; status.textContent = `Card issued. QR payload: ${issued.card.qrPayload}`; renderCustomer(); } catch (error) { status.textContent = error.message; }
+    });
+    result.querySelector('[data-print-card]')?.addEventListener('click', () => {
+      const card = activeCard;
+      const printWindow = window.open('', '_blank', 'width=420,height=560');
+      if (!printWindow) { status.textContent = 'Allow pop-ups to print the loyalty card.'; return; }
+      const qrUrl = `/customers/cards/${card.id}/qr.png?restaurantId=${encodeURIComponent(restaurantId)}`;
+      printWindow.document.write(`<html><head><title>Loyalty card</title><style>body{font:16px Arial;text-align:center;padding:24px}.card{border:2px solid #0f766e;border-radius:16px;padding:22px;max-width:320px;margin:auto}img{width:220px;height:220px}b{font-size:22px;letter-spacing:1px}</style></head><body><section class="card"><h2>${esc(selectedCustomer.name)}</h2><p>${esc(selectedCustomer.phone)}</p><img src="${qrUrl}" alt="Loyalty QR"><p>Scan QR or barcode value</p><b>${esc(card.card_code)}</b></section><script>window.onload=()=>window.print()</script></body></html>`);
+      printWindow.document.close();
+    });
+    result.querySelector('[data-card-replace]')?.addEventListener('click', async (event) => {
+      try { const issued = await billingCustomerPost('/customers/cards/replace-lost', { customerId: selectedCustomer.id, oldCardId: Number(event.currentTarget.dataset.cardReplace) }); selectedCards = selectedCards.map((card) => Number(card.id) === Number(event.currentTarget.dataset.cardReplace) ? { ...card, status: 'LOST' } : card); selectedCards.unshift(issued.card); status.textContent = `Replacement card issued. QR payload: ${issued.card.qrPayload}`; renderCustomer(); } catch (error) { status.textContent = error.message; }
+    });
+    result.querySelector('[data-card-deactivate]')?.addEventListener('click', async (event) => {
+      if (!confirm('Deactivate this loyalty card? It can no longer be scanned.')) return;
+      try { await billingCustomerPost('/customers/cards/deactivate', { cardId: Number(event.currentTarget.dataset.cardDeactivate) }); selectedCards = selectedCards.map((card) => Number(card.id) === Number(event.currentTarget.dataset.cardDeactivate) ? { ...card, status: 'DEACTIVATED' } : card); status.textContent = 'Loyalty card deactivated.'; renderCustomer(); } catch (error) { status.textContent = error.message; }
+    });
+  };
+  const search = async () => {
+    const entered = query.value.trim();
+    if (!entered) { status.textContent = 'Scan a loyalty card or enter a mobile number.'; return; }
+    try {
+      const data = await getJson(`/customers/lookup?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(sessionUser.role)}&query=${encodeURIComponent(entered)}`);
+      selectedCustomer = data.customer || null; selectedCards = data.cards || [];
+      if (selectedCustomer) { mobile.value = selectedCustomer.phone || ''; name.value = selectedCustomer.name || ''; status.textContent = 'Customer found.'; }
+      else status.textContent = /^\d{10}$/.test(entered.replace(/\D/g, '').slice(-10)) ? 'No customer found. Enter the name and create this customer.' : 'Card not found. Enter name and unique mobile to register this scanned card.';
+      renderCustomer();
+    } catch (error) { status.textContent = error.message; }
+  };
+  backdrop.querySelector('[data-customer-search]').onclick = search;
+  query.onkeydown = (event) => { if (event.key === 'Enter') { event.preventDefault(); search(); } };
+  backdrop.querySelector('[data-customer-create]').onclick = async () => {
+    try {
+      const cardCode = query.value.trim().replace(/^KMLOYALTY:[^:]+:/i, '');
+      if (order) {
+        const created = await billingCustomerPost('/customers/create-and-attach', { orderId: order.id, name: name.value, phone: mobile.value });
+        selectedCustomer = created.customer;
+      } else {
+        const created = await billingCustomerPost('/customers/create', { name: name.value, phone: mobile.value });
+        selectedCustomer = created.customer;
+      }
+      selectedCards = [];
+      if (cardCode && !/^\d{10}$/.test(cardCode.replace(/\D/g, '').slice(-10))) {
+        const issued = await billingCustomerPost('/customers/cards/issue', { customerId: selectedCustomer.id, cardCode });
+        selectedCards = [issued.card];
+      }
+      status.textContent = order ? `${selectedCustomer.name} created and attached to this bill.` : `${selectedCustomer.name} created.`;
+      renderCustomer();
+      if (order) { await load(); await showSubmittedOrder(order.id); }
+    } catch (error) { status.textContent = error.message; }
+  };
+  backdrop.querySelector('[data-close-customer]').onclick = () => backdrop.remove();
+  backdrop.addEventListener('click', (event) => { if (event.target === backdrop) backdrop.remove(); });
+  if (selectedCustomer) {
+    query.value = selectedCustomer.phone || '';
+    name.value = selectedCustomer.name || '';
+    (async () => { try { const data = await getJson(`/customers/lookup?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(sessionUser.role)}&query=${encodeURIComponent(selectedCustomer.phone)}`); selectedCards = data.cards || []; renderCustomer(); } catch { renderCustomer(); } })();
+  } else renderCustomer();
+  query.focus();
 }
 
 async function openBillingOrderTransfer() {

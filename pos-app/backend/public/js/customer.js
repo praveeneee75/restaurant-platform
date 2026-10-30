@@ -90,9 +90,11 @@ async function loadProfile(customerId) {
   profileTitle.textContent = `${data.customer.name} · ${data.customer.loyaltyBalance} pts`;
   const earned = data.ledger.filter((row) => ["EARN", "ADJUSTMENT"].includes(String(row.type).toUpperCase())).reduce((sum, row) => sum + Number(row.points || 0), 0);
   const redeemed = data.ledger.filter((row) => String(row.type).toUpperCase() === "REDEEM").reduce((sum, row) => sum + Number(row.points || 0), 0);
+  const activeCard = (data.cards || []).find((card) => card.status === "ACTIVE");
   customerProfile.innerHTML = `
     <p class="customer-contact">${esc(data.customer.phone)} ${data.customer.email ? "· " + esc(data.customer.email) : ""}</p>
     <div class="customer-value-grid"><article><span>Lifetime spend</span><strong>INR ${money(data.totalSpend)}</strong></article><article><span>Visits</span><strong>${data.visitCount}</strong></article><article><span>Available points</span><strong>${data.customer.loyaltyBalance}</strong></article><article><span>Earned / redeemed</span><strong>${earned} / ${redeemed}</strong></article></div>
+    <h3>Loyalty Cards</h3><div class="loyalty-ledger">${(data.cards || []).map((card) => `<p><span class="status-pill ${card.status === "ACTIVE" ? "success" : "warning"}">${esc(card.status)}</span><strong>${esc(card.card_code)}</strong><span>${card.status === "ACTIVE" ? `QR payload: ${esc(`KMLOYALTY:${restaurantId}:${card.card_code}`)}` : esc(card.notes || "")}</span><small>${esc(window.formatPosDateTime(card.issued_at))}</small></p>`).join("") || "<p>No loyalty card issued.</p>"}</div><div class="cart-actions">${activeCard ? `<button type="button" class="secondary-btn" data-replace-card="${activeCard.id}">Lost card / Replace</button><button type="button" class="danger-btn" data-deactivate-card="${activeCard.id}">Deactivate card</button>` : '<button type="button" class="secondary-btn" data-issue-card>Issue loyalty card</button>'}</div>
     <h3>Visit History</h3><div class="crm-timeline">${data.visits.map((visit) => `<p><strong>Order #${visit.order_id}</strong><span>INR ${money(visit.amount)}</span><small>${esc(window.formatPosDateTime(visit.visit_at))}</small></p>`).join("") || "<p>No visits</p>"}</div>
     <h3>Loyalty Ledger</h3><div class="loyalty-ledger">${data.ledger.map((row) => `<p><span class="status-pill ${String(row.type).toUpperCase() === "REDEEM" ? "warning" : "success"}">${esc(row.type)}</span><strong>${row.points} pts</strong><span>${esc(row.note || "")}</span><small>${esc(window.formatPosDateTime(row.created_at))}</small></p>`).join("") || "<p>No loyalty activity</p>"}</div>
     <h3>Notes</h3>${data.notes.map((note) => `<p>${esc(note.note)} · ${esc(window.formatPosDateTime(note.created_at))}</p>`).join("") || "<p>No notes</p>"}
@@ -123,6 +125,18 @@ document.addEventListener("click", async (event) => {
   if (!target) return;
   if (target.dataset.profile) await loadProfile(Number(target.dataset.profile));
   if (target.dataset.edit) fillCustomer(state.customers.find((customer) => customer.id === Number(target.dataset.edit)));
+  if (target.dataset.issueCard && state.selectedCustomerId) {
+    await postJson('/customers/cards/issue', { customerId: state.selectedCustomerId });
+    await loadProfile(state.selectedCustomerId);
+  }
+  if (target.dataset.replaceCard && state.selectedCustomerId) {
+    await postJson('/customers/cards/replace-lost', { customerId: state.selectedCustomerId, oldCardId: Number(target.dataset.replaceCard) });
+    await loadProfile(state.selectedCustomerId);
+  }
+  if (target.dataset.deactivateCard && state.selectedCustomerId && confirm('Deactivate this loyalty card?')) {
+    await postJson('/customers/cards/deactivate', { cardId: Number(target.dataset.deactivateCard) });
+    await loadProfile(state.selectedCustomerId);
+  }
   if (target.dataset.delete && confirm("Delete this customer?")) {
     const data = await postJson("/customers/delete", { id: Number(target.dataset.delete) });
     if (!data.success) return alert(data.message);
