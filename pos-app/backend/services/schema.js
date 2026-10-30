@@ -420,6 +420,9 @@ function ensureRestaurantSchema(db) {
   addColumn(db, 'items', 'retail_cost REAL DEFAULT 0');
   addColumn(db, 'items', 'retail_stock REAL DEFAULT 0');
   addColumn(db, 'items', 'retail_reorder_level REAL DEFAULT 0');
+  // Unlimited retail items (for example, prepared Tea) do not participate in
+  // stock availability, deduction, low-stock alerts, or stock movements.
+  addColumn(db, 'items', 'retail_unlimited INTEGER DEFAULT 0');
   addColumn(db, 'items', 'alpha_short_code TEXT');
   addColumn(db, 'items', 'numeric_short_code TEXT');
   addColumn(db, 'items', "tax_mode TEXT NOT NULL DEFAULT 'INCLUSIVE'");

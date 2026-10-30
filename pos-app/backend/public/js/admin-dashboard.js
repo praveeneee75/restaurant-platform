@@ -339,7 +339,7 @@ function renderAdmin() {
   });
   if (itemFilterCount) itemFilterCount.textContent = `${visibleItems.length}/${items.length}`;
   const canManageMenu = can("admin.menu.manage");
-  itemsTable.innerHTML = visibleItems.map((i) => `<tr><td><strong>${esc(i.item_code || String(i.id).padStart(4, "0"))}</strong></td><td>${esc(i.name)}</td><td>${esc(i.barcode || "—")}</td><td>${money(i.retail_stock)}</td><td>${esc(String(i.tax_mode || "INCLUSIVE").toUpperCase() === "EXCLUSIVE" ? "Exclusive" : "Inclusive")}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td>${[['allow_dine_in','Dine In'],['allow_parcel','Parcel'],['allow_party_order','Party'],['allow_retail','Retail'],['online_enabled','Online'],['active','Active']].map(([field,label]) => `<td><label class="availability-toggle" title="${label}"><input type="checkbox" data-item-channel="${field}" data-item-id="${i.id}" ${Number(i[field] ?? (field === 'allow_retail' ? 0 : 1)) === 1 ? 'checked' : ''} ${canManageMenu ? '' : 'disabled'}><span>${label}</span></label></td>`).join('')}<td>${canManageMenu ? actions("item", i.id) : '—'}</td></tr>`).join("");
+  itemsTable.innerHTML = visibleItems.map((i) => `<tr><td><strong>${esc(i.item_code || String(i.id).padStart(4, "0"))}</strong></td><td>${esc(i.name)}</td><td>${esc(i.barcode || "—")}</td><td>${Number(i.retail_unlimited) ? 'Unlimited' : money(i.retail_stock)}</td><td>${esc(String(i.tax_mode || "INCLUSIVE").toUpperCase() === "EXCLUSIVE" ? "Exclusive" : "Inclusive")}</td><td>${esc(i.category_name || "")}</td><td>${esc(i.kitchen_name || "")}</td><td>${money(i.price)}</td>${[['allow_dine_in','Dine In'],['allow_parcel','Parcel'],['allow_party_order','Party'],['allow_retail','Retail'],['online_enabled','Online'],['active','Active']].map(([field,label]) => `<td><label class="availability-toggle" title="${label}"><input type="checkbox" data-item-channel="${field}" data-item-id="${i.id}" ${Number(i[field] ?? (field === 'allow_retail' ? 0 : 1)) === 1 ? 'checked' : ''} ${canManageMenu ? '' : 'disabled'}><span>${label}</span></label></td>`).join('')}<td>${canManageMenu ? actions("item", i.id) : '—'}</td></tr>`).join("");
   usersTable.innerHTML = users.map((u) => {
     const canUnlock = isFutureDate(u.locked_until) || u.unlock_requested_at || Number(u.failed_login_attempts || 0) > 0;
     return `<tr>
@@ -922,6 +922,14 @@ function editCategory(id) {
   focusFirstInput(categoryForm);
 }
 
+function syncUnlimitedRetailStockFields() {
+  const unlimited = Boolean(itemRetailUnlimited?.checked);
+  itemRetailStock.disabled = unlimited;
+  itemRetailReorderLevel.disabled = unlimited;
+  itemRetailStock.setAttribute('aria-disabled', String(unlimited));
+  itemRetailReorderLevel.setAttribute('aria-disabled', String(unlimited));
+}
+
 function editItem(id) {
   const row = findById(state.admin.items, id);
   if (!row) return;
@@ -935,7 +943,9 @@ function editItem(id) {
   itemBarcode.value = row.barcode || "";
   itemRetailCost.value = row.retail_cost ?? 0;
   itemRetailStock.value = row.retail_stock ?? 0;
+  itemRetailUnlimited.checked = Number(row.retail_unlimited) === 1;
   itemRetailReorderLevel.value = row.retail_reorder_level ?? 0;
+  syncUnlimitedRetailStockFields();
   itemOnlineDescription.value = row.online_description || "";
   itemImageUrl.value = row.image_url || "";
   itemVeg.checked = Number(row.is_veg ?? 1) === 1;
@@ -1677,6 +1687,7 @@ printerDiscoveryResults?.addEventListener('change', () => {
   printerName.value = printer.name; printerConnection.value = printer.connection; printerAddress.value = printer.address;
 });
 categoryForm.addEventListener("submit", async (e) => { e.preventDefault(); await postJson("/admin/categories/save", { id: categoryId.value || null, name: categoryName.value, kitchenId: categoryKitchen.value, active: categoryActive.checked }); categoryForm.reset(); categoryActive.checked = true; await loadAdmin(); });
+itemRetailUnlimited.addEventListener('change', syncUnlimitedRetailStockFields);
 itemForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   itemValidationStatus.textContent = "";
@@ -1689,8 +1700,8 @@ itemForm.addEventListener("submit", async (e) => {
     return;
   }
   try {
-    await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, alphaShortCode: "", numericShortCode: "", taxMode: itemTaxMode.value, barcode:itemBarcode.value, retailCost:itemRetailCost.value, retailStock:itemRetailStock.value, retailReorderLevel:itemRetailReorderLevel.value, onlineDescription: itemOnlineDescription.value, imageUrl: itemImageUrl.value, isVeg: itemVeg.checked, allowDineIn:itemDineIn.checked, allowParcel:itemParcel.checked, allowPartyOrder:itemPartyOrder.checked, allowRetail:itemRetail.checked, onlineEnabled:itemOnlineEnabled.checked, active:itemActive.checked });
-    itemForm.reset(); itemDineIn.checked = true; itemParcel.checked = true; itemPartyOrder.checked = true; itemRetail.checked=false; itemActive.checked = true; itemOnlineEnabled.checked = true; itemTaxMode.value = "INCLUSIVE";
+    await postJson("/admin/items/save", { id: itemId.value || null, name: itemName.value, categoryId: itemCategory.value, price: itemPrice.value, alphaShortCode: "", numericShortCode: "", taxMode: itemTaxMode.value, barcode:itemBarcode.value, retailCost:itemRetailCost.value, retailStock:itemRetailStock.value, retailReorderLevel:itemRetailReorderLevel.value, retailUnlimited:itemRetailUnlimited.checked, onlineDescription: itemOnlineDescription.value, imageUrl: itemImageUrl.value, isVeg: itemVeg.checked, allowDineIn:itemDineIn.checked, allowParcel:itemParcel.checked, allowPartyOrder:itemPartyOrder.checked, allowRetail:itemRetail.checked, onlineEnabled:itemOnlineEnabled.checked, active:itemActive.checked });
+    itemForm.reset(); itemDineIn.checked = true; itemParcel.checked = true; itemPartyOrder.checked = true; itemRetail.checked=false; itemActive.checked = true; itemOnlineEnabled.checked = true; itemTaxMode.value = "INCLUSIVE"; syncUnlimitedRetailStockFields();
     await loadAdmin();
   } catch (error) {
     itemValidationStatus.textContent = error.message || "Item could not be saved.";

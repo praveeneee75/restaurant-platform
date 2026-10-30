@@ -149,6 +149,40 @@ async function main() {
   });
   if (shortage.status < 400 || !/only 10/i.test(shortage.data.message))
     throw new Error("insufficient stock was accepted");
+  await ok("POST", "/admin/items/save", {
+    restaurantId, actor: owner, id: item.id, name: item.name, categoryId: item.category_id,
+    price: 100, taxMode: "INCLUSIVE", allowRetail: true, barcode: "8901234567890",
+    retailCost: 60, retailStock: 10, retailReorderLevel: 2, retailUnlimited: true,
+    active: true, onlineEnabled: true
+  });
+  const unlimitedBoot = await ok("GET", `/retail/bootstrap?restaurantId=${restaurantId}&role=OWNER`);
+  const unlimitedItem = unlimitedBoot.items.find((entry) => entry.id === item.id);
+  if (!unlimitedItem || Number(unlimitedItem.retail_unlimited) !== 1) throw new Error("unlimited retail item was not exposed to the counter");
+  const unlimitedAdjustment = await request("POST", "/retail/stock-adjust", {
+    restaurantId, actor: owner, itemId: item.id, quantity: 1, notes: "must not adjust unlimited stock"
+  });
+  if (unlimitedAdjustment.status < 400 || !/do not use stock adjustments/i.test(unlimitedAdjustment.data.message))
+    throw new Error("unlimited retail item accepted a stock adjustment");
+  const unlimitedPrepared = await ok("POST", "/retail/orders/prepare", {
+    restaurantId, actor: owner, items: [{ itemId: item.id, quantity: 11 }]
+  });
+  await ok("POST", "/orders/settle", {
+    restaurantId, actor: owner, orderId: unlimitedPrepared.orderId,
+    payments: [{ method: "CARD", amount: unlimitedPrepared.payable }], redeemPoints: 0,
+    isInvoice: true, printBill: false
+  });
+  db = openDatabase(restaurantId);
+  const unlimitedStock = db.prepare('SELECT retail_stock FROM items WHERE id=?').get(item.id);
+  const unlimitedMovements = db.prepare("SELECT COUNT(*) count FROM retail_stock_movements WHERE order_id=?").get(unlimitedPrepared.orderId);
+  db.close();
+  if (Number(unlimitedStock.retail_stock) !== 10 || Number(unlimitedMovements.count) !== 0)
+    throw new Error("unlimited retail sale changed stock or created a stock movement");
+  await ok("POST", "/admin/items/save", {
+    restaurantId, actor: owner, id: item.id, name: item.name, categoryId: item.category_id,
+    price: 100, taxMode: "INCLUSIVE", allowRetail: true, barcode: "8901234567890",
+    retailCost: 60, retailStock: 10, retailReorderLevel: 2, retailUnlimited: false,
+    active: true, onlineEnabled: true
+  });
   db = openDatabase(restaurantId);
   const retailRole = db.prepare("SELECT id FROM roles WHERE name='RETAIL'").get();
   const retailView = db.prepare("SELECT id FROM permissions WHERE code='retail.view'").get();

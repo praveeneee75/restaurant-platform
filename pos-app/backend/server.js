@@ -4005,7 +4005,7 @@ app.get('/admin/bootstrap', (req, res) => {
       items: db.prepare(`
         SELECT i.id, printf('%04d', i.id) AS item_code, i.name, i.category_id, i.price, i.alpha_short_code, i.numeric_short_code, i.tax_mode,
                i.is_veg, i.allow_dine_in, i.allow_parcel, i.allow_party_order, i.allow_retail, i.barcode,
-               i.retail_cost, i.retail_stock, i.retail_reorder_level, i.active,
+               i.retail_cost, i.retail_stock, i.retail_reorder_level, i.retail_unlimited, i.active,
                i.image_url, i.online_description, i.online_enabled,
                c.name AS category_name, k.name AS kitchen_name
         FROM items i
@@ -4998,7 +4998,7 @@ app.post('/admin/categories/delete', (req, res) => {
 });
 
 app.post('/admin/items/save', (req, res) => {
-  const { restaurantId, actor, id, name, categoryId, price, alphaShortCode, numericShortCode, taxMode, isVeg, allowDineIn, allowParcel, allowPartyOrder, allowRetail, barcode, retailCost, retailStock, retailReorderLevel, active, imageUrl, onlineDescription, onlineEnabled } = req.body;
+  const { restaurantId, actor, id, name, categoryId, price, alphaShortCode, numericShortCode, taxMode, isVeg, allowDineIn, allowParcel, allowPartyOrder, allowRetail, barcode, retailCost, retailStock, retailReorderLevel, retailUnlimited, active, imageUrl, onlineDescription, onlineEnabled } = req.body;
   if (!restaurantId || !hasText(name) || !isPositiveId(categoryId) || !isValidAmount(price) || !canManage(actor?.role)) return res.status(400).json({ success: false, message: 'Item name, category, valid price and manager permission are required' });
 
   const db = openRestaurantDatabase(restaurantId);
@@ -5007,11 +5007,12 @@ app.post('/admin/items/save', (req, res) => {
     const alphaCode = normaliseText(alphaShortCode).toUpperCase().replace(/\s+/g, ' ');
     const numberCode = normaliseText(numericShortCode);
     const itemTaxMode = String(taxMode || 'INCLUSIVE').toUpperCase() === 'EXCLUSIVE' ? 'EXCLUSIVE' : 'INCLUSIVE';
-    const existingRetail = id ? db.prepare('SELECT barcode,retail_cost,retail_stock,retail_reorder_level,allow_retail FROM items WHERE id=?').get(id) || {} : {};
+    const existingRetail = id ? db.prepare('SELECT barcode,retail_cost,retail_stock,retail_reorder_level,retail_unlimited,allow_retail FROM items WHERE id=?').get(id) || {} : {};
     const barcodeValue = normaliseText(barcode);
     if (barcodeValue && !/^[0-9A-Za-z._-]{4,64}$/.test(barcodeValue)) throw new Error('Barcode must contain 4 to 64 letters, numbers, dots, dashes or underscores');
     if (barcodeValue && db.prepare('SELECT id FROM items WHERE deleted_at IS NULL AND id<>COALESCE(?,-1) AND TRIM(barcode)=?').get(id||null,barcodeValue)) throw new Error('Barcode is already assigned to another item');
     const safeRetailCost=Number(retailCost ?? existingRetail.retail_cost ?? 0), safeRetailStock=Number(retailStock ?? existingRetail.retail_stock ?? 0), safeReorder=Number(retailReorderLevel ?? existingRetail.retail_reorder_level ?? 0);
+    const safeRetailUnlimited = retailUnlimited === undefined ? Number(existingRetail.retail_unlimited || 0) : (retailUnlimited ? 1 : 0);
     if (![safeRetailCost,safeRetailStock,safeReorder].every(Number.isFinite) || safeRetailCost<0 || safeRetailStock<0 || safeReorder<0) throw new Error('Retail cost, stock and reorder level must be numeric and zero or more');
     if (alphaCode && !/^[A-Z]+(?: [A-Z]+)*$/.test(alphaCode)) throw new Error('Alphabetic short code can contain letters and spaces only');
     if (numberCode && !/^\d+$/.test(numberCode)) throw new Error('Numeric short code can contain digits only');
@@ -5025,10 +5026,10 @@ app.post('/admin/items/save', (req, res) => {
     if (activeNameExists(db, 'items', 'name', name, id)) throw new Error('Item name already exists');
     const oldValue = id ? db.prepare('SELECT * FROM items WHERE id = ?').get(id) : null;
     const result = id
-      ? db.prepare('UPDATE items SET name=?,category_id=?,price=?,alpha_short_code=NULLIF(?,\'\'),numeric_short_code=NULLIF(?,\'\'),tax_mode=?,is_veg=?,allow_dine_in=?,allow_parcel=?,allow_party_order=?,allow_retail=?,barcode=NULLIF(?,\'\'),retail_cost=?,retail_stock=?,retail_reorder_level=?,active=?,image_url=?,online_description=?,online_enabled=? WHERE id=?')
-          .run(name,categoryId,price,alphaCode,numberCode,itemTaxMode,isVeg?1:0,allowDineIn===false?0:1,allowParcel===false?0:1,allowPartyOrder===false?0:1,allowRetail === undefined ? Number(existingRetail.allow_retail||0) : (allowRetail?1:0),barcode === undefined ? normaliseText(existingRetail.barcode) : barcodeValue,safeRetailCost,safeRetailStock,safeReorder,active===false?0:1,normaliseText(imageUrl),normaliseText(onlineDescription),onlineEnabled===false?0:1,id)
-      : db.prepare('INSERT INTO items(name,category_id,price,alpha_short_code,numeric_short_code,tax_mode,is_veg,allow_dine_in,allow_parcel,allow_party_order,allow_retail,barcode,retail_cost,retail_stock,retail_reorder_level,active,image_url,online_description,online_enabled) VALUES(?,?,?,NULLIF(?,\'\'),NULLIF(?,\'\'),?,?,?,?,?,?,NULLIF(?,\'\'),?,?,?,1,?,?,?)')
-          .run(name,categoryId,price,alphaCode,numberCode,itemTaxMode,isVeg?1:0,allowDineIn===false?0:1,allowParcel===false?0:1,allowPartyOrder===false?0:1,allowRetail?1:0,barcodeValue,safeRetailCost,safeRetailStock,safeReorder,normaliseText(imageUrl),normaliseText(onlineDescription),onlineEnabled===false?0:1);
+      ? db.prepare('UPDATE items SET name=?,category_id=?,price=?,alpha_short_code=NULLIF(?,\'\'),numeric_short_code=NULLIF(?,\'\'),tax_mode=?,is_veg=?,allow_dine_in=?,allow_parcel=?,allow_party_order=?,allow_retail=?,barcode=NULLIF(?,\'\'),retail_cost=?,retail_stock=?,retail_reorder_level=?,retail_unlimited=?,active=?,image_url=?,online_description=?,online_enabled=? WHERE id=?')
+          .run(name,categoryId,price,alphaCode,numberCode,itemTaxMode,isVeg?1:0,allowDineIn===false?0:1,allowParcel===false?0:1,allowPartyOrder===false?0:1,allowRetail === undefined ? Number(existingRetail.allow_retail||0) : (allowRetail?1:0),barcode === undefined ? normaliseText(existingRetail.barcode) : barcodeValue,safeRetailCost,safeRetailStock,safeReorder,safeRetailUnlimited,active===false?0:1,normaliseText(imageUrl),normaliseText(onlineDescription),onlineEnabled===false?0:1,id)
+      : db.prepare('INSERT INTO items(name,category_id,price,alpha_short_code,numeric_short_code,tax_mode,is_veg,allow_dine_in,allow_parcel,allow_party_order,allow_retail,barcode,retail_cost,retail_stock,retail_reorder_level,retail_unlimited,active,image_url,online_description,online_enabled) VALUES(?,?,?,NULLIF(?,\'\'),NULLIF(?,\'\'),?,?,?,?,?,?,NULLIF(?,\'\'),?,?,?,?,1,?,?,?)')
+          .run(name,categoryId,price,alphaCode,numberCode,itemTaxMode,isVeg?1:0,allowDineIn===false?0:1,allowParcel===false?0:1,allowPartyOrder===false?0:1,allowRetail?1:0,barcodeValue,safeRetailCost,safeRetailStock,safeReorder,safeRetailUnlimited,normaliseText(imageUrl),normaliseText(onlineDescription),onlineEnabled===false?0:1);
     const newValue = db.prepare('SELECT * FROM items WHERE id = ?').get(id || result.lastInsertRowid);
     writeAudit(db, actor, id ? 'UPDATE' : 'CREATE', 'ITEM', id || result.lastInsertRowid, oldValue, newValue);
     if (id && oldValue && Number(oldValue.price) !== Number(newValue.price)) {
@@ -7213,16 +7214,16 @@ function deductRetailStockForOrder(db, actor, orderId) {
   const existing = db.prepare("SELECT id FROM retail_stock_movements WHERE order_id = ? AND movement_type = 'SALE' LIMIT 1").get(orderId);
   if (existing) return { deducted: false, rows: [] };
   const rows = db.prepare(`
-    SELECT i.id item_id, i.name, COALESCE(i.retail_stock,0) stock, SUM(oi.quantity) quantity
+    SELECT i.id item_id, i.name, COALESCE(i.retail_stock,0) stock, COALESCE(i.retail_unlimited,0) retail_unlimited, SUM(oi.quantity) quantity
     FROM order_items oi JOIN items i ON i.id=oi.item_id
-    WHERE oi.order_id=? GROUP BY i.id,i.name,i.retail_stock
+    WHERE oi.order_id=? GROUP BY i.id,i.name,i.retail_stock,i.retail_unlimited
   `).all(orderId);
   const allowNegative = getBooleanConfig(db, 'retail_allow_negative_stock', false);
-  const shortage = rows.find((row) => !allowNegative && Number(row.quantity) > Number(row.stock));
+  const shortage = rows.find((row) => !Number(row.retail_unlimited) && !allowNegative && Number(row.quantity) > Number(row.stock));
   if (shortage) throw new Error(`${shortage.name} has only ${Number(shortage.stock)} unit(s) in stock`);
   const update = db.prepare('UPDATE items SET retail_stock=COALESCE(retail_stock,0)-? WHERE id=?');
   const movement = db.prepare("INSERT INTO retail_stock_movements(item_id,movement_type,quantity,balance_after,order_id,notes,performed_by) VALUES(?,'SALE',?,?,?,?,?)");
-  rows.forEach((row) => {
+  rows.filter((row) => !Number(row.retail_unlimited)).forEach((row) => {
     update.run(Number(row.quantity), row.item_id);
     const balance = Number(db.prepare('SELECT retail_stock FROM items WHERE id=?').get(row.item_id).retail_stock);
     movement.run(row.item_id, -Number(row.quantity), balance, orderId, 'Retail counter sale', actor?.id || null);
@@ -7234,8 +7235,8 @@ function deductRetailStockForOrder(db, actor, orderId) {
 function restoreRetailStockForFullRefund(db, actor, orderId) {
   const order=db.prepare('SELECT order_type FROM orders WHERE id=?').get(orderId);
   if(order?.order_type!=='RETAIL'||db.prepare("SELECT id FROM retail_stock_movements WHERE order_id=? AND movement_type='RETURN' LIMIT 1").get(orderId)) return;
-  const rows=db.prepare('SELECT item_id,SUM(quantity) quantity FROM order_items WHERE order_id=? GROUP BY item_id').all(orderId);
-  rows.forEach(row=>{
+  const rows=db.prepare('SELECT oi.item_id,SUM(oi.quantity) quantity,COALESCE(i.retail_unlimited,0) retail_unlimited FROM order_items oi JOIN items i ON i.id=oi.item_id WHERE oi.order_id=? GROUP BY oi.item_id,i.retail_unlimited').all(orderId);
+  rows.filter(row=>!Number(row.retail_unlimited)).forEach(row=>{
     db.prepare('UPDATE items SET retail_stock=COALESCE(retail_stock,0)+? WHERE id=?').run(Number(row.quantity),row.item_id);
     const balance=Number(db.prepare('SELECT retail_stock FROM items WHERE id=?').get(row.item_id).retail_stock);
     db.prepare("INSERT INTO retail_stock_movements(item_id,movement_type,quantity,balance_after,order_id,notes,performed_by) VALUES(?,'RETURN',?,?,?,?,?)").run(row.item_id,Number(row.quantity),balance,orderId,'Full retail refund',actor?.id||null);
@@ -7253,7 +7254,7 @@ app.get('/retail/bootstrap', (req, res) => {
       const error = new Error('Retail Counter is disabled. Enable it in Admin > Settings > Retail Counter.'); error.status=403; throw error;
     }
     const items = db.prepare(`SELECT i.id, printf('%04d',i.id) item_code, i.name, i.price, i.tax_mode, i.barcode,
-      COALESCE(i.retail_stock,0) retail_stock, COALESCE(i.retail_reorder_level,0) retail_reorder_level,
+      COALESCE(i.retail_stock,0) retail_stock, COALESCE(i.retail_reorder_level,0) retail_reorder_level, COALESCE(i.retail_unlimited,0) retail_unlimited,
       c.id category_id,c.name category_name
       FROM items i JOIN categories c ON c.id=i.category_id
       WHERE i.deleted_at IS NULL AND i.active=1 AND COALESCE(i.allow_retail,0)=1
@@ -7261,7 +7262,7 @@ app.get('/retail/bootstrap', (req, res) => {
     const summary=db.prepare(`SELECT COUNT(*) transactions,COALESCE(SUM(o.total_amount),0) sales,
       COALESCE(SUM((SELECT SUM(oi.quantity*COALESCE(i.retail_cost,0)) FROM order_items oi JOIN items i ON i.id=oi.item_id WHERE oi.order_id=o.id)),0) cost
       FROM orders o WHERE o.order_type='RETAIL' AND o.payment_status='PAID' AND DATE(o.settled_at)=DATE('now','localtime')`).get();
-    summary.lowStockItems=items.filter(item=>Number(item.retail_stock)<=Number(item.retail_reorder_level)).length;
+    summary.lowStockItems=items.filter(item=>!Number(item.retail_unlimited) && Number(item.retail_stock)<=Number(item.retail_reorder_level)).length;
     summary.grossProfit=Number(summary.sales)-Number(summary.cost);
     res.json({ success:true, items, summary, settings:{ currency:getConfigValue(db,'currency','INR'), allowNegativeStock:getBooleanConfig(db,'retail_allow_negative_stock',false), lowStockWarning:getBooleanConfig(db,'retail_low_stock_warning',true) } });
   } catch (err) { sendError(res,err); } finally { db.close(); }
@@ -7280,14 +7281,14 @@ app.post('/retail/orders/prepare', (req, res) => {
       const created=db.prepare(`INSERT INTO orders(order_type,table_no,status,payment_status,created_by,order_source,order_sequence,customer_ref,order_reference)
         VALUES('RETAIL','Retail Counter','OPEN','UNPAID',?,'POS_RETAIL',?,?,?)`).run(actor?.id||null,identity.orderSequence,identity.customerRef,identity.orderReference);
       const orderId=Number(created.lastInsertRowid);
-      const lookup=db.prepare(`SELECT i.id,i.name,i.price,COALESCE(i.retail_stock,0) retail_stock,c.kitchen_id
+      const lookup=db.prepare(`SELECT i.id,i.name,i.price,COALESCE(i.retail_stock,0) retail_stock,COALESCE(i.retail_unlimited,0) retail_unlimited,c.kitchen_id
         FROM items i JOIN categories c ON c.id=i.category_id WHERE i.id=? AND i.active=1 AND i.deleted_at IS NULL AND COALESCE(i.allow_retail,0)=1`);
       const insertItem=db.prepare("INSERT INTO order_items(order_id,item_id,quantity,kitchen_id,price,status,fulfillment_type) VALUES(?,?,?,?,?,'PLACED','RETAIL')");
       const requested=new Map();
       items.forEach((line)=>requested.set(Number(line.itemId),(requested.get(Number(line.itemId))||0)+Number(line.quantity)));
       for (const [itemId,quantity] of requested) {
         const item=lookup.get(itemId); if(!item) throw new Error(`Retail item ${itemId} is unavailable`);
-        if(!getBooleanConfig(db,'retail_allow_negative_stock',false)&&quantity>Number(item.retail_stock)) throw new Error(`${item.name} has only ${Number(item.retail_stock)} unit(s) in stock`);
+        if(!Number(item.retail_unlimited) && !getBooleanConfig(db,'retail_allow_negative_stock',false)&&quantity>Number(item.retail_stock)) throw new Error(`${item.name} has only ${Number(item.retail_stock)} unit(s) in stock`);
         insertItem.run(orderId,item.id,quantity,item.kitchen_id,item.price);
       }
       const retailKitchen=db.prepare('SELECT kitchen_id FROM order_items WHERE order_id=? ORDER BY id LIMIT 1').get(orderId);
@@ -7308,7 +7309,8 @@ app.post('/retail/stock-adjust', (req,res)=>{
   const db=openRestaurantDatabase(restaurantId);
   try{
     requirePermission(db,actor?.role,'retail.stock_adjust','Retail stock adjustment permission required');
-    const item=db.prepare('SELECT id,name,COALESCE(retail_stock,0) retail_stock FROM items WHERE id=? AND deleted_at IS NULL').get(itemId); if(!item) throw new Error('Item not found');
+    const item=db.prepare('SELECT id,name,COALESCE(retail_stock,0) retail_stock,COALESCE(retail_unlimited,0) retail_unlimited FROM items WHERE id=? AND deleted_at IS NULL').get(itemId); if(!item) throw new Error('Item not found');
+    if(Number(item.retail_unlimited)) throw new Error('Unlimited retail items do not use stock adjustments');
     const balance=Number(item.retail_stock)+qty; if(balance<0&&!getBooleanConfig(db,'retail_allow_negative_stock',false)) throw new Error('Stock adjustment cannot make stock negative');
     db.transaction(()=>{db.prepare('UPDATE items SET retail_stock=? WHERE id=?').run(balance,itemId);db.prepare("INSERT INTO retail_stock_movements(item_id,movement_type,quantity,balance_after,notes,performed_by) VALUES(?,'ADJUSTMENT',?,?,?,?)").run(itemId,qty,balance,normaliseText(notes)||'Manual adjustment',actor?.id||null);writeAudit(db,actor,'ADJUST','RETAIL_STOCK',itemId,{stock:item.retail_stock},{stock:balance,quantity:qty});})();
     res.json({success:true,itemId:Number(itemId),stock:balance});
