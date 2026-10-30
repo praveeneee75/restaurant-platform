@@ -108,6 +108,63 @@
     nav.appendChild(help);
   }
 
+  // Every desktop workspace uses this same, permission-aware navigation
+  // context.  In particular, Retail Counter must not disappear merely
+  // because the operator navigated to Availability, Reports, or Billing.
+  async function applyWorkspaceNavigation() {
+    if (!nav || !restaurantId) return;
+    let user;
+    try { user = JSON.parse(localStorage.getItem('user') || 'null'); } catch (_) { return; }
+    const role = String(user?.role || '').toUpperCase();
+    if (!role) return;
+    try {
+      const response = await fetch(`/navigation/context?restaurantId=${encodeURIComponent(restaurantId)}&role=${encodeURIComponent(role)}`);
+      const context = await response.json();
+      if (!response.ok || context.success === false) return;
+      const permissions = context.permissions || {};
+      const visibility = {
+        'dine-in': Boolean(permissions.ordersCreate),
+        parcel: Boolean(permissions.ordersCreate) && !['CAPTAIN', 'WAITER', 'RETAIL', 'KITCHEN'].includes(role),
+        party: Boolean(permissions.ordersCreate) && !['CAPTAIN', 'WAITER', 'RETAIL', 'KITCHEN'].includes(role),
+        billing: Boolean(permissions.billingSettle),
+        invoices: Boolean(permissions.invoicesView),
+        kds: Boolean(permissions.kdsView),
+        reports: Boolean(permissions.reportsView),
+        availability: Boolean(permissions.availabilityManage),
+        'live-orders': Boolean(permissions.billingSettle),
+        admin: Boolean(permissions.adminView),
+        retail: Boolean(context.retailCounterEnabled) && Boolean(permissions.retailView),
+        'retail-items': role === 'RETAIL' && Boolean(permissions.inventoryView)
+      };
+      const keyFor = (link) => {
+        if (link.dataset.roleNav) return link.dataset.roleNav;
+        const href = link.getAttribute('href') || '';
+        if (href.includes('mode=DINE_IN')) return 'dine-in';
+        if (href.includes('mode=PARCEL')) return 'parcel';
+        if (href.includes('mode=PARTY')) return 'party';
+        if (href === '/billing.html') return 'billing';
+        if (href === '/kds.html') return 'kds';
+        if (href === '/orders.html') return 'live-orders';
+        if (href.includes('view=invoices')) return 'invoices';
+        if (href.includes('view=reports')) return 'reports';
+        if (href.includes('view=items')) return 'availability';
+        if (href === '/admin.html') return 'admin';
+        return '';
+      };
+      nav.querySelectorAll('a[data-role-nav="retail"], a[data-role-nav="retail-items"], a[href]').forEach((link) => {
+        const key = keyFor(link);
+        if (!key || !(key in visibility)) return;
+        const shown = visibility[key];
+        link.hidden = !shown;
+        link.style.display = shown ? '' : 'none';
+      });
+    } catch (_) {
+      // Leave the page's conservative default navigation in place when the
+      // local POS service is temporarily unavailable.
+    }
+  }
+  applyWorkspaceNavigation();
+
   document.addEventListener('keydown', (event) => {
     if (!/^F(?:[1-9]|1[0-2])$/.test(event.key) || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const openModal = document.querySelector('.modal-backdrop:not([hidden])');

@@ -4,3 +4,6 @@
 .retail-kpis span { padding:11px; border-radius:10px; background:#edf7f5; color:#526478; font-size:12px; font-weight:700; }
 .retail-kpis b { display:block; margin-top:4px; color:var(--retail-ink); font-size:17px; }
 @media (max-width: 760px) { .retail-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+/* The shared workspace navigation sits above the Retail Counter header. */
+.retail-shell .retail-layout { min-height: calc(100vh - 180px); height: auto; }

@@ -9152,6 +9152,37 @@ app.get('/settings', (req, res) => {
   }
 });
 
+// Keep the desktop navigation consistent on every workspace.  Navigation is a
+// convenience only; each destination still enforces its own permission.
+app.get('/navigation/context', (req, res) => {
+  const { restaurantId, role } = req.query;
+  if (!restaurantId || !role) return res.status(400).json({ success: false, message: 'restaurantId and role are required' });
+  const db = openRestaurantDatabase(restaurantId);
+  try {
+    const currentRole = String(role).toUpperCase();
+    const can = (permission) => canRole(db, currentRole, permission);
+    res.json({
+      success: true,
+      retailCounterEnabled: getBooleanConfig(db, 'retail_counter_enabled', false),
+      permissions: {
+        ordersCreate: can('orders.create'),
+        billingSettle: can('billing.settle'),
+        invoicesView: can('invoices.view'),
+        reportsView: can('reports.view_all') || can('reports.view_invoice_only'),
+        availabilityManage: can('availability.manage'),
+        kdsView: can('kitchen.kds.view'),
+        adminView: can('admin.view'),
+        inventoryView: can('inventory.view'),
+        retailView: can('retail.view')
+      }
+    });
+  } catch (err) {
+    sendError(res, err);
+  } finally {
+    db.close();
+  }
+});
+
 app.get('/reports/sales-detail', (req, res) => {
   const { restaurantId, fromDate, toDate, role } = req.query;
   if (!restaurantId) return res.status(400).json({ success:false, message:'restaurantId required' });

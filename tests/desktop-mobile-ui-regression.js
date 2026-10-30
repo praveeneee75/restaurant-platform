@@ -14,6 +14,10 @@ const posHtml = read('pos-app/backend/public/pos-live.html');
 const posJs = read('pos-app/backend/public/js/pos-live.js');
 const billingHtml = read('pos-app/backend/public/billing.html');
 const billingJs = read('pos-app/backend/public/js/billing.js');
+const ordersHtml = read('pos-app/backend/public/orders.html');
+const kdsHtml = read('pos-app/backend/public/kds.html');
+const retailHtml = read('pos-app/backend/public/retail.html');
+const uiFeedbackJs = read('pos-app/backend/public/js/ui-feedback.js');
 const customerJs = read('pos-app/backend/public/js/customer.js');
 const preload = read('pos-app/electron/preload.js');
 const electron = read('pos-app/electron/main.js');
@@ -47,6 +51,9 @@ const cases = [
   ,[customerHtml.includes('id="crmExecutiveSummary"') && customerHtml.includes('CUSTOMER 360') && customerJs.includes('function renderExecutiveSummary()') && customerJs.includes('Loyalty Ledger') && customerJs.includes('Earned / redeemed'), 'Customer CRM provides executive KPIs and an individual loyalty view']
   ,[posJs.includes('const startsNewParcelCheck = !state.orderId || state.billingReady;') && posJs.includes('New parcel customer check started for this table') && server.includes('Boolean(linkedFulfillment && isPositiveId(tableId))'), 'desktop Dine In starts an independent parcel check when the selected table check is final-bill locked']
   ,[billingHtml.indexOf('id="retailBillingNavigation"') < billingHtml.indexOf('id="transferBillingOrder"') && billingHtml.includes('href="/retail.html"') && billingJs.includes('retail_counter_enabled') && billingJs.includes('retailNavigation.hidden'), 'Billing keeps a Retail Counter navigation control before Transfer and only exposes it when the optional service is enabled']
+  ,[server.includes("app.get('/navigation/context'") && uiFeedbackJs.includes('applyWorkspaceNavigation') && uiFeedbackJs.includes('`/navigation/context?restaurantId=') && uiFeedbackJs.includes('retailCounterEnabled'), 'shared desktop navigation receives the retail setting and permission context from the POS service']
+  ,[[adminHtml, posHtml, billingHtml, ordersHtml, kdsHtml, customerHtml, retailHtml].every((html) => html.includes('data-role-nav="retail"') && html.includes('href="/retail.html"')), 'Retail Counter is present in every desktop workspace navigation and is shown only when enabled and permitted']
+  ,[retailHtml.includes('class="app-home-nav"') && retailHtml.includes('data-role-nav="retail-items"') && !retailHtml.includes('data-retail-nav="parcel"'), 'Retail Counter uses the shared navigation while retaining the restricted Retail-role Items entry']
   ,[server.includes("app.post('/orders/merge-bills'") && server.includes("app.post('/orders/unlock-billing'") && server.includes("status = 'MERGED'") && schema.includes("addColumn(db, 'orders', 'merge_parent_id INTEGER')"), 'billing provides persisted merge relationships and ready-order unlock']
   ,[adminHtml.includes('data-nav-category="kds"') && adminHtml.includes('id="settingKdsClearSettledOnNewBusinessDay"') && adminHtml.includes('id="settingKdsOfflineClearHours"') && schema.includes("addColumn(db, 'kots', 'archived_at DATETIME')"), 'Admin KDS provides configurable new-business-day settled-order cleanup']
   ,[server.includes("ksub.archived_at IS NULL") && server.includes("'ARCHIVE', 'KDS_BUSINESS_DAY'") && server.includes("SELECT id FROM orders WHERE payment_status = 'PAID' OR status = 'PAID'"), 'KDS cleanup archives only display KOTs for settled orders without changing financial orders']
