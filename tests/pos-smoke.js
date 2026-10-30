@@ -1,19 +1,26 @@
 const http = require('http');
+const fs = require('fs');
 const path = require('path');
 
 process.env.PORT = process.env.POS_SMOKE_PORT || '3399';
 process.env.POS_HEARTBEAT_DISABLED = '1';
+const root = path.join(__dirname, '..');
+const dataDir = path.join(root, '.codex-pos-smoke-test');
+fs.rmSync(dataDir, { recursive: true, force: true });
+process.env.POS_DATA_DIR = dataDir;
 
-const posRoot = path.join(__dirname, '..', 'pos-app');
+const posRoot = path.join(root, 'pos-app');
 const { openDatabase } = require(path.join(posRoot, 'backend/db/database'));
-const { getSingleRestaurantId } = require(path.join(posRoot, 'backend/utils/restaurantScanner'));
+const { setupDatabase } = require(path.join(posRoot, 'backend/services/dbSetup'));
+const { seedWhitelabelDemoData } = require(path.join(posRoot, 'backend/services/whitelabelDemoSeed'));
+const restaurantId = process.env.POS_SMOKE_RESTAURANT_ID || 'POSSMOKETEST';
+setupDatabase(restaurantId);
+const seedDb = openDatabase(restaurantId);
+seedWhitelabelDemoData(seedDb, { restaurantId, force: true });
+seedDb.close();
 require(path.join(posRoot, 'backend/server'));
 
 const port = Number(process.env.PORT);
-const restaurantId = process.env.POS_SMOKE_RESTAURANT_ID || getSingleRestaurantId();
-if (!restaurantId) {
-  throw new Error('No active local restaurant DB found for POS smoke test');
-}
 const actor = { role: 'OWNER', name: 'Smoke Test' };
 
 function request(method, targetPath, body) {
