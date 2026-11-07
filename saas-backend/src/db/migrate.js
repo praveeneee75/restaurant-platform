@@ -781,6 +781,7 @@ async function migrate() {
       ('STANDARD', 'Standard POS', 365, 0),
       ('PREMIUM', 'Premium POS', 365, 0),
       ('ENTERPRISE', 'Enterprise POS', 365, 0),
+      ('RETAIL_COUNTER', 'Retail Counter', 365, 9999),
       ('MONTHLY', 'Monthly', 30, 0),
       ('QUARTERLY', 'Quarterly', 90, 0),
       ('YEARLY', 'Yearly', 365, 0)
@@ -804,7 +805,8 @@ async function migrate() {
       ('ONLINE_ORDERING', 'Online Ordering', 'Customer web ordering for takeaway, delivery and prepaid/cash orders', 'SALES', 'ACTIVE'),
       ('MOBILE_APP', 'White-label Mobile App', 'Cross-platform owner, captain and waiter mobile app packaging', 'PREMIUM', 'ACTIVE'),
       ('MESSAGING', 'SMS / WhatsApp / Email Marketing', 'Bulk customer communication with per-restaurant sender and gateway configuration', 'CUSTOMER', 'ACTIVE'),
-      ('REMOTE_MENU', 'Remote Menu Publishing', 'Publish versioned menu changes from the owner portal to selected POS branches', 'ENTERPRISE', 'ACTIVE')
+      ('REMOTE_MENU', 'Remote Menu Publishing', 'Publish versioned menu changes from the owner portal to selected POS branches', 'ENTERPRISE', 'ACTIVE'),
+      ('RETAIL_COUNTER', 'Retail Counter', 'Barcode-ready walk-in retail sales with stock control and a restricted retail login', 'SALES', 'ACTIVE')
     ON CONFLICT(code) DO UPDATE SET
       name = EXCLUDED.name,
       description = EXCLUDED.description,
@@ -816,9 +818,10 @@ async function migrate() {
       WHEN 'BASIC' THEN 2399
       WHEN 'STANDARD' THEN 5999
       WHEN 'PREMIUM' THEN 11999
+      WHEN 'RETAIL_COUNTER' THEN 9999
       ELSE price
     END
-    WHERE code IN ('BASIC', 'STANDARD', 'PREMIUM')
+    WHERE code IN ('BASIC', 'STANDARD', 'PREMIUM', 'RETAIL_COUNTER')
   `);
 
   await pool.query(`
@@ -831,6 +834,8 @@ async function migrate() {
     WITH plan_modules(plan_code, module_code) AS (
       VALUES
         ('BASIC', 'KDS'),
+        ('RETAIL_COUNTER', 'INVENTORY'),
+        ('RETAIL_COUNTER', 'RETAIL_COUNTER'),
         ('STANDARD', 'KDS'),
         ('STANDARD', 'INVENTORY'),
         ('STANDARD', 'LOYALTY'),

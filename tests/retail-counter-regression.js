@@ -74,6 +74,17 @@ async function main() {
   );
   if (denied.status !== 403)
     throw new Error("disabled Retail Counter was accessible");
+  // A locally-enabled switch is not enough once SaaS has supplied an
+  // authoritative module list: the separate Retail Counter licence is needed.
+  db = openDatabase(restaurantId);
+  db.prepare("UPDATE system_config SET value=? WHERE key='enabled_modules'").run(JSON.stringify(['INVENTORY']));
+  db.prepare("UPDATE system_config SET value='1' WHERE key='retail_counter_enabled'").run();
+  db.close();
+  const unlicensed = await request("GET", `/retail/bootstrap?restaurantId=${restaurantId}&role=OWNER`);
+  if (unlicensed.status !== 403 || !/licence/i.test(unlicensed.data.message || '')) throw new Error("unlicensed Retail Counter was accessible");
+  db = openDatabase(restaurantId);
+  db.prepare("UPDATE system_config SET value=? WHERE key='enabled_modules'").run(JSON.stringify(['INVENTORY', 'RETAIL_COUNTER']));
+  db.close();
   await ok("POST", "/settings/update", {
     restaurantId,
     actor: owner,

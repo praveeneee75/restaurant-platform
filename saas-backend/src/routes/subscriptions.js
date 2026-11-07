@@ -53,6 +53,7 @@ router.get('/plans', async (_req, res) => {
           WHEN 'STANDARD' THEN 2
           WHEN 'PREMIUM' THEN 3
           WHEN 'ENTERPRISE' THEN 4
+          WHEN 'RETAIL_COUNTER' THEN 5
           ELSE 10
         END,
         p.duration_days
@@ -77,6 +78,7 @@ router.get('/plan-modules', async (_req, res) => {
             WHEN 'STANDARD' THEN 2
             WHEN 'PREMIUM' THEN 3
             WHEN 'ENTERPRISE' THEN 4
+            WHEN 'RETAIL_COUNTER' THEN 5
             ELSE 10
           END,
           duration_days

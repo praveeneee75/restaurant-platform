@@ -6,7 +6,7 @@ const requestedAdminView = new URLSearchParams(window.location.search).get("view
 const standaloneAdminView = new URLSearchParams(window.location.search).get("standalone") === "1";
 const role = String(user?.role || "").toUpperCase();
 const adminAllowedRoles = new Set(["OWNER", "MANAGER_1", "MANAGER_2", "CASHIER", "RETAIL"]);
-if (!user || !adminAllowedRoles.has(role) || (role === "CASHIER" && !["reservations", "items", "invoices", "reports"].includes(requestedAdminView)) || (role === "RETAIL" && requestedAdminView !== "items")) {
+if (!user || !adminAllowedRoles.has(role) || (role === "CASHIER" && !["reservations", "items", "invoices", "reports"].includes(requestedAdminView)) || (role === "RETAIL" && !["inventory", "items"].includes(requestedAdminView))) {
   window.location.replace(`/login.html?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
   throw new Error("Admin access required");
 }
@@ -29,7 +29,7 @@ if (role === "RETAIL") {
   });
 }
 document.querySelectorAll("[data-logout]").forEach((button) => button.addEventListener("click", () => { localStorage.clear(); window.location.href = "/login.html"; }));
-const activeAdminNavLabel = requestedAdminView === "invoices" ? "Invoices" : requestedAdminView === "items" ? "Availability" : requestedAdminView === "reports" ? "Reports" : "Admin";
+const activeAdminNavLabel = requestedAdminView === "invoices" ? "Invoices" : requestedAdminView === "items" ? "Availability" : requestedAdminView === "inventory" ? "Inventory" : requestedAdminView === "reports" ? "Reports" : "Admin";
 document.querySelectorAll(".app-home-nav a").forEach((link) => link.classList.toggle("active", link.textContent.trim() === activeAdminNavLabel));
 const state = { admin: {}, network: {}, inventory: {}, modifiers: {}, backups: {}, settings: {}, permissions: {}, devices: {}, reservations: [], expenseCategories: [], latestUpdate: null, commercial: {}, invoices: [] };
 const settingQrRequireTablePin = document.getElementById('settingQrRequireTablePin');
@@ -302,6 +302,7 @@ async function loadAll() {
       await loadInvoiceList().catch(() => undefined);
     }
     if (requestedAdminView === "reservations") await loadReservations().catch(() => undefined);
+    if (requestedAdminView === "inventory") await loadInventory().catch(() => undefined);
     adminStatus.textContent = "Workspace ready";
     return;
   }
@@ -418,6 +419,8 @@ function applyModuleGuards() {
   });
   document.querySelectorAll('a[href="/kds.html"]').forEach((el) => { el.style.display = moduleEnabled("KDS") ? "" : "none"; });
   document.querySelectorAll('a[href="/customer.html"]').forEach((el) => { el.style.display = moduleEnabled("LOYALTY") ? "" : "none"; });
+  const retailLicensed = moduleEnabled("RETAIL_COUNTER");
+  document.querySelectorAll('[data-settings-panel="retail"], [data-settings-section="retail"]').forEach((el) => { el.style.display = retailLicensed ? "" : "none"; });
   if (role === "CASHIER") {
     document.querySelectorAll(".admin-nav .nav-group").forEach((el) => { el.style.display = "none"; });
     const reservationsButton = document.querySelector('.nav-btn[data-view="reservations"]');
@@ -429,7 +432,8 @@ function applyModuleGuards() {
   }
   if (role === "RETAIL") {
     document.querySelectorAll(".admin-sidebar, .admin-nav-layout").forEach((el) => { el.style.display = "none"; });
-    document.querySelectorAll(".admin-view").forEach((panel) => { panel.style.display = panel.id === "view-items" ? "" : "none"; });
+    const retailView = requestedAdminView === "items" ? "items" : "inventory";
+    document.querySelectorAll(".admin-view").forEach((panel) => { panel.style.display = panel.id === `view-${retailView}` ? "" : "none"; });
     const itemEditor = document.getElementById("itemForm");
     if (itemEditor) itemEditor.hidden = true;
   }

@@ -749,7 +749,10 @@ const DEFAULT_ENABLED_MODULES = [
   'CLOUD_REPORTING',
   'MULTI_BRANCH',
   'WHITE_LABEL',
-  'ONLINE_ORDERING'
+  'ONLINE_ORDERING',
+  // Compatibility for existing offline POS databases that pre-date retail
+  // licensing. A cloud-validated POS receives the authoritative list instead.
+  'RETAIL_COUNTER'
 ];
 
 function enabledModules(db) {
@@ -777,7 +780,29 @@ function requireModule(db, moduleCode) {
 
 function cacheEnabledModules(db, modules) {
   if (Array.isArray(modules)) {
-    setConfigValues(db, { enabled_modules: JSON.stringify(modules.map((code) => String(code).toUpperCase())) });
+    const normalized = modules.map((code) => String(code).toUpperCase());
+    setConfigValues(db, { enabled_modules: JSON.stringify(normalized) });
+    // The Retail Counter licence is a commercial entitlement.  Enabling that
+    // entitlement activates the local counter; all retail endpoints still
+    // verify the entitlement on every request.
+    if (normalized.includes('RETAIL_COUNTER')) setConfigValues(db, { retail_counter_enabled: '1' });
+  }
+}
+
+function retailCounterLicensed(db) {
+  return moduleEnabled(db, 'RETAIL_COUNTER');
+}
+
+function requireRetailCounter(db) {
+  if (!retailCounterLicensed(db)) {
+    const error = new Error('Retail Counter is not included in this restaurant licence. Contact K\'Master to add the Retail Counter licence.');
+    error.status = 403;
+    throw error;
+  }
+  if (!getBooleanConfig(db, 'retail_counter_enabled', false)) {
+    const error = new Error('Retail Counter is disabled. Enable it in Admin > Settings > Retail Counter.');
+    error.status = 403;
+    throw error;
   }
 }
 
@@ -7275,9 +7300,7 @@ app.get('/retail/bootstrap', (req, res) => {
   const db = openRestaurantDatabase(restaurantId);
   try {
     requirePermission(db, role, 'retail.view', 'Retail counter viewing permission required');
-    if (!getBooleanConfig(db, 'retail_counter_enabled', false)) {
-      const error = new Error('Retail Counter is disabled. Enable it in Admin > Settings > Retail Counter.'); error.status=403; throw error;
-    }
+    requireRetailCounter(db);
     const items = db.prepare(`SELECT i.id, printf('%04d',i.id) item_code, i.name, i.price, i.tax_mode, i.barcode,
       COALESCE(i.retail_stock,0) retail_stock, COALESCE(i.retail_reorder_level,0) retail_reorder_level, COALESCE(i.retail_unlimited,0) retail_unlimited,
       c.id category_id,c.name category_name
@@ -7299,7 +7322,7 @@ app.post('/retail/orders/prepare', (req, res) => {
   if (items.some((line)=>!isPositiveId(line.itemId)||!Number.isInteger(Number(line.quantity))||Number(line.quantity)<=0)) return res.status(400).json({success:false,message:'Retail quantities must be positive whole numbers'});
   const db=openRestaurantDatabase(restaurantId);
   try {
-    if (!getBooleanConfig(db,'retail_counter_enabled',false)) { const e=new Error('Retail Counter is disabled');e.status=403;throw e; }
+    requireRetailCounter(db);
     requirePermission(db,actor?.role,'retail.sell','Retail sales permission required');
     const result=db.transaction(()=>{
       const identity=nextDraftOrderIdentity(db,'RETAIL');
@@ -7333,6 +7356,7 @@ app.post('/retail/stock-adjust', (req,res)=>{
   if(!restaurantId||!isPositiveId(itemId)||!Number.isFinite(qty)||qty===0) return res.status(400).json({success:false,message:'Item and non-zero stock adjustment are required'});
   const db=openRestaurantDatabase(restaurantId);
   try{
+    requireRetailCounter(db);
     requirePermission(db,actor?.role,'retail.stock_adjust','Retail stock adjustment permission required');
     const item=db.prepare('SELECT id,name,COALESCE(retail_stock,0) retail_stock,COALESCE(retail_unlimited,0) retail_unlimited FROM items WHERE id=? AND deleted_at IS NULL').get(itemId); if(!item) throw new Error('Item not found');
     if(Number(item.retail_unlimited)) throw new Error('Unlimited retail items do not use stock adjustments');
@@ -9163,7 +9187,7 @@ app.get('/navigation/context', (req, res) => {
     const can = (permission) => canRole(db, currentRole, permission);
     res.json({
       success: true,
-      retailCounterEnabled: getBooleanConfig(db, 'retail_counter_enabled', false),
+      retailCounterEnabled: retailCounterLicensed(db) && getBooleanConfig(db, 'retail_counter_enabled', false),
       permissions: {
         ordersCreate: can('orders.create'),
         billingSettle: can('billing.settle'),
@@ -9362,6 +9386,13 @@ app.post('/settings/update', async (req, res) => {
   try {
     requirePermission(db, role, 'admin.settings.manage', 'Settings permission required');
     const safeSettings = normaliseSettingsInput(settings);
+    if (Object.prototype.hasOwnProperty.call(safeSettings, 'retail_counter_enabled')
+      && safeSettings.retail_counter_enabled === '1'
+      && !retailCounterLicensed(db)) {
+      const error = new Error('Retail Counter is not included in this restaurant licence. Add the Retail Counter licence before enabling this service.');
+      error.status = 403;
+      throw error;
+    }
     const oldValue = {};
     Object.keys(safeSettings).forEach((key) => {
       oldValue[key] = getConfigValue(db, key, DEFAULT_SYSTEM_SETTINGS[key]);

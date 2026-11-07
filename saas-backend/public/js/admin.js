@@ -460,7 +460,7 @@ async function loadSubscriptions() {
     const [plans, summary] = await Promise.all([api("/subscriptions/plans"), api("/subscriptions/summary")]);
     const planOptions = plans.plans.map((plan) => {
       const modules = (plan.included_modules || []).join(", ");
-      return `<option value="${plan.code}" data-days="${plan.duration_days}" data-modules="${modules}">${plan.code} (${plan.duration_days} days)</option>`;
+      return `<option value="${plan.code}" data-days="${plan.duration_days}" data-modules="${modules}">${plan.name} — ₹${Number(plan.price || 0).toLocaleString('en-IN')} (${plan.duration_days} days)</option>`;
     }).join("");
     subscriptionPlan.innerHTML = planOptions;
     if (window.createPlan) {

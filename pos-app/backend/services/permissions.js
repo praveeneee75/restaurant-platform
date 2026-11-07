@@ -116,9 +116,9 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'kitchen.status.update'
   ],
   CASHIER: ['orders.create', 'orders.merge', 'orders.split', 'orders.unlock', 'orders.transfer_table', 'billing.settle', 'billing.discount', 'invoices.view', 'reports.view_invoice_only', 'inventory.view', 'availability.manage', 'reservations.manage', 'retail.view', 'retail.sell'],
-  // Retail is intentionally narrow: the counter and read-only item catalogue only.
-  // Grant additional controls through the permission matrix when a branch needs them.
-  RETAIL: ['retail.view', 'retail.sell', 'inventory.view'],
+  // A retail login is intentionally isolated from restaurant operations. It can
+  // sell at the counter and manage stock, but cannot open dining, billing or KDS.
+  RETAIL: ['retail.view', 'retail.sell', 'retail.stock_adjust', 'inventory.view', 'inventory.manage'],
   CAPTAIN: ['orders.create', 'orders.transfer_table', 'inventory.view', 'availability.manage', 'retail.view', 'retail.sell'],
   WAITER: ['orders.create'],
   KITCHEN: ['kitchen.kds.view', 'kitchen.status.update', 'kitchen.reprint']
